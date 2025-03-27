@@ -25,7 +25,6 @@ DonationPromptHtml.prototype.initialize = function () {
      this.container = document.createElement('div');
      this.container.innerHTML = htmlContent;
      document.body.appendChild(this.container);
-     console.log("DonationPromptHtml: Container loaded:", this.container.innerHTML);
 
      // 3. Locate the donation UI root element (it must have id="donationUI")
      this.donationUIEl = this.container.querySelector('#donationUI');

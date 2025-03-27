@@ -23,47 +23,68 @@ CameraMovement.attributes.add('pitchMax', {
 });
 
 CameraMovement.prototype.initialize = function () {
-    // Set initial yaw to 180 so the camera starts behind the player.
+    // Initial camera angles.
     this.yaw = 0;
     this.pitch = 0;
+    this.rightMouseDown = false;
 
     var app = this.app;
+    // Listen to mouse movement events.
     app.mouse.on("mousemove", this.onMouseMove, this);
+    // Listen for right-click mouse down/up events.
     app.mouse.on("mousedown", this.onMouseDown, this);
+    app.mouse.on("mouseup", this.onMouseUp, this);
+
+    // Disable the context menu on right-click.
+    this.canvas = app.graphicsDevice.canvas;
+    // Save a reference to the handler so we can remove it later.
+    this.disableContextMenu = function (e) {
+        e.preventDefault();
+    };
+    this.canvas.addEventListener("contextmenu", this.disableContextMenu);
 
     this.on('destroy', function () {
         app.mouse.off("mousemove", this.onMouseMove, this);
         app.mouse.off("mousedown", this.onMouseDown, this);
+        app.mouse.off("mouseup", this.onMouseUp, this);
+        this.canvas.removeEventListener("contextmenu", this.disableContextMenu);
     }, this);
 };
 
 CameraMovement.prototype.update = function (dt) {
-    // With the CameraMovement script on the pivot ("Camera Axis"),
-    // we use its yaw to rotate the pivot. That pivot's rotation will be used
-    // to drive the player's facing direction.
+    // Here, the CameraMovement script rotates the pivot (player's camera axis).
+    // The pitch is applied to the entity (the pivot) for vertical rotation.
     this.entity.setLocalEulerAngles(this.pitch, 0, 0);
-
-    // If you want to position the actual camera (child entity) based on pitch and distance,
-    // that code can live on a separate script on the PlayerCamera. For now, we assume
-    // the Camera Axis only controls horizontal rotation.
 };
 
 CameraMovement.prototype.onMouseMove = function (e) {
-    if (pc.Mouse.isPointerLocked()) {
-        // Adjust yaw by mouse X movement.
+    if (pc.Mouse.isPointerLocked() && this.rightMouseDown) {
+        // Rotate the camera based on mouse movement while pointer is locked.
         this.yaw -= (this.mouseSpeed * e.dx) / 60;
-        // Adjust pitch by mouse Y movement.
         this.pitch -= (this.mouseSpeed * e.dy) / 60;
 
-        // Clamp pitch.
+        // Clamp the pitch to avoid flipping.
         this.pitch = pc.math.clamp(this.pitch, this.pitchMin, this.pitchMax);
 
-        // Normalize yaw.
+        // Normalize yaw so it stays within 0-360 degrees.
         if (this.yaw < 0) this.yaw += 360;
         if (this.yaw >= 360) this.yaw -= 360;
     }
 };
 
 CameraMovement.prototype.onMouseDown = function (e) {
-    //this.app.mouse.enablePointerLock();
+    // Check if the right mouse button (button code 2) is pressed.
+    if (e.button === pc.MOUSEBUTTON_RIGHT) {
+        this.rightMouseDown = true;
+        // Enable pointer lock so that the mouse can freely drive the camera.
+        this.app.mouse.enablePointerLock();
+    }
+};
+
+CameraMovement.prototype.onMouseUp = function (e) {
+    // When the right mouse button is released, disable pointer lock.
+    if (e.button === pc.MOUSEBUTTON_RIGHT) {
+        this.rightMouseDown = false;
+        this.app.mouse.disablePointerLock();
+    }
 };

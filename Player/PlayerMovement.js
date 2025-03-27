@@ -30,6 +30,8 @@ PlayerMovement.worldDirection = new pc.Vec3();
 PlayerMovement.tempDirection = new pc.Vec3();
 
 PlayerMovement.prototype.update = function (dt) {
+    // Disable movement if the chat input is active.
+    if (window.isChatActive) return;
     if (this.entity.name !== "LocalPlayer") return;
 
     var app = this.app;

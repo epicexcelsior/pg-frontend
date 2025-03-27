@@ -4,7 +4,8 @@ var NetworkManager = pc.createScript('networkManager');
 NetworkManager.prototype.initialize = async function () {
     console.log("Connecting to Colyseus...");
     window.colyseus = new Colyseus.Client("ws://localhost:2567");
-    this.app.room = await window.colyseus.joinOrCreate("my_room");
+    this.app.room = await window.colyseus.joinOrCreate("my_room", { username: window.userName });
+    this.app.fire("colyseus:roomJoined", this.app.room);
     console.log("Connected to room, sessionId:", this.app.room.sessionId);
 
     this.playerEntities = {};
@@ -96,7 +97,7 @@ NetworkManager.prototype.initialize = async function () {
 //     console.log("Local player spawned:", this.app.room.sessionId);
 // };
 
-NetworkManager.prototype.onPlayerAdd = function(playerState, sessionId) {
+NetworkManager.prototype.onPlayerAdd = function (playerState, sessionId) {
     console.log("New player added:", sessionId, playerState);
 
     // If it's us, we've already spawned the local entity
@@ -190,7 +191,7 @@ NetworkManager.prototype.updateRemotePlayer = function (entity, playerState) {
     entity.setPosition(playerState.x, playerState.y, playerState.z);
     entity.setEulerAngles(0, playerState.rotation, 0);
 
-    console.log(playerState.x, playerState.y, playerState.z, playerState.rotation);
+    //console.log(playerState.x, playerState.y, playerState.z, playerState.rotation);
 
     // Or you can do interpolation:
     // var currentPos = entity.getPosition().clone();
