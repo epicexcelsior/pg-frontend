@@ -1,0 +1,85 @@
+#chatOverlay {
+     position: fixed;
+     top: 10px;
+     left: 10px;
+     width: 250px;
+     /* Initial width - use fixed width for base */
+     height: 150px;
+     /* Initial height - use fixed height for base */
+     background-color: rgba(0, 0, 0, 0.3);
+     color: #fff;
+     font-family: Arial, sans-serif;
+     border-radius: 5px;
+     overflow: hidden;
+     z-index: 1000;
+     transition: width 0.3s ease-out, height 0.3s ease-out, background-color 0.3s ease-out;
+     /* Transition width and height */
+}
+
+#chatOverlay:hover,
+#chatOverlay.expanded {
+     width: 300px;
+     /* Expanded width - change fixed width */
+     height: 350px;
+     /* Expanded height - change fixed height */
+     background-color: rgba(0, 0, 0, 0.7);
+}
+
+#chatMessages {
+     padding: 5px;
+     height: calc(100% - 30px);
+     /* Messages take up most of the overlay height, minus input */
+     overflow-y: auto;
+     font-size: 14px;
+}
+
+#chatInput {
+     width: 100%;
+     border: none;
+     padding: 5px;
+     box-sizing: border-box;
+     font-size: 14px;
+     background-color: rgba(255, 255, 255, 0.1);
+     /* Slightly transparent white background for input */
+     color: #fff;
+     /* Ensure text is still white */
+     transition: background-color 0.3s ease-out;
+     /* Optional: transition for input background */
+}
+
+#chatInput:focus {
+     background-color: rgba(255, 255, 255, 0.8);
+     /* Less transparent on focus */
+     color: #000;
+     /* Change text color to black for better readability on focus */
+}
+
+/* Mobile-specific styles to make chat smaller */
+#chatOverlay.mobile-small {
+     width: 150px;
+     /* Reduced width for mobile */
+     height: 75px;
+     /* Reduced height for mobile */
+     max-height: 300px;
+     /* Keep expanded max-height, or adjust mobile expanded height if needed */
+     max-width: 250px;
+     /* Keep expanded max-width, or adjust mobile expanded width if needed */
+}
+
+#chatOverlay.mobile-small #chatMessages {
+     height: calc(100% - 30px);
+     /* Keep message height calculation, or adjust if input height is different */
+     font-size: 12px;
+     /* Slightly smaller font size for messages on mobile (optional) */
+}
+
+#chatOverlay.mobile-small #chatInput {
+     font-size: 12px;
+     /* Slightly smaller font size for input on mobile (optional) */
+     padding: 3px;
+     /* Slightly smaller padding for input on mobile (optional) */
+}
+
+.pc-chat-overlay-hidden {
+     display: none;
+}

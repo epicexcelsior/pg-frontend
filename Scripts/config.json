@@ -1,0 +1,8 @@
+{
+  "colyseusEndpoint": "http://localhost:2567",
+  "cloudflareWorkerAuthEndpoint": "https://your-worker-subdomain.workers.dev/auth",
+  "cloudflareWorkerDonationEndpoint": "https://your-worker-subdomain.workers.dev/donate",
+  "solanaRpcEndpoint": "https://api.mainnet-beta.solana.com",
+  "donationRecipientAddress": "YOUR_RECIPIENT_SOLANA_ADDRESS_HERE",
+  "donationFeePercentage": 0.05
+}
