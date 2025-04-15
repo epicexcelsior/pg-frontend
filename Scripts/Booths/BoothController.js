@@ -19,9 +19,9 @@ BoothController.prototype.initialize = function() {
     // Store the booth zone the player is currently inside
     this.currentZoneScript = null;
 
-    // Listen for booth zone enter/leave events
-    this.app.on('booth:enterZone', this.onEnterZone, this);
-    this.app.on('booth:leaveZone', this.onLeaveZone, this);
+    // Listen for booth zone enter/leave events (fired by BoothClaimZone)
+    this.app.on('booth:entered', this.onEnterZone, this);
+    this.app.on('booth:left', this.onLeaveZone, this);
 
     // Listen for booth state updates from the network (fired by NetworkManager/BoothSync)
     this.app.on('booth:updated', this.onBoothUpdated, this);
@@ -29,8 +29,11 @@ BoothController.prototype.initialize = function() {
     // Listen for claim errors from the network
     this.app.on('booth:claimError', this.onClaimError, this);
 
-    // Listen for auth state changes (to update UI if player logs in/out while in zone)
+    // Listen for auth state changes
     this.app.on('auth:stateChanged', this.onAuthStateChanged, this);
+
+    // Listen for local player data changes (e.g., claimedBoothId updated)
+    this.app.on('player:data:changed', this.onLocalPlayerDataChanged, this);
 
     console.log("BoothController initialized.");
 };
@@ -73,7 +76,15 @@ BoothController.prototype.onAuthStateChanged = function(authStateData) {
         console.log("BoothController: Auth state changed while player in zone. Re-evaluating prompt.");
         this.decideAndShowPrompt();
     }
-};
+ };
+
+ BoothController.prototype.onLocalPlayerDataChanged = function(playerDataScript) {
+     // Check if the player is currently in a zone when their data changes
+     if (this.currentZoneScript) {
+         console.log("BoothController: Local player data changed while in zone. Re-evaluating prompt.");
+         this.decideAndShowPrompt();
+     }
+ };
 
 
 BoothController.prototype.decideAndShowPrompt = function() {
@@ -86,31 +97,54 @@ BoothController.prototype.decideAndShowPrompt = function() {
 
     const boothId = this.currentZoneScript.boothId;
     const claimedBy = this.currentZoneScript.claimedBy; // Get current claim status
-    const isAuthenticated = this.authService ? this.authService.isAuthenticated() : false;
-    const localPlayerAddress = this.authService ? this.authService.getWalletAddress() : null;
+    // Get local player data script
+    const localPlayerEntity = this.app.localPlayer;
+    const localPlayerData = localPlayerEntity?.script?.playerData;
 
-    console.log(`BoothController: Deciding prompt for ${boothId}. Claimed by: ${claimedBy}, Auth: ${isAuthenticated}, Local Addr: ${localPlayerAddress}`);
+    if (!localPlayerData) {
+        console.warn("BoothController: Cannot decide prompt, local PlayerData script not found.");
+        this.app.fire('ui:hideClaimPrompt');
+        this.app.fire('ui:hideDonationPrompt');
+        return;
+    }
 
+    const localPlayerAddress = localPlayerData.getWalletAddress();
+    const localClaimedBoothId = localPlayerData.getClaimedBoothId(); // Get the crucial state
+
+    console.log(`BoothController: Deciding prompt for ${boothId}. Booth Claimed by: ${claimedBy || 'None'}, Local Addr: ${localPlayerAddress || 'None'}, Local Claimed Booth: ${localClaimedBoothId || 'None'}`);
+
+    // --- Logic ---
     if (!claimedBy) {
         // --- Booth is Unclaimed ---
-        this.app.fire('ui:hideDonationPrompt'); // Hide donation prompt
-        // Show claim prompt (HtmlClaimPrompt should handle the actual display logic)
-        console.log(`BoothController: Firing ui:showClaimPrompt for ${boothId}`);
-        this.app.fire('ui:showClaimPrompt', this.currentZoneScript); // Pass the zone script for context
-
+        // Show claim prompt ONLY if the local player hasn't claimed a booth yet
+        if (!localClaimedBoothId) {
+             this.app.fire('ui:hideDonationPrompt');
+             console.log(`BoothController: Firing ui:showClaimPrompt for ${boothId}`);
+             this.app.fire('ui:showClaimPrompt', this.currentZoneScript);
+        } else {
+            // Booth is unclaimed, but player already claimed one. Hide both.
+             console.log(`BoothController: Booth ${boothId} is unclaimed, but player already claimed ${localClaimedBoothId}. Hiding prompts.`);
+             this.app.fire('ui:hideClaimPrompt');
+             this.app.fire('ui:hideDonationPrompt');
+        }
     } else {
         // --- Booth is Claimed ---
-        this.app.fire('ui:hideClaimPrompt'); // Hide claim prompt
+        this.app.fire('ui:hideClaimPrompt'); // Always hide claim prompt if booth is claimed
 
         if (claimedBy === localPlayerAddress) {
-            // Player owns this booth - show owner info/options? (Future enhancement)
+            // Player owns this booth - hide donation prompt
             console.log(`BoothController: Player owns booth ${boothId}. Hiding donation prompt.`);
             this.app.fire('ui:hideDonationPrompt');
-            // Maybe fire 'ui:showOwnerOptions' or similar
-        } else {
-            // Booth claimed by someone else - show donation prompt
+            // Future: Show owner options?
+        } else if (localPlayerAddress) {
+            // Booth claimed by another player AND local player is authenticated - show donation prompt
             console.log(`BoothController: Firing ui:showDonationPrompt for ${boothId}, recipient: ${claimedBy}`);
-            this.app.fire('ui:showDonationPrompt', this.currentZoneScript); // Pass zone script for context
+            this.app.fire('ui:showDonationPrompt', this.currentZoneScript);
+        } else {
+            // Booth claimed by another player BUT local player is NOT authenticated - hide donation prompt
+            console.log(`BoothController: Booth ${boothId} claimed by another, but local player not authenticated. Hiding donation prompt.`);
+            this.app.fire('ui:hideDonationPrompt');
+            // Future: Maybe prompt to authenticate to donate?
         }
     }
 };

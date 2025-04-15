@@ -66,6 +66,14 @@ ClaimPromptHtml.prototype.initialize = function () {
               }
          });
      }
+     this.pendingClaimBoothId = null; // Initialize
+
+     // Listen for auth:connected event to auto-trigger claim after auth flow
+     this.app.on('auth:connected', this.onAuthConnected, this);
+
+     // Listen for UI events from BoothController (or UIManager)
+     this.app.on('ui:showClaimPrompt', this.onShowPrompt, this);
+     this.app.on('ui:hideClaimPrompt', this.onHidePrompt, this);
 };
 
 // === THEMING ===
@@ -96,21 +104,33 @@ ClaimPromptHtml.prototype.hide = function () {
      });
 };
 
-// === REGISTER / UNREGISTER BOOTHS ===
-ClaimPromptHtml.prototype.registerClaimableBooth = function (boothScript) {
-     if (!this.currentBooth) {
-          this.currentBooth = boothScript;
-          console.log("ClaimPromptHtml: Booth registered ->", boothScript.boothId);
-          this.show();
-     }
+// === EVENT HANDLERS for UI events ===
+ClaimPromptHtml.prototype.onShowPrompt = function (boothScript) {
+    // Only show if not already showing for a different booth (or same booth)
+    if (!this.currentBooth) {
+        this.currentBooth = boothScript;
+        console.log("ClaimPromptHtml: Received ui:showClaimPrompt for booth ->", boothScript.boothId);
+        this.show(); // Use existing show method
+    } else if (this.currentBooth !== boothScript) {
+        // If showing for a different booth, update context but don't re-animate if already visible
+        console.log("ClaimPromptHtml: Switching context to booth ->", boothScript.boothId);
+        this.currentBooth = boothScript;
+        // Ensure it's visible if somehow hidden
+        if (this.claimPromptEl.style.opacity < 1) {
+            this.show();
+        }
+    }
 };
 
-ClaimPromptHtml.prototype.unregisterClaimableBooth = function (boothScript) {
-     if (this.currentBooth === boothScript) {
-          this.currentBooth = null;
-          this.hide();
-     }
+ClaimPromptHtml.prototype.onHidePrompt = function () {
+    if (this.currentBooth) {
+        console.log("ClaimPromptHtml: Received ui:hideClaimPrompt. Hiding for booth ->", this.currentBooth.boothId);
+        this.currentBooth = null;
+        this.hide(); // Use existing hide method
+    }
 };
+
+// --- Removed register/unregister methods ---
 
 // Claim booth (press E)
 ClaimPromptHtml.prototype.onKeyDown = function (event) { // Removed async
@@ -134,15 +154,23 @@ ClaimPromptHtml.prototype.onKeyDown = function (event) { // Removed async
                    console.error("ClaimPromptHtml: Error during connectWalletFlow initiated by claim attempt:", err);
                    // Optionally show a specific error message via ui:show:message if needed
                });
-               // Do NOT proceed with the claim yet. User needs to press E again after successful connection.
-               // Prevent default browser behavior even if not claiming yet
+               // Store the boothId to claim for after successful authentication
+               this.pendingClaimBoothId = this.currentBooth.boothId;
+               // Do NOT proceed with the claim yet. Wait for auth:connected event.
+               // No need to instruct user to press 'E' again. Claim will be auto-triggered after auth.
                event.event.preventDefault();
                event.event.stopPropagation();
-               return; // Stop the current claim process, wait for user to connect and press E again
+               return; // Stop the current claim process, wait for auth to connect
           }
-
+  
           // User is authenticated, proceed with claim request
-          const boothIdToClaim = this.currentBooth.boothId;
+          // const boothIdToClaim = this.currentBooth.boothId; // No longer get from currentBooth here
+          const boothIdToClaim = this.pendingClaimBoothId; // Get from pending, should be set during connectWalletFlow
+          if (!boothIdToClaim) {
+              console.error("ClaimPromptHtml: No pending booth ID to claim after authentication!");
+              return; // Should not happen, but safety check
+          }
+          this.pendingClaimBoothId = null; // Clear pending claim
           const userAddress = this.authService.getWalletAddress(); // Get address from the source of truth
 
           console.log(`ClaimPromptHtml: Firing booth:claimRequest for booth '${boothIdToClaim}' by user ${userAddress}`);
@@ -159,6 +187,23 @@ ClaimPromptHtml.prototype.onKeyDown = function (event) { // Removed async
      }
 };
 
+// --- New handler for auth:connected event ---
+ClaimPromptHtml.prototype.onAuthConnected = function(authStateData) {
+    if (this.pendingClaimBoothId) {
+        const boothIdToClaim = this.pendingClaimBoothId;
+        this.pendingClaimBoothId = null; // Clear it immediately
+
+        console.log(`ClaimPromptHtml: AuthService connected. Auto-firing booth:claimRequest for pending booth '${boothIdToClaim}'`);
+        // Fire the application event to claim the booth
+        this.app.fire('booth:claimRequest', boothIdToClaim);
+
+        // Hide prompt immediately as claim request is sent
+        this.hide(); // Hide the claim prompt
+    } else {
+        console.warn("ClaimPromptHtml: AuthService connected, but no pending booth claim.");
+    }
+};
+
 // Removed sendClaimRequest function - Replaced by firing 'booth:claimRequest' event in onKeyDown
 
 // === UTILITY: Retrieve Animation Settings from UIManager ===
@@ -169,4 +214,29 @@ ClaimPromptHtml.prototype._animSettings = function (prop) {
           return fallback[prop];
      }
      return uiMgr.getAnimationSettings()[prop];
+};
+
+// Clean up listeners
+ClaimPromptHtml.prototype.destroy = function() {
+    this.app.off('ui:showClaimPrompt', this.onShowPrompt, this);
+    this.app.off('ui:hideClaimPrompt', this.onHidePrompt, this);
+    this.app.off('auth:connected', this.onAuthConnected, this); // Clean up new listener
+    this.app.keyboard.off(pc.EVENT_KEYDOWN, this.onKeyDown, this);
+
+    // Remove HTML element if needed
+    if (this.container && this.container.parentNode) {
+        this.container.parentNode.removeChild(this.container);
+    }
+};
+
+// Clean up listeners
+ClaimPromptHtml.prototype.destroy = function() {
+    this.app.off('ui:showClaimPrompt', this.onShowPrompt, this);
+    this.app.off('ui:hideClaimPrompt', this.onHidePrompt, this);
+    this.app.keyboard.off(pc.EVENT_KEYDOWN, this.onKeyDown, this);
+
+    // Remove HTML element if needed
+    if (this.container && this.container.parentNode) {
+        this.container.parentNode.removeChild(this.container);
+    }
 };

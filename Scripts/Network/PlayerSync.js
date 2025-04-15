@@ -200,17 +200,32 @@ PlayerSync.prototype.handlePlayerChange = function (playerState, sessionId) {
         // Example: Update PlayerData script if it exists
         const playerData = entity.script?.playerData;
         if (playerData) {
-            if (playerState.username && playerData.username !== playerState.username) {
-                playerData.username = playerState.username;
+            // Construct an update object with only the changed fields
+            const updatePayload = {};
+            let hasChanges = false;
+
+            if (playerState.hasOwnProperty('username') && playerData.username !== playerState.username) {
+                updatePayload.username = playerState.username;
+                hasChanges = true;
+                console.log(`PlayerSync: Detected server change for local username: ${playerState.username}`);
             }
-            if (playerState.walletAddress && playerData.walletAddress !== playerState.walletAddress) {
-                playerData.walletAddress = playerState.walletAddress;
+            if (playerState.hasOwnProperty('walletAddress') && playerData.walletAddress !== playerState.walletAddress) {
+                updatePayload.walletAddress = playerState.walletAddress;
+                hasChanges = true;
+                 console.log(`PlayerSync: Detected server change for local walletAddress: ${playerState.walletAddress}`);
             }
-             if (playerState.claimBoothId !== undefined && playerData.claimBoothId !== playerState.claimBoothId) {
-                playerData.claimBoothId = playerState.claimBoothId;
+             if (playerState.hasOwnProperty('claimedBoothId') && playerData.claimedBoothId !== playerState.claimedBoothId) {
+                updatePayload.claimedBoothId = playerState.claimedBoothId;
+                hasChanges = true;
+                 console.log(`PlayerSync: Detected server change for local claimedBoothId: ${playerState.claimedBoothId}`);
             }
-            // Fire a generic update event for PlayerData listeners
-            this.app.fire('player:dataUpdated', { sessionId: sessionId, state: playerState });
+            // Add other synchronized player fields here...
+
+            // If any relevant data changed, fire the event that PlayerData listens for
+            if (hasChanges) {
+                 console.log("PlayerSync: Firing player:data:update with payload:", updatePayload);
+                 this.app.fire('player:data:update', updatePayload);
+            }
         }
 
         // Update nameplate for local player too

@@ -9,51 +9,77 @@ BoothClaimZone.prototype.initialize = function () {
      // Listen to trigger events on this entity’s collision component
      this.entity.collision.on('triggerenter', this.onTriggerEnter, this);
      this.entity.collision.on('triggerleave', this.onTriggerLeave, this);
+
+     // Listen for booth state updates from BoothSync
+     this.app.on('booth:updated', this.handleBoothUpdate, this);
 };
 
 // In BoothClaimZone.js onTriggerEnter (unchanged, with added logging)
 BoothClaimZone.prototype.onTriggerEnter = function (otherEntity) {
      if (otherEntity.tags && otherEntity.tags.has('player')) {
           console.log('Player entered booth zone: ' + this.boothId);
-          var localPlayer = this.app.localPlayer;
-          if (!localPlayer) return;
+          var localPlayerEntity = this.app.localPlayer; // Get the entity
+          if (!localPlayerEntity || !localPlayerEntity.script || !localPlayerEntity.script.playerData) {
+               console.warn("BoothClaimZone: Local player entity or PlayerData script not found.");
+               return;
+          }
+          const localPlayerData = localPlayerEntity.script.playerData; // Get the PlayerData script instance
 
-          console.log("Local player's walletAddress:", localPlayer.walletAddress, "Booth claimedBy:", this.claimedBy, "Claimed booth ID:", localPlayer.claimBoothId);
-          // If booth is not claimed and local player hasn't claimed one, show claim UI.
-          if (!this.claimedBy && !localPlayer.claimBoothId) {
-               var claimPromptEntity = this.app.root.findByName("HTMLClaimPrompt");
-               if (claimPromptEntity && claimPromptEntity.script && claimPromptEntity.script.claimPromptHtml) {
-                    console.log("Showing claim UI for booth:", this.boothId);
-                    claimPromptEntity.script.claimPromptHtml.registerClaimableBooth(this);
-               }
-          }
-          // If booth is claimed and not by the local player, show donation UI.
-          else if (this.claimedBy && localPlayer.walletAddress && this.claimedBy !== localPlayer.walletAddress) {
-               var donationUI = this.app.root.findByName("HTMLDonationUI");
-               if (donationUI && donationUI.script && donationUI.script.donationPromptHtml) {
-                    console.log("Showing donation UI for booth: " + this.boothId);
-                    donationUI.script.donationPromptHtml.setRecipient(this.claimedBy);
-                    donationUI.script.donationPromptHtml.show();
-               }
-          } else {
-               console.log("Player is the owner of booth: " + this.boothId + "; no donation UI.");
-          }
-     }
+          // Access data via PlayerData script methods/properties
+          const localWalletAddress = localPlayerData.getWalletAddress();
+          const localClaimedBoothId = localPlayerData.getClaimedBoothId();
+
+          console.log(`BoothClaimZone (${this.boothId}): Trigger Enter. Firing booth:entered event.`);
+          // Fire an event for BoothController to handle UI logic
+          this.app.fire('booth:entered', this);
+
+          // --- UI Logic Removed - Moved to BoothController ---
+     } // <-- This closes the 'if (otherEntity.tags...' block
+     // Remove the extra closing brace that was here
 };
 
 BoothClaimZone.prototype.onTriggerLeave = function (otherEntity) {
-     if (otherEntity.tags && otherEntity.tags.has('player')) {
-          // Hide claim UI if active.
-          var claimPromptEntity = this.app.root.findByName("HTMLClaimPrompt");
-          if (claimPromptEntity && claimPromptEntity.script && claimPromptEntity.script.claimPromptHtml) {
-               console.log("Hiding claim UI for booth:", this.boothId);
-               claimPromptEntity.script.claimPromptHtml.unregisterClaimableBooth(this);
-          }
-          // Hide donation UI if active.
-          var donationUI = this.app.root.findByName("HTMLDonationUI");
-          if (donationUI && donationUI.script && donationUI.script.donationPromptHtml) {
-               console.log("Hiding donation UI for booth: " + this.boothId);
-               donationUI.script.donationPromptHtml.hide();
-          }
+     // Only fire event if it's the local player leaving
+     const localPlayerEntity = this.app.localPlayer;
+     if (otherEntity === localPlayerEntity) {
+          console.log(`BoothClaimZone (${this.boothId}): Trigger Leave. Firing booth:left event.`);
+          // Fire an event for BoothController to handle UI logic
+          this.app.fire('booth:left', this);
      }
-};
+     // --- UI Logic Removed - Moved to BoothController ---
+     // if (otherEntity.tags && otherEntity.tags.has('player')) {
+     //      // Hide claim UI if active.
+     //      var claimPromptEntity = this.app.root.findByName("HTMLClaimPrompt");
+     //      if (claimPromptEntity && claimPromptEntity.script && claimPromptEntity.script.claimPromptHtml) {
+     //           // console.log("Hiding claim UI for booth:", this.boothId); // Handled by Controller
+     //           // claimPromptEntity.script.claimPromptHtml.unregisterClaimableBooth(this); // Handled by Controller
+     //      }
+     //      // Hide donation UI if active.
+     //      var donationUI = this.app.root.findByName("HTMLDonationUI");
+     //      if (donationUI && donationUI.script && donationUI.script.donationPromptHtml) {
+     //           // console.log("Hiding donation UI for booth: " + this.boothId); // Handled by Controller
+     //           // donationUI.script.donationPromptHtml.hide(); // Handled by Controller
+     //      }
+     // }
+ };
+
+ // Called when BoothSync fires 'booth:updated'
+ BoothClaimZone.prototype.handleBoothUpdate = function(boothData) {
+     // Check if the update is for this specific booth
+     if (boothData && boothData.boothId === this.boothId) {
+         // Update the claimedBy status
+         const newClaimedBy = boothData.claimedBy || null; // Ensure null if undefined/empty
+         if (this.claimedBy !== newClaimedBy) {
+             console.log(`BoothClaimZone (${this.boothId}): ClaimedBy updated from '${this.claimedBy}' to '${newClaimedBy}'`);
+             this.claimedBy = newClaimedBy;
+             // BoothController will listen for this 'booth:updated' event too
+             // and call its updateBoothPrompts function if the player is currently in this zone.
+         }
+     }
+ };
+
+ // Clean up listeners when the script is destroyed
+ BoothClaimZone.prototype.destroy = function() {
+     this.app.off('booth:updated', this.handleBoothUpdate, this);
+     // Collision listeners are usually handled automatically by the engine if attached to the entity component
+ };

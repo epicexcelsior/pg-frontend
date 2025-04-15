@@ -101,6 +101,10 @@ DonationPromptHtml.prototype.initialize = function () {
                this.donationSlider.value = linearToLog(val);
           });
      }
+
+     // Listen for UI events from BoothController (or UIManager)
+     this.app.on('ui:showDonationPrompt', this.onShowPrompt, this);
+     this.app.on('ui:hideDonationPrompt', this.onHidePrompt, this);
 };
 
 DonationPromptHtml.prototype.setDonationButtonBackgrounds = function () {
@@ -182,4 +186,39 @@ DonationPromptHtml.prototype.hide = function () {
      } catch (err) {
           console.warn("DonationPromptHtml: Unable to re-enable pointer lock automatically:", err);
      }
+};
+
+// === EVENT HANDLERS for UI events ===
+DonationPromptHtml.prototype.onShowPrompt = function (boothScript) {
+    if (!boothScript || !boothScript.claimedBy) {
+        console.error("DonationPromptHtml: Received ui:showDonationPrompt without valid booth script or claimedBy address.");
+        this.hide(); // Ensure it's hidden if data is invalid
+        return;
+    }
+    // Set the recipient based on the booth script context provided by BoothController
+    this.setRecipient(boothScript.claimedBy);
+    console.log("DonationPromptHtml: Received ui:showDonationPrompt for booth ->", boothScript.boothId, "Recipient:", this.recipientAddress);
+    this.show(); // Use existing show method
+};
+
+DonationPromptHtml.prototype.onHidePrompt = function () {
+    // Only hide if it's currently visible (check opacity or a dedicated flag if needed)
+    if (this.donationUIEl.style.opacity > 0) {
+        console.log("DonationPromptHtml: Received ui:hideDonationPrompt.");
+        this.hide(); // Use existing hide method
+        // Optionally clear recipient when hidden
+        // this.recipientAddress = null;
+    }
+};
+
+// Clean up listeners
+DonationPromptHtml.prototype.destroy = function() {
+    this.app.off('ui:showDonationPrompt', this.onShowPrompt, this);
+    this.app.off('ui:hideDonationPrompt', this.onHidePrompt, this);
+
+    // Remove event listeners from buttons etc. if necessary (though often handled by element removal)
+    // Remove HTML element if needed
+    if (this.container && this.container.parentNode) {
+        this.container.parentNode.removeChild(this.container);
+    }
 };

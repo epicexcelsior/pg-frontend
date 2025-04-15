@@ -13,6 +13,7 @@ PlayerData.prototype.initialize = function() {
     // Listen for updates from AuthService or Network sync events
     this.app.on('player:data:update', this.updateData, this);
     this.app.on('auth:stateChanged', this.handleAuthStateChange, this); // Listen for auth changes too
+    this.app.on('booth:claimSuccess', this.handleBoothClaimSuccess, this); // Listen for successful claims
 
     // Initial population if auth service is already connected when this initializes
     const authService = this.app.services?.get('authService');
@@ -49,6 +50,25 @@ PlayerData.prototype.updateData = function(data) {
     if (changed) {
         // Fire an event if data actually changed, so other components can react
         this.app.fire('player:data:changed', this);
+    }
+};
+
+PlayerData.prototype.handleBoothClaimSuccess = function(data) {
+    // data likely contains { boothId: string, claimedBy: string } from the server via MessageBroker
+    console.log("PlayerData: Received booth:claimSuccess event:", data);
+    // Use 'claimedBy' to match the property name sent by the server/MessageBroker
+    if (data && data.claimedBy && data.boothId) {
+        // Check if the claimer is the local player using the correct property name
+        if (this.walletAddress && data.claimedBy === this.walletAddress) {
+            console.log(`PlayerData: Local player (${this.walletAddress}) claimed booth ${data.boothId}. Updating claimedBoothId via claimSuccess event.`);
+            this.updateData({ claimedBoothId: data.boothId });
+        } else if (this.walletAddress) {
+             console.log(`PlayerData: Booth ${data.boothId} claimed by another player (${data.claimedBy}), not local player (${this.walletAddress}). No local update needed from claimSuccess event.`);
+        } else {
+             console.log(`PlayerData: Booth ${data.boothId} claimed by ${data.claimedBy}, but local player address is not set yet. No local update needed from claimSuccess event.`);
+        }
+    } else {
+        console.warn("PlayerData: Received booth:claimSuccess event with missing data:", data);
     }
 };
 

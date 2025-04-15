@@ -43,15 +43,14 @@ DonationService.prototype.initialize = function () {
 
 DonationService.prototype.loadConfigValues = function() {
     this.config = this.configLoader.config;
-    console.log("DonationService: Config loaded:", this.config);
     if (!this.config) return; // Guard against race conditions
 
     this.workerProcessUrl = this.configLoader.get('cloudflareWorkerDonationEndpoint');
-    this.feeRecipient = this.configLoader.get('donationRecipientAddress'); // Assuming config holds the *fee* recipient
+    this.feeRecipient = this.configLoader.get('donationFeeRecipientAddress'); // Assuming config holds the *fee* recipient
     const feePercent = this.configLoader.get('donationFeePercentage'); // Assuming config name
 
     if (!this.workerProcessUrl) console.error("DonationService: cloudflareWorkerDonationEndpoint missing from config.");
-    if (!this.feeRecipient) console.error("DonationService: donationRecipientAddress (for fees) missing from config.");
+    if (!this.feeRecipient) console.error("DonationService: donationFeeRecipientAddress (for fees) missing from config.");
     if (typeof feePercent !== 'number') {
         console.error("DonationService: donationFeePercentage missing or invalid in config. Defaulting to 0.");
         this.feePercentage = 0;
