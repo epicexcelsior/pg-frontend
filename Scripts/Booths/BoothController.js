@@ -39,7 +39,7 @@ BoothController.prototype.initialize = function() {
 };
 
 BoothController.prototype.onEnterZone = function(boothZoneScript) {
-    console.log(`BoothController: Entered zone for booth ${boothZoneScript.boothId}`);
+    console.log('BoothController: onEnterZone called for booth ' + boothZoneScript.boothId); // Added logging
     this.currentZoneScript = boothZoneScript;
     this.decideAndShowPrompt();
 };
@@ -76,15 +76,15 @@ BoothController.prototype.onAuthStateChanged = function(authStateData) {
         console.log("BoothController: Auth state changed while player in zone. Re-evaluating prompt.");
         this.decideAndShowPrompt();
     }
- };
+};
 
- BoothController.prototype.onLocalPlayerDataChanged = function(playerDataScript) {
-     // Check if the player is currently in a zone when their data changes
-     if (this.currentZoneScript) {
-         console.log("BoothController: Local player data changed while in zone. Re-evaluating prompt.");
-         this.decideAndShowPrompt();
-     }
- };
+BoothController.prototype.onLocalPlayerDataChanged = function(playerDataScript) {
+    // Check if the player is currently in a zone when their data changes
+    if (this.currentZoneScript) {
+        console.log("BoothController: Local player data changed while in zone. Re-evaluating prompt.");
+        this.decideAndShowPrompt();
+    }
+};
 
 
 BoothController.prototype.decideAndShowPrompt = function() {

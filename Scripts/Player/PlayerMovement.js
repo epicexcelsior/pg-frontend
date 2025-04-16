@@ -1,25 +1,6 @@
 ///<reference path="c:\Users\Epic\.vscode-insiders\extensions\playcanvas.playcanvas-0.2.1\node_modules\playcanvas\build\playcanvas.d.ts" />;
 var PlayerMovement = pc.createScript('playerMovement');
 
-PlayerMovement.prototype.initialize = function() {
-    this.playerMovementEnabled = true;
-
-    this.app.on('ui:chat:focus', this.disableMovement, this);
-    this.app.on('ui:chat:blur', this.enableMovement, this);
-};
-
-PlayerMovement.prototype.disableMovement = function() {
-    this.playerMovementEnabled = false;
-};
-
-PlayerMovement.prototype.enableMovement = function() {
-    this.playerMovementEnabled = true;
-PlayerMovement.prototype.update = function(dt) {
-    if (!this.playerMovementEnabled) return;
-
-    // Existing movement code here
-};
-};
 PlayerMovement.attributes.add('speed', { type: 'number', default: 0.09 });
 PlayerMovement.attributes.add('joystickId', { type: 'string', default: 'joystick0' }); // Joystick ID for movement
 PlayerMovement.attributes.add('interactButtonId', { type: 'string', default: 'interactButton' }); // Button ID for interact (E key)
@@ -58,13 +39,28 @@ PlayerMovement.prototype.initialize = function () {
     } else if (!this.isMobile && this.movementJoystickEntity) {
         this.movementJoystickEntity.enabled = false;
     }
+
+    // --- ADDED: Initialize movement state and listeners ---
+    this.playerMovementEnabled = true;
+    this.app.on('ui:chat:focus', this.disableMovement, this);
+    this.app.on('ui:chat:blur', this.enableMovement, this);
+    // --- END ADDED ---
+};
+
+PlayerMovement.prototype.disableMovement = function() {
+    this.playerMovementEnabled = false;
+};
+
+PlayerMovement.prototype.enableMovement = function() {
+    this.playerMovementEnabled = true;
 };
 
 PlayerMovement.worldDirection = new pc.Vec3();
 PlayerMovement.tempDirection = new pc.Vec3();
 
 PlayerMovement.prototype.update = function (dt) {
-    if (window.isChatActive) return;
+    if (window.isChatActive || !this.playerMovementEnabled) return;
+
     if (this.entity.name !== "LocalPlayer") return;
 
     var app = this.app;

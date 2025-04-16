@@ -39,7 +39,35 @@ HtmlChat.prototype.initialize = function() {
 
     // Add listener for '/' key to focus input
     document.addEventListener('keydown', this.onDocumentKeyDown.bind(this));
+
+    // Listen for scene changes to toggle visibility
+    this.app.systems.script.on('postInitialize', this._onScenePostInitialize, this);
+
+    // Initial visibility check
+    this._checkSceneVisibility();
 };
+
+// --- Scene Visibility Logic ---
+HtmlChat.prototype._onScenePostInitialize = function() {
+    this._checkSceneVisibility();
+};
+
+HtmlChat.prototype._checkSceneVisibility = function() {
+    if (!this.div) return; // Ensure HTML is injected
+
+    const currentSceneName = this.app.scene.name;
+    console.log(`HtmlChat: Checking visibility for scene: ${currentSceneName}`);
+
+    // Hide chat in the Login scene, show otherwise
+    if (currentSceneName === 'Login') { // <<<--- ADJUST 'Login' if your scene name is different
+        console.log("HtmlChat: Hiding chat UI in Login scene.");
+        this.div.style.display = 'none';
+    } else {
+        console.log("HtmlChat: Showing chat UI.");
+        this.div.style.display = 'block'; // Or 'flex', 'grid', etc., depending on your CSS
+    }
+};
+// --- End Scene Visibility Logic ---
 
 HtmlChat.prototype.injectHtml = function(htmlResource) {
     if (this.div) return; // Already injected
@@ -104,6 +132,17 @@ HtmlChat.prototype.sendMessage = function() {
     }
 };
 
+// --- Helper function for basic HTML escaping ---
+HtmlChat.prototype._htmlEscape = function(str) {
+    if (!str) return '';
+    return str.replace(/&/g, '&amp;')
+              .replace(/</g, '&lt;')
+              .replace(/>/g, '&gt;')
+              .replace(/"/g, '&quot;')
+              .replace(/'/g, '&#039;');
+};
+// --- End Helper ---
+
 HtmlChat.prototype.addMessage = function(messageData) {
     // messageData expected: { type: 'user'/'system', sender?: string, content: string }
     if (!this.messageList) return;
@@ -113,9 +152,11 @@ HtmlChat.prototype.addMessage = function(messageData) {
 
     let formattedMessage = '';
     if (messageData.type === 'user' && messageData.sender) {
-        formattedMessage = `<strong>${pc.string.htmlEscape(messageData.sender)}:</strong> ${pc.string.htmlEscape(messageData.content)}`;
+        // Use the local _htmlEscape function
+        formattedMessage = `<strong>${this._htmlEscape(messageData.sender)}:</strong> ${this._htmlEscape(messageData.content)}`;
     } else { // System message
-        formattedMessage = `<em>${pc.string.htmlEscape(messageData.content)}</em>`;
+        // Use the local _htmlEscape function
+        formattedMessage = `<em>${this._htmlEscape(messageData.content)}</em>`;
     }
     messageElement.innerHTML = formattedMessage;
 
@@ -143,3 +184,24 @@ HtmlChat.prototype.clearMessages = function() {
 
 // swap method called for script hot-reloading
 // HtmlChat.prototype.swap = function(old) { };
+
+HtmlChat.prototype.destroy = function() {
+    // Clean up event listeners
+    this.app.off('chat:displayMessage', this.addMessage, this);
+    this.app.off('chat:clear', this.clearMessages, this);
+    this.app.systems.script.off('postInitialize', this._onScenePostInitialize, this);
+    document.removeEventListener('keydown', this.onDocumentKeyDown.bind(this)); // Ensure correct binding removal if needed
+
+    // Remove DOM elements
+    if (this.div && this.div.parentNode) {
+        this.div.parentNode.removeChild(this.div);
+    }
+    this.div = null;
+    this.chatContainer = null;
+    this.messageList = null;
+    this.messageInput = null;
+    this.sendButton = null; // Add cleanup for button listener if attached directly without bind
+
+    // Remove CSS (optional, might be shared)
+    // Find the style tag and remove it if necessary
+};

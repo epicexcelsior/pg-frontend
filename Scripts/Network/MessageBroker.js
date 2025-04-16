@@ -63,7 +63,9 @@ MessageBroker.prototype.setupRoomMessageListeners = function() {
         // Expected data: { senderName: string, content: string } or similar
         console.log(`[MessageBroker] Received chatMessage:`, data);
         // Fire event for ChatController/HtmlChat to display
-        this.app.fire('chat:newMessage', { type: 'user', sender: data.senderName, content: data.content });
+        // Ensure data and data.sender exist before accessing username
+        const senderName = data?.sender?.username || 'Unknown';
+        this.app.fire('chat:newMessage', { type: 'user', sender: senderName, content: data.content });
     });
 
     // Add listeners for any other custom messages here...
@@ -83,7 +85,7 @@ MessageBroker.prototype.setupAppEventListeners = function() {
     this.app.on('booth:claimRequest', this.sendClaimBoothRequest, this);
 
     // --- Chat ---
-    this.app.on('chat:send', this.sendChatMessage, this);
+    this.app.on('network:send:chatMessage', this.sendChatMessage, this); // Match ChatController event
 
     // Add listeners for any other outgoing message requests...
     // e.g., this.app.on('interaction:request', this.sendInteraction, this);
@@ -132,12 +134,15 @@ MessageBroker.prototype.sendClaimBoothRequest = function(boothId) {
     }
 };
 
-MessageBroker.prototype.sendChatMessage = function(messageContent) {
-    if (this.room && messageContent) {
-        console.log("MessageBroker: Sending chatMessage:", messageContent);
-        this.room.send("chatMessage", { content: messageContent });
+MessageBroker.prototype.sendChatMessage = function(messageData) {
+    // messageData is expected to be { content: "string" } from ChatController
+    const actualContent = messageData?.content; // Extract the actual string
+    if (this.room && actualContent) {
+        console.log("MessageBroker: Sending chatMessage:", actualContent);
+        // Send only the actual string content under the 'content' key
+        this.room.send("chatMessage", { content: actualContent });
     } else {
-         console.warn("MessageBroker: Cannot send chatMessage. Not connected or message empty.");
+         console.warn("MessageBroker: Cannot send chatMessage. Not connected or message empty/invalid.", messageData);
     }
 };
 
