@@ -1,4 +1,4 @@
-///<reference path="c:\Users\Epic\.vscode-insiders\extensions\playcanvas.playcanvas-0.2.1\node_modules\playcanvas\build\playcanvas.d.ts" />;
+///<reference path="c:\Users\Epic\.vscode-insiders\extensions\playcanvas.playcanvas-0.2.1\node_modules\playcanvas\build\playcanvas.d.ts"
 var BoothClaimZone = pc.createScript('boothClaimZone');
 
 BoothClaimZone.prototype.initialize = function () {

@@ -90,7 +90,7 @@ ClaimPromptHtml.prototype.show = function () {
           y: 0,
           opacity: 1,
           pointerEvents: 'auto',
-          ease: this._animSettings('easeIn')
+          ease: this._animSettings('expo.in')
      });
 };
 
@@ -100,7 +100,7 @@ ClaimPromptHtml.prototype.hide = function () {
           y: 50,
           opacity: 0,
           pointerEvents: 'none',
-          ease: this._animSettings('easeOut')
+          ease: this._animSettings('expo.out')
      });
 };
 

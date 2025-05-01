@@ -56,9 +56,13 @@ DonationPromptHtml.prototype.initialize = function () {
                var donationAmount = parseFloat(btn.getAttribute('data-amount'));
                if (isNaN(donationAmount)) return;
                if (!this.recipientAddress) return;
-               var donationManagerEntity = this.app.root.findByName("DonationManager");
-               if (donationManagerEntity && donationManagerEntity.script && donationManagerEntity.script.donationManager) {
-                    donationManagerEntity.script.donationManager.initiateDonation(donationAmount, this.recipientAddress);
+               // Retrieve directly from the service registry
+               const donationService = this.app.services?.get('donationService');
+               if (donationService) {
+                    console.log("HtmlDonationPrompt: Found donationService via registry. Calling initiateDonation...");
+                    donationService.initiateDonation(donationAmount, this.recipientAddress);
+               } else {
+                    console.error("HtmlDonationPrompt: Could not find donationService in app.services registry.");
                }
           });
      });
@@ -73,9 +77,13 @@ DonationPromptHtml.prototype.initialize = function () {
                var donationAmount = donationNumberInput ? parseFloat(donationNumberInput.value) : NaN;
                if (isNaN(donationAmount)) return;
                if (!this.recipientAddress) return;
-               var donationManagerEntity = this.app.root.findByName("DonationManager");
-               if (donationManagerEntity && donationManagerEntity.script && donationManagerEntity.script.donationManager) {
-                    donationManagerEntity.script.donationManager.initiateDonation(donationAmount, this.recipientAddress);
+               // Retrieve directly from the service registry
+               const donationService = this.app.services?.get('donationService');
+               if (donationService) {
+                    console.log("HtmlDonationPrompt: Found donationService via registry. Calling initiateDonation...");
+                    donationService.initiateDonation(donationAmount, this.recipientAddress);
+               } else {
+                    console.error("HtmlDonationPrompt: Could not find donationService in app.services registry.");
                }
           });
      }

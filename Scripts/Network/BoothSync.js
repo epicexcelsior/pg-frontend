@@ -70,6 +70,7 @@ BoothSync.prototype.handleBoothUpdate = function(boothState, boothId, isInitialA
     const boothData = {
         boothId: boothId,
         claimedBy: boothState.claimedBy,
+        claimedByUsername: boothState.claimedByUsername, // Include username
         // Add any other relevant booth properties from the state here
         // e.g., boothName: boothState.boothName,
     };

@@ -1,4 +1,4 @@
-///<reference path="c:\Users\Epic\.vscode-insiders\extensions\playcanvas.playcanvas-0.2.1\node_modules\playcanvas\build\playcanvas.d.ts" />;
+///<reference path="c:\Users\Epic\.vscode-insiders\extensions\playcanvas.playcanvas-0.2.1\node_modules\playcanvas\build\playcanvas.d.ts"
 var HtmlLoginManager = pc.createScript('htmlLoginManager');
 
 HtmlLoginManager.attributes.add('cssAsset', { type: 'asset', assetType: 'css', title: 'Login UI CSS' });

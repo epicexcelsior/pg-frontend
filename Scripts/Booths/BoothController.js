@@ -55,12 +55,50 @@ BoothController.prototype.onLeaveZone = function(boothZoneScript) {
 };
 
 BoothController.prototype.onBoothUpdated = function(boothData) {
-    // If the update is for the booth the player is currently in, re-evaluate the prompt
-    if (this.currentZoneScript && this.currentZoneScript.boothId === boothData.boothId) {
-        console.log(`BoothController: Booth ${boothData.boothId} updated while player inside. Re-evaluating prompt.`);
-        // Update the zone script's internal state (redundant if NetworkManager already does this, but safe)
-        this.currentZoneScript.claimedBy = boothData.claimedBy;
-        this.decideAndShowPrompt();
+    console.log(`BoothController: Received booth:updated for booth ${boothData.boothId}. Claimed by: ${boothData.claimedBy || 'None'}, Username: ${boothData.claimedByUsername || 'None'}`);
+
+    // Find the corresponding booth entity in the scene
+    const boothEntity = this.app.root.findByName(boothData.boothId);
+
+    if (boothEntity) {
+        // Update the zone script's internal state if the player is currently in this zone
+        if (this.currentZoneScript && this.currentZoneScript.boothId === boothData.boothId) {
+             this.currentZoneScript.claimedBy = boothData.claimedBy;
+             // Re-evaluate prompt if the player is in this zone
+             console.log(`BoothController: Booth ${boothData.boothId} updated while player inside. Re-evaluating prompt.`);
+             this.decideAndShowPrompt();
+        }
+
+        // Find the text elements and update their text based on claim status
+        const screenEntity = boothEntity.findByName('3D Screen');
+        if (screenEntity) {
+            const upperTxtEntity = screenEntity.findByName('UpperTxt');
+            const usernameTxtEntity = screenEntity.findByName('UsernameTxt');
+
+            if (upperTxtEntity && upperTxtEntity.element && usernameTxtEntity && usernameTxtEntity.element) {
+                const isClaimed = !!boothData.claimedBy; // Check if claimedBy is not null or empty string
+
+                if (isClaimed) {
+                    // Booth is claimed
+                    const usernameToDisplay = boothData.claimedByUsername || ""; // Use username or empty string
+                    console.log(`BoothController: Booth ${boothData.boothId} claimed by ${usernameToDisplay}. Updating text.`);
+                    upperTxtEntity.element.text = "Give to";
+                    usernameTxtEntity.element.text = usernameToDisplay;
+                } else {
+                    // Booth is unclaimed
+                    console.log(`BoothController: Booth ${boothData.boothId} is unclaimed. Updating text.`);
+                    upperTxtEntity.element.text = "CLAIM";
+                    usernameTxtEntity.element.text = "ME!";
+                }
+            } else {
+                console.warn(`BoothController: UpperTxt or UsernameTxt element not found on booth ${boothData.boothId}`);
+            }
+        } else {
+            console.warn(`BoothController: '2D Screen' entity not found on booth ${boothData.boothId}`);
+        }
+
+    } else {
+        console.warn(`BoothController: Booth entity with name ${boothData.boothId} not found in scene.`);
     }
 };
 
