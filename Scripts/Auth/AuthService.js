@@ -9,6 +9,7 @@ const AuthState = {
     SIGNING_SIWS: 'signing_siws',
     VERIFYING_SIWS: 'verifying_siws',
     CONNECTED: 'connected',
+    SESSION_EXPIRED: 'session_expired', // Added state
     ERROR: 'error'
 };
 
@@ -19,26 +20,45 @@ AuthService.prototype.initialize = function () {
     this.refreshToken = null;
     this.walletAddress = null;
     this.lastError = null;
+    this.feedbackService = null; // Property to hold the feedback service instance
 
-    // Register with the Services registry if it exists
-    // This assumes AuthService is attached to the same entity as Services.js
-    if (this.app.services && typeof this.app.services.register === 'function') {
-        this.app.services.register('authService', this);
-    } else {
-        console.warn("AuthService: Services registry (app.services) not found or register function missing during initialization.");
-        // Attempt registration later if services initializes after auth
-        this.app.once('services:initialized', () => {
-            if (this.app.services && typeof this.app.services.register === 'function') {
-                 console.log("AuthService: Registering with late-initialized Services registry.");
-                 this.app.services.register('authService', this);
+    // Function to get services after app.services is ready
+    const getServices = () => {
+        if (this.app.services) {
+            this.feedbackService = this.app.services.get('feedbackService'); // Correct service name
+            if (!this.feedbackService) {
+                console.warn("AuthService: FeedbackService not found in app.services registry.");
             } else {
-                 console.error("AuthService: Failed to register with Services registry even after initialization event.");
+                 console.log("AuthService: FeedbackService found in app.services registry.");
             }
-        });
-    }
+
+            // Register AuthService itself
+            if (typeof this.app.services.register === 'function') {
+                 this.app.services.register('authService', this);
+                 console.log("AuthService: Registered with Services registry.");
+            } else {
+                 console.error("AuthService: Services registry found, but register function missing.");
+            }
+
+        } else {
+            console.warn("AuthService: Services registry (app.services) not found during initialization.");
+        }
+    };
+
+
+    // Attempt to get services immediately
+    getServices();
+
+    // Also listen for services initialization in case it happens later
+    this.app.once('services:initialized', getServices);
+
 
     // Listen for logout requests
     this.app.on('auth:logout:request', this.logout, this);
+
+    // Listen for wallet adapter events (if SolanaSDK is available)
+    this.setupWalletEventListeners();
+
 
     console.log("AuthService initialized. Current state:", this.state);
 };
@@ -52,10 +72,18 @@ AuthService.prototype.setState = function(newState, error = null) {
 
     // --- Feedback Service Integration ---
     // Hide any persistent prompts/loading states before showing new feedback
-    if (feedbackService) {
-        feedbackService.hideBlockingPrompt();
+    if (this.feedbackService) { // Use this.feedbackService
+        // Hide any persistent prompts/loading states before showing new feedback,
+        // UNLESS the new state is an ERROR state specifically handled by a modal.
+        const errorLower = error?.message?.toLowerCase() || '';
+        const isWalletNotReadyError = errorLower === 'solana wallet not ready.';
+        const isWalletNotInstalledError = errorLower.includes('solana sdk or wallet not initialized');
+
+        if (!(newState === AuthState.ERROR && (isWalletNotReadyError || isWalletNotInstalledError))) {
+            this.feedbackService.hideBlockingPrompt(); // Use this.feedbackService
+        }
         // Consider adding a reference to the button that triggered the flow
-        // feedbackService.hideInlineLoading('connectButtonSelector'); // Example
+        // this.feedbackService.hideInlineLoading('connectButtonSelector'); // Example
     } else {
         console.warn("FeedbackService not available in AuthService.setState");
     }
@@ -79,7 +107,7 @@ AuthService.prototype.setState = function(newState, error = null) {
             // Feedback handled in connectWalletFlow step 4
             break;
         case AuthState.CONNECTED:
-            if (feedbackService) feedbackService.showSuccess("Successfully signed in!");
+            if (this.feedbackService) this.feedbackService.showSuccess("Successfully signed in!"); // Use this.feedbackService
             this.app.fire('auth:connected', { address: this.walletAddress, sessionToken: this.sessionToken });
             break;
         case AuthState.DISCONNECTED:
@@ -87,10 +115,83 @@ AuthService.prototype.setState = function(newState, error = null) {
             // We'll add feedback in the logout function for clarity.
             this.app.fire('auth:disconnected');
             break;
+        case AuthState.SESSION_EXPIRED:
+             console.warn("AuthService: Session expired.");
+             if (this.feedbackService) {
+                 this.feedbackService.showBlockingPrompt( // Use modal for required action
+                     "Session Expired",
+                     "Your session has expired. Please sign in again to continue.",
+                     [{ label: 'Sign In', callback: () => this.connectWalletFlow(), type: 'primary' }] // Assuming connectWalletFlow handles re-auth
+                 );
+             }
+             this.app.fire('auth:sessionExpired');
+             break;
         case AuthState.ERROR:
             console.error("AuthService Error:", this.lastError);
-            if (feedbackService) feedbackService.showError("Authentication Error", this.lastError);
-            this.app.fire('auth:error', { message: this.lastError });
+            // Check if this is a specific error we're already showing a modal for
+            const errorLower = this.lastError?.toLowerCase() || '';
+            const isWalletNotReady = errorLower === 'solana wallet not ready.';
+            const isWalletNotInstalled = errorLower.includes('solana sdk or wallet not initialized');
+            
+            // Only show toast for errors that aren't already showing a modal
+            if (!isWalletNotReady && !isWalletNotInstalled) {
+                // Provide more specific feedback based on the error context
+                let userFriendlyError = "An unexpected authentication error occurred.";
+                if (this.lastError) {
+                     if (errorLower.includes('wallet connection cancelled')) {
+                        userFriendlyError = "Wallet connection cancelled.";
+                        if (this.feedbackService) {
+                            this.feedbackService.showInfo("Wallet connection cancelled.", 5000); // Use showInfo for user cancellation
+                        }
+                     } else if (errorLower.includes('wallet connection failed')) {
+                        userFriendlyError = "Could not connect to the wallet. Please ensure it's unlocked and try again.";
+                        if (this.feedbackService) {
+                            this.feedbackService.showError("Authentication Error", userFriendlyError, true);
+                        }
+                     } else if (errorLower.includes('sign-in prep failed')) {
+                        userFriendlyError = "Could not prepare sign-in. The server might be unavailable.";
+                        if (this.feedbackService) {
+                            this.feedbackService.showError("Authentication Error", userFriendlyError, true);
+                        }
+                     } else if (errorLower.includes('sign-in cancelled')) {
+                        userFriendlyError = "Sign-in cancelled."; // More concise message
+                         if (this.feedbackService) {
+                            this.feedbackService.showInfo("Sign-in cancelled.", 5000); // Use showInfo for user cancellation
+                        }
+                     } else if (errorLower.includes('failed to sign message')) {
+                        userFriendlyError = "Failed to sign the message in the wallet.";
+                        if (this.feedbackService) {
+                            this.feedbackService.showError("Authentication Error", userFriendlyError, true);
+                        }
+                     } else if (errorLower.includes('verification failed')) {
+                        // Extract detail if possible, otherwise generic
+                        const detailMatch = this.lastError.match(/Verification failed: (.*)/);
+                        userFriendlyError = detailMatch ? `Sign-in verification failed: ${detailMatch[1]}` : "Sign-in verification failed.";
+                        if (this.feedbackService) {
+                            this.feedbackService.showError("Authentication Error", userFriendlyError, true);
+                        }
+                     } else if (errorLower.includes('verification issue')) {
+                         userFriendlyError = "Sign-in verification succeeded, but couldn't establish a session.";
+                         if (this.feedbackService) {
+                            this.feedbackService.showError("Authentication Error", userFriendlyError, true);
+                        }
+                     } else {
+                         // Generic error handling for other cases
+                         userFriendlyError = "An unexpected authentication error occurred.";
+                         if (this.feedbackService) {
+                            this.feedbackService.showError("Authentication Error", userFriendlyError, true);
+                        }
+                     }
+                } else {
+                    // Fallback for when this.lastError is null or empty, but state is ERROR
+                     userFriendlyError = "An unexpected authentication error occurred.";
+                     if (this.feedbackService) {
+                        this.feedbackService.showError("Authentication Error", userFriendlyError, true);
+                    }
+                }
+            }
+            // Always fire the error event regardless of UI feedback
+            this.app.fire('auth:error', { message: this.lastError, userMessage: userFriendlyError }); // Use userFriendlyError for the userMessage in the event
             break;
     }
 
@@ -110,49 +211,81 @@ AuthService.prototype.connectWalletFlow = async function () {
     // Ensure config is loaded and endpoint is available
     if (!this.app.config || !this.app.config.get('cloudflareWorkerAuthEndpoint')) {
         const errorMsg = "Configuration not loaded or cloudflareWorkerAuthEndpoint missing.";
-        if (feedbackService) feedbackService.showError("Configuration Error", errorMsg);
+        if (this.feedbackService) this.feedbackService.showError("Configuration Error", errorMsg); // Use this.feedbackService
         this.setState(AuthState.ERROR, new Error(errorMsg));
         return; // Stop flow
     }
     const baseAuthUrl = this.app.config.get('cloudflareWorkerAuthEndpoint');
 
     // --- Start Flow Feedback ---
-    // Example: Assuming a button with id 'connect-wallet-button' triggered this
-    const connectButtonSelector = '#connect-wallet-button'; // Replace with actual selector or pass element ref
-    if (feedbackService) feedbackService.showInlineLoading(connectButtonSelector, 'Connecting...');
+    // No specific inline loading on a button, as flow is triggered by other actions.
+    // General feedback (toasts, modals) will be used.
 
 
     try {
         // --- Step 1: Connect wallet ---
         this.setState(AuthState.CONNECTING_WALLET); // State update first
+        // Initial feedback for connecting
+        if (this.feedbackService) this.feedbackService.showInfo("Connecting wallet...");
         try {
             if (!window.SolanaSDK || !window.SolanaSDK.wallet) {
                  // Check for wallet extension existence
-                if (feedbackService) feedbackService.showError("Please install a Solana wallet extension (e.g., Phantom).");
+                if (this.feedbackService) {
+                    this.feedbackService.showBlockingPrompt(
+                        "Do you have a Solana wallet?",
+                        "Please install the Phantom wallet browser extension. More wallets will be supported in the future.",
+                        [
+                            { label: 'Install Phantom', callback: () => window.open('https://phantom.app/', '_blank'), style: { backgroundColor: '#aa9fec', color: 'white' } },
+                            { label: 'OK', callback: () => {}, type: 'secondary' }
+                        ]
+                    );
+                }
                 throw new Error("Solana SDK or wallet not initialized.");
             }
             if (!window.SolanaSDK.wallet.connected) {
                 console.log("AuthService: Wallet not connected, attempting connection...");
-                // No specific message here, covered by 'Connecting...'
                 await window.SolanaSDK.wallet.connect();
             } else {
                 console.log("AuthService: Wallet already connected.");
+                console.log("AuthService: Wallet already connected.");
+                if (this.feedbackService) this.feedbackService.showInfo("Wallet already connected.", 3000); // Inform user
             }
         } catch (err) {
             console.error("AuthService: Wallet connection failed:", err);
-            let userMessage = "Wallet connection failed.";
-            if (err.message?.toLowerCase().includes('user rejected')) {
-                userMessage = "Wallet connection cancelled.";
+            let errorForState = err; // Default to original error
+
+            // Check for specific WalletNotReadyError
+            if (err.name === 'WalletNotReadyError') {
+                 console.warn("AuthService: WalletNotReadyError caught. Showing specific prompt.");
+                 if (this.feedbackService) {
+                     this.feedbackService.showBlockingPrompt(
+                         "Do you have a Solana wallet?",
+                         "Your Solana wallet is not ready. Please unlock or initialize it in your browser extension. More wallets will be supported in the future.",
+                         [
+                             { label: 'Install Phantom', callback: () => window.open('https://phantom.app/', '_blank'), style: { backgroundColor: '#aa9fec', color: 'white' } },
+                             { label: 'OK', callback: () => {}, type: 'secondary' }
+                         ]
+                     );
+                 }
+                 // Set a specific error message that won't trigger the generic toast in setState
+                 errorForState = new Error("Solana wallet not ready.");
+                 // We don't re-throw here, as the modal is the primary feedback
+                 this.setState(AuthState.ERROR, errorForState);
+                 return null; // Stop the flow
+            } else if (err.message?.toLowerCase().includes('user rejected')) {
+                errorForState = new Error("Wallet connection cancelled."); // More specific error for setState
             } else if (err.message?.toLowerCase().includes('not initialized')) {
-                 userMessage = "Please install a Solana wallet extension (e.g., Phantom).";
+                 errorForState = new Error("Solana SDK or wallet not initialized."); // More specific error for setState
+            } else {
+                 errorForState = new Error(`Wallet connection failed: ${err.message}`);
             }
-            if (feedbackService) feedbackService.showError(userMessage, err.message);
-            throw err; // Re-throw to be caught by outer try-catch and set ERROR state
+            // Feedback is now handled by the ERROR state in setState for other errors
+            throw errorForState; // Re-throw other errors to be caught by outer try-catch and set ERROR state
         }
 
         const publicKey = window.SolanaSDK.wallet.publicKey;
         if (!publicKey) {
-            if (feedbackService) feedbackService.showError("Wallet connection issue", "Connected but public key is unavailable.");
+            if (this.feedbackService) this.feedbackService.showError("Wallet connection issue", "Connected but public key is unavailable."); // Use this.feedbackService
             throw new Error("Wallet connected but public key is still unavailable.");
         }
         const currentWalletAddress = publicKey.toBase58();
@@ -160,7 +293,7 @@ AuthService.prototype.connectWalletFlow = async function () {
         // Wallet is connected, move to SIWS
 
         // --- Step 2: Fetch SIWS input from server ---
-        if (feedbackService) feedbackService.showInlineLoading(connectButtonSelector, 'Preparing sign-in...'); // Update inline message
+        if (this.feedbackService) this.feedbackService.showInfo('Preparing sign-in...'); // Update info message
         this.setState(AuthState.FETCHING_SIWS);
         let initialSiwsInput;
         const siwsInputUrl = `${baseAuthUrl}/request_siws_input`;
@@ -177,15 +310,15 @@ AuthService.prototype.connectWalletFlow = async function () {
             }
         } catch (err) {
             console.error("AuthService: Error fetching SIWS input:", err);
-            if (feedbackService) feedbackService.showError("Sign-in Prep Failed", `Could not get sign-in details from server: ${err.message}`);
-            throw err;
+            const errorForState = new Error(`Sign-in Prep Failed: ${err.message}`);
+            // Feedback handled by ERROR state in setState
+            throw errorForState;
         }
 
         // --- Step 3: Have the wallet sign the SIWS input ---
-        // Hide inline loading, show modal prompt
-        if (feedbackService) {
-             feedbackService.hideInlineLoading(connectButtonSelector);
-             feedbackService.showBlockingPrompt("Wallet Signature Required", "Please sign the message in your wallet to continue.");
+        // Show modal prompt
+        if (this.feedbackService) { // Use this.feedbackService
+             this.feedbackService.showBlockingPrompt("Wallet Signature Required", "Please sign the message in your wallet to continue."); // Use this.feedbackService
         }
         this.setState(AuthState.SIGNING_SIWS);
         let signInResult;
@@ -201,17 +334,23 @@ AuthService.prototype.connectWalletFlow = async function () {
             console.log("AuthService: SIWS Sign Result:", signInResult);
         } catch (err) {
             console.error("AuthService: Error during SIWS signIn:", err);
+            let errorForState = err;
             const userCancelled = err.message?.toLowerCase().includes('cancelled') || err.message?.toLowerCase().includes('rejected');
-            if (feedbackService) feedbackService.showError(userCancelled ? "Sign-in cancelled." : "Failed to sign message.", err.message);
+            if (userCancelled) {
+                 errorForState = new Error("Sign-in cancelled.");
+            } else {
+                 errorForState = new Error(`Failed to sign message: ${err.message}`);
+            }
             // Modal is hidden by setState -> ERROR transition
-            throw err;
+            // Feedback handled by ERROR state in setState
+            throw errorForState;
         }
 
         // --- Step 4: Verify SIWS with Cloudflare Worker ---
-        // Hide modal, show inline loading again
-        if (feedbackService) {
-            feedbackService.hideBlockingPrompt();
-            feedbackService.showInlineLoading(connectButtonSelector, 'Verifying...');
+        // Hide modal, show info message again
+        if (this.feedbackService) { // Use this.feedbackService
+            this.feedbackService.hideBlockingPrompt(); // Use this.feedbackService
+            this.feedbackService.showInfo('Verifying sign-in...'); // Use this.feedbackService
         }
         this.setState(AuthState.VERIFYING_SIWS);
         let sessionToken, refreshToken;
@@ -222,7 +361,7 @@ AuthService.prototype.connectWalletFlow = async function () {
             const verifyResponse = await fetch(verifyUrl, {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify(verifyPayload)
+            body: JSON.stringify(verifyPayload)
             });
 
             if (!verifyResponse.ok) {
@@ -233,17 +372,17 @@ AuthService.prototype.connectWalletFlow = async function () {
                     serverErrorDetail = errorData.error || serverErrorDetail;
                     errorMsg = `Verification failed: ${serverErrorDetail}`;
                 } catch (parseError) { /* Ignore parsing error */ }
-                if (feedbackService) feedbackService.showError("Verification Failed", serverErrorDetail);
-                throw new Error(errorMsg); // Throw the detailed message
+                // Feedback handled by ERROR state in setState
+                throw new Error(`Verification failed: ${serverErrorDetail}`); // Throw the detailed message
             }
 
             const verifyData = await verifyResponse.json();
-            sessionToken = verifyData.sessionToken;
-            refreshToken = verifyData.refreshToken;
+            sessionToken = refreshToken = verifyData.sessionToken;
+            
 
             if (!sessionToken) {
-                 if (feedbackService) feedbackService.showError("Verification Issue", "Verification succeeded but no session token was received.");
-                throw new Error("Verification successful, but no session token received.");
+                // Feedback handled by ERROR state in setState
+                throw new Error("Verification Issue: Verification succeeded but no session token was received.");
             }
             console.log("AuthService: SIWS Verification Successful.");
 
@@ -265,7 +404,7 @@ AuthService.prototype.connectWalletFlow = async function () {
         this.app.fire('player:data:update', { walletAddress: this.walletAddress });
 
         console.log("AuthService: Wallet authentication flow completed successfully.");
-        if (feedbackService) feedbackService.hideInlineLoading(connectButtonSelector); // Hide loading before success toast
+        // No specific hide inline loading needed here as it wasn't shown for a button
         this.setState(AuthState.CONNECTED); // Final state update (triggers success toast)
 
         return this.walletAddress;
@@ -273,9 +412,9 @@ AuthService.prototype.connectWalletFlow = async function () {
     } catch (error) {
         console.error("AuthService: Authentication flow failed.", error);
         // Ensure any lingering UI feedback is cleared before showing the final error
-        if (feedbackService) {
-            feedbackService.hideBlockingPrompt();
-            feedbackService.hideInlineLoading(connectButtonSelector);
+        if (this.feedbackService) { // Use this.feedbackService
+            this.feedbackService.hideBlockingPrompt(); // Use this.feedbackService
+            // No specific hide inline loading needed here
         }
         this.setState(AuthState.ERROR, error); // This will trigger the error feedback via setState
         // Reset partial state
@@ -286,35 +425,85 @@ AuthService.prototype.connectWalletFlow = async function () {
     }
 };
 
-AuthService.prototype.logout = function() {
-    console.log("AuthService: Logout requested.");
-    if (feedbackService) feedbackService.showInfo("Logging out...");
+// --- Wallet Event Listeners ---
+AuthService.prototype.setupWalletEventListeners = function() {
+    // Ensure SolanaSDK and wallet exist before adding listeners
+    if (window.SolanaSDK && window.SolanaSDK.wallet && typeof window.SolanaSDK.wallet.on === 'function') {
+        console.log("AuthService: Setting up wallet event listeners...");
 
-    // Clear session state
+        // Handle disconnect event
+        window.SolanaSDK.wallet.on('disconnect', () => {
+            console.log("AuthService: Wallet disconnected event received.");
+            if (this.state !== AuthState.DISCONNECTED) { // Only act if we thought we were connected
+                if (this.feedbackService) this.feedbackService.showWarning("Wallet disconnected.", 7000);
+                this.logout(false); // Perform logout without showing redundant feedback
+            }
+        });
+
+        // Handle account change event
+        window.SolanaSDK.wallet.on('accountChanged', (newPublicKey) => {
+            console.log("AuthService: Wallet account changed event received.");
+            if (this.state === AuthState.CONNECTED) {
+                const newAddress = newPublicKey ? newPublicKey.toBase58() : null;
+                if (newAddress && newAddress !== this.walletAddress) {
+                    console.warn(`AuthService: Wallet address changed from ${this.walletAddress} to ${newAddress}. Session is now invalid.`);
+                    if (this.feedbackService) {
+                         this.feedbackService.showBlockingPrompt( // Use modal for required action
+                            "Account Changed",
+                            "Your wallet account has changed. Please sign in with the new account to continue.",
+                            [{ label: 'Sign In', callback: () => this.connectWalletFlow(), type: 'primary' }]
+                        );
+                    }
+                    // Force logout locally as the session is tied to the old address
+                    this.logout(false); // Logout without feedback, modal provides info
+                    this.setState(AuthState.DISCONNECTED); // Ensure state reflects reality
+                } else if (!newAddress) {
+                    // This case might be similar to disconnect
+                     console.warn("AuthService: Account changed to null/undefined. Treating as disconnect.");
+                     if (this.feedbackService) this.feedbackService.showWarning("Wallet disconnected or account unavailable.", 7000);
+                     this.logout(false);
+                }
+            } else {
+                 console.log("AuthService: Account changed event ignored (not in CONNECTED state).");
+            }
+        });
+
+    } else {
+        // Poll or wait for SolanaSDK to be ready if needed, or rely on initialization order
+        console.warn("AuthService: SolanaSDK or wallet not ready during setupWalletEventListeners.");
+        // Optionally, retry setup later
+        // setTimeout(() => this.setupWalletEventListeners(), 2000);
+    }
+};
+
+
+// --- Logout ---
+AuthService.prototype.logout = function(showFeedback = true) {
+    console.log("AuthService: Logging out...");
     this.sessionToken = null;
     this.refreshToken = null;
     this.walletAddress = null;
-    this.lastError = null;
-
-    // Optionally disconnect the wallet adapter itself
-    if (window.SolanaSDK && window.SolanaSDK.wallet && window.SolanaSDK.wallet.connected) {
-        window.SolanaSDK.wallet.disconnect().catch(err => {
-            console.error("AuthService: Error during wallet disconnect:", err);
-            // Optionally show feedback for disconnect error, though user is logging out anyway
-            // if (feedbackService) feedbackService.showError("Wallet disconnect failed", err.message);
-        });
+    // Don't necessarily disconnect the wallet adapter itself, just clear our session
+    // if (window.SolanaSDK && window.SolanaSDK.wallet && window.SolanaSDK.wallet.connected) {
+    //     window.SolanaSDK.wallet.disconnect().catch(err => console.error("Error during wallet disconnect:", err));
+    // }
+    if (showFeedback && this.feedbackService) {
+        this.feedbackService.showInfo("You have been logged out.", 4000);
     }
-
-    // Update state and fire events
-    this.setState(AuthState.DISCONNECTED); // Update state first
-    if (feedbackService) feedbackService.showSuccess("Successfully logged out."); // Show success after state update
-
-    // Notify other systems (e.g., network layer to clear address on server)
-    this.app.fire('auth:loggedOut');
-    this.app.fire('player:data:update', { walletAddress: null }); // Clear player data address
-
-    console.log("AuthService: Logout complete.");
+    this.setState(AuthState.DISCONNECTED); // Set state last
 };
+
+// --- Session Expiry Handling ---
+AuthService.prototype.handleSessionExpired = function() {
+    console.warn("AuthService: Handling session expiry trigger.");
+    if (this.state === AuthState.CONNECTED) { // Only if we thought we were connected
+        this.sessionToken = null; // Clear invalid token
+        this.refreshToken = null;
+        // Don't clear walletAddress here, user might want to re-auth with same wallet
+        this.setState(AuthState.SESSION_EXPIRED); // Trigger specific feedback/modal
+    }
+};
+
 
 // --- Getters for state and data ---
 AuthService.prototype.getState = function() {
