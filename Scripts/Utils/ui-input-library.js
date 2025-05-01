@@ -1,3 +1,13 @@
+// Function to convert lamports to SOL
+window.sol = function(lamports) {
+    if (typeof lamports !== 'number' || isNaN(lamports)) {
+        console.warn("window.sol: Invalid input, expected a number. Received:", lamports);
+        return 0; // Return 0 for invalid input
+    }
+    const SOL_PER_LAMPORT = 1 / 1000000000;
+    // Using toFixed(9) for reasonable precision in display
+    return parseFloat((lamports * SOL_PER_LAMPORT).toFixed(9));
+};
 ///<reference path="c:\Users\Epic\.vscode-insiders\extensions\playcanvas.playcanvas-0.2.1\node_modules\playcanvas\build\playcanvas.d.ts" />;
 (function () {
     // iOS positioning is not fun when the keyboard is involved
