@@ -1,0 +1,8 @@
+{
+  "colyseusEndpoint": "https://server.plsgive.com",
+  "cloudflareWorkerAuthEndpoint": "https://solana-auth.epic-740.workers.dev",
+  "cloudflareWorkerDonationEndpoint": "https://solana-auth.epic-740.workers.dev/process_donation",
+  "solanaRpcEndpoint": "https://api.mainnet-beta.solana.com",
+  "donationFeeRecipientAddress": "r1eKs83sknjVn8cSx5u7afNx8ykjoi1GWULwZvcaAio",
+  "donationFeePercentage": 3
+}

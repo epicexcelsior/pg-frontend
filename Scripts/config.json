@@ -4,5 +4,5 @@
   "cloudflareWorkerDonationEndpoint": "http://localhost:8787/process_donation",
   "solanaRpcEndpoint": "https://api.mainnet-beta.solana.com",
   "donationFeeRecipientAddress": "r1eKs83sknjVn8cSx5u7afNx8ykjoi1GWULwZvcaAio",
-  "donationFeePercentage": 5
+  "donationFeePercentage": 3
 }
