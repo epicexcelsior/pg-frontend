@@ -480,6 +480,14 @@ DonationService.prototype.handleDonation = async function () {
 
           // If _pollConfirmation resolves without error, it means success
           this.setState(DonationState.SUCCESS, null, signature);
+           console.log(`[DonationService] Firing 'donation:confirmedForBackend' event for signature: ${signature}`);
+           // Fire event for MessageBroker to send to backend
+           this.app.fire('donation:confirmedForBackend', {
+               signature: signature,
+               recipient: this.recipient,
+               donor: payerPublicKey.toBase58(), // Use the payer's public key as the donor address
+               amountSOL: this.amount // Send the total amount the donor intended to send
+           });
 
           // Optional: Fire event for other systems
           // this.app.fire('network:send:donationConfirmed', { ... });

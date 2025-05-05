@@ -89,6 +89,8 @@ MessageBroker.prototype.setupAppEventListeners = function() {
 
     // Add listeners for any other outgoing message requests...
     // e.g., this.app.on('interaction:request', this.sendInteraction, this);
+    // --- Donation Messages (Outgoing) ---
+    this.app.on('donation:confirmedForBackend', this.sendDonationConfirmed, this);
 };
 
 // --- Methods to Send Messages ---
@@ -143,6 +145,16 @@ MessageBroker.prototype.sendChatMessage = function(messageData) {
         this.room.send("chatMessage", { content: actualContent });
     } else {
          console.warn("MessageBroker: Cannot send chatMessage. Not connected or message empty/invalid.", messageData);
+    }
+};
+
+MessageBroker.prototype.sendDonationConfirmed = function(data) {
+    console.log(`[MessageBroker] Received 'donation:confirmedForBackend' event. Sending to room:`, data);
+    // data is expected to be { signature, recipient, donor, amountSOL }
+    if (this.room && data && data.signature && data.recipient && data.donor && typeof data.amountSOL === 'number') {
+        this.room.send("donationConfirmed", data);
+    } else {
+        console.warn("MessageBroker: Cannot send donationConfirmed. Not connected or data missing/invalid.", data);
     }
 };
 
