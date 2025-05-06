@@ -1,7 +1,7 @@
 var MessageBroker = pc.createScript('messageBroker');
 
 // initialize code called once per entity
-MessageBroker.prototype.initialize = function() {
+MessageBroker.prototype.initialize = function () {
     console.log("MessageBroker: Initializing...");
     this.room = null;
 
@@ -13,7 +13,7 @@ MessageBroker.prototype.initialize = function() {
     this.setupAppEventListeners();
 };
 
-MessageBroker.prototype.onConnected = function(room) {
+MessageBroker.prototype.onConnected = function (room) {
     console.log("MessageBroker: Received colyseus:connected event.");
     if (!room) {
         console.error("MessageBroker: Cannot initialize listeners. Room object is missing.");
@@ -23,14 +23,14 @@ MessageBroker.prototype.onConnected = function(room) {
     this.setupRoomMessageListeners(); // Start listening for incoming messages
 };
 
-MessageBroker.prototype.onDisconnected = function(data) {
+MessageBroker.prototype.onDisconnected = function (data) {
     console.log("MessageBroker: Received colyseus:disconnected event.", data);
     this.room = null;
     // No need to remove listeners specifically if using app.on/app.off correctly elsewhere
 };
 
 // Listen for specific messages FROM the Colyseus Room
-MessageBroker.prototype.setupRoomMessageListeners = function() {
+MessageBroker.prototype.setupRoomMessageListeners = function () {
     if (!this.room) return;
 
     console.log("MessageBroker: Setting up room message listeners...");
@@ -73,7 +73,7 @@ MessageBroker.prototype.setupRoomMessageListeners = function() {
 };
 
 // Listen for events FROM the application requesting to send messages
-MessageBroker.prototype.setupAppEventListeners = function() {
+MessageBroker.prototype.setupAppEventListeners = function () {
     console.log("MessageBroker: Setting up app event listeners for outgoing messages...");
 
     // --- Player Updates ---
@@ -95,7 +95,7 @@ MessageBroker.prototype.setupAppEventListeners = function() {
 
 // --- Methods to Send Messages ---
 
-MessageBroker.prototype.sendPlayerMove = function(data) {
+MessageBroker.prototype.sendPlayerMove = function (data) {
     if (this.room) {
         // console.log("MessageBroker: Sending updatePosition:", data); // Optional: Verbose logging
         this.room.send("updatePosition", data);
@@ -104,11 +104,11 @@ MessageBroker.prototype.sendPlayerMove = function(data) {
     }
 };
 
-MessageBroker.prototype.sendUsernameUpdate = function(confirmedUsername) {
-     // TODO: Should ideally get username from AuthService or PlayerData, not rely on event payload directly if possible
+MessageBroker.prototype.sendUsernameUpdate = function (confirmedUsername) {
+    // TODO: Should ideally get username from AuthService or PlayerData, not rely on event payload directly if possible
     if (this.room && confirmedUsername) {
-         // Check against current server state if possible/needed (might be complex here)
-         // For simplicity, just send the update request. Server should handle duplicates.
+        // Check against current server state if possible/needed (might be complex here)
+        // For simplicity, just send the update request. Server should handle duplicates.
         console.log(`MessageBroker: Sending setUsername: ${confirmedUsername}`);
         this.room.send("setUsername", { username: confirmedUsername });
         // Note: We don't update window.userName here. AuthService/PlayerData should be source of truth.
@@ -117,17 +117,17 @@ MessageBroker.prototype.sendUsernameUpdate = function(confirmedUsername) {
     }
 };
 
-MessageBroker.prototype.sendAddressUpdate = function(data) {
+MessageBroker.prototype.sendAddressUpdate = function (data) {
     // Expecting data = { address: "0x..." } from 'auth:addressAvailable'
     if (this.room && data && data.address) {
         console.log("MessageBroker: Sending updateAddress:", data.address);
         this.room.send("updateAddress", { walletAddress: data.address });
     } else {
-         console.warn("MessageBroker: Cannot send updateAddress. Not connected or address missing.");
+        console.warn("MessageBroker: Cannot send updateAddress. Not connected or address missing.");
     }
 };
 
-MessageBroker.prototype.sendClaimBoothRequest = function(boothId) {
+MessageBroker.prototype.sendClaimBoothRequest = function (boothId) {
     if (this.room && boothId) {
         console.log(`MessageBroker: Sending claimBooth request for '${boothId}'`);
         this.room.send('claimBooth', { boothId: boothId });
@@ -136,7 +136,7 @@ MessageBroker.prototype.sendClaimBoothRequest = function(boothId) {
     }
 };
 
-MessageBroker.prototype.sendChatMessage = function(messageData) {
+MessageBroker.prototype.sendChatMessage = function (messageData) {
     // messageData is expected to be { content: "string" } from ChatController
     const actualContent = messageData?.content; // Extract the actual string
     if (this.room && actualContent) {
@@ -144,11 +144,11 @@ MessageBroker.prototype.sendChatMessage = function(messageData) {
         // Send only the actual string content under the 'content' key
         this.room.send("chatMessage", { content: actualContent });
     } else {
-         console.warn("MessageBroker: Cannot send chatMessage. Not connected or message empty/invalid.", messageData);
+        console.warn("MessageBroker: Cannot send chatMessage. Not connected or message empty/invalid.", messageData);
     }
 };
 
-MessageBroker.prototype.sendDonationConfirmed = function(data) {
+MessageBroker.prototype.sendDonationConfirmed = function (data) {
     console.log(`[MessageBroker] Received 'donation:confirmedForBackend' event. Sending to room:`, data);
     // data is expected to be { signature, recipient, donor, amountSOL }
     if (this.room && data && data.signature && data.recipient && data.donor && typeof data.amountSOL === 'number') {
