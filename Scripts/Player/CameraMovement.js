@@ -1,4 +1,4 @@
-///<reference path="c:\Users\Epic\.vscode-insiders\extensions\playcanvas.playcanvas-0.2.1\node_modules\playcanvas\build\playcanvas.d.ts" />;
+///<reference path="c:\Users\Epic\.vscode-insiders\extensions\playcanvas.playcanvas-0.2.1\node_modules\playcanvas\build\playcanvas.d.ts"
 var CameraMovement = pc.createScript('cameraMovement');
 
 CameraMovement.attributes.add('mouseSpeed', {
@@ -118,14 +118,14 @@ CameraMovement.prototype.update = function (dt) {
 
     this.entity.setLocalEulerAngles(this.pitch, 0, 0);
 
-    const cameraEntity = this.entity.findByName('Camera');
+    const cameraEntity = this.entity.findByName('PlayerCamera');
     if (cameraEntity) {
         const targetPos = new pc.Vec3(0, 0, this.currentDistance);
         const currentPos = cameraEntity.getLocalPosition();
         currentPos.lerp(currentPos, targetPos, 0.2);
         cameraEntity.setLocalPosition(currentPos);
     }
-};
+}; 
 
 CameraMovement.prototype.onMouseMove = function (e) {
     if (pc.Mouse.isPointerLocked() && this.rightMouseDown) {
