@@ -58,6 +58,10 @@ PlayerMovement.prototype.enableMovement = function() {
 PlayerMovement.worldDirection = new pc.Vec3();
 PlayerMovement.tempDirection = new pc.Vec3();
 
+// Add tracking for current input values
+PlayerMovement.prototype.currentInputX = 0;
+PlayerMovement.prototype.currentInputZ = 0;
+
 PlayerMovement.prototype.update = function (dt) {
     if (window.isChatActive || !this.playerMovementEnabled) return;
 
@@ -65,46 +69,57 @@ PlayerMovement.prototype.update = function (dt) {
 
     var app = this.app;
 
-    var inputX = 0, inputZ = 0;
+    this.currentInputX = 0;
+    this.currentInputZ = 0;
+    
     if (this.isMobile) {
         if (window.touchJoypad && window.touchJoypad.sticks && window.touchJoypad.sticks[this.joystickId]) {
             const joystick = window.touchJoypad.sticks[this.joystickId];
-            inputX = joystick.x;
-            inputZ = joystick.y;
+            this.currentInputX = joystick.x;
+            this.currentInputZ = joystick.y;
         }
     } else {
-        if (app.keyboard.isPressed(pc.KEY_A)) inputX -= 1;
-        if (app.keyboard.isPressed(pc.KEY_D)) inputX += 1;
-        if (app.keyboard.isPressed(pc.KEY_W)) inputZ += 1;
-        if (app.keyboard.isPressed(pc.KEY_S)) inputZ -= 1;
+        if (app.keyboard.isPressed(pc.KEY_A)) this.currentInputX -= 1;
+        if (app.keyboard.isPressed(pc.KEY_D)) this.currentInputX += 1;
+        if (app.keyboard.isPressed(pc.KEY_W)) this.currentInputZ += 1;
+        if (app.keyboard.isPressed(pc.KEY_S)) this.currentInputZ -= 1;
     }
 
+    // Get camera yaw and normalize it
     var yaw = this.cameraScript.yaw;
     yaw = normalizeAngle(yaw);
     var yawRad = yaw * pc.math.DEG_TO_RAD;
 
+    // Calculate movement directions based on camera orientation
     var forward = new pc.Vec3(-Math.sin(yawRad), 0, -Math.cos(yawRad));
     var right = new pc.Vec3(Math.cos(yawRad), 0, -Math.sin(yawRad));
 
+    // Combine movement input
     var move = new pc.Vec3();
-    move.add(forward.scale(inputZ));
-    move.add(right.scale(inputX));
+    move.add(forward.scale(this.currentInputZ));
+    move.add(right.scale(this.currentInputX));
+    
+    // Normalize movement vector if there's any input
     if (move.length() > 0) {
         move.normalize();
+        
+        // Only update rotation when actually moving
+        var targetRot = new pc.Quat().setFromEulerAngles(0, yaw, 0);
+        var currentRot = this.entity.getRotation();
+        currentRot.slerp(currentRot, targetRot, 0.15); // Smooth rotation
+        this.entity.setRotation(currentRot);
     }
 
+    // Update position
     var newPos = this.entity.getPosition().clone();
     newPos.add(move.scale(this.speed * dt));
 
-    var newRot = new pc.Quat().setFromEulerAngles(0, yaw, 0);
-    this.entity.setRotation(newRot);
-
     this.entity.rigidbody.teleport(newPos);
 
-    if (inputX !== 0 || inputZ !== 0) {
+    if (this.currentInputX !== 0 || this.currentInputZ !== 0) {
         if (this.entity.anim) {
-            this.entity.anim.setFloat('xDirection', inputX);
-            this.entity.anim.setFloat('zDirection', inputZ);
+            this.entity.anim.setFloat('xDirection', this.currentInputX);
+            this.entity.anim.setFloat('zDirection', this.currentInputZ);
         }
     } else {
         if (this.entity.anim) {
@@ -124,8 +139,8 @@ PlayerMovement.prototype.update = function (dt) {
             y: currentPos.y,
             z: currentPos.z,
             rotation: normalizeAngle(rotation),
-            xDirection: inputX,
-            zDirection: inputZ
+            xDirection: this.currentInputX,
+            zDirection: this.currentInputZ
         });
         this.lastReportedPos.copy(currentPos);
         this.timeSinceLastUpdate = 0;

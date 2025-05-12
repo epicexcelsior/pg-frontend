@@ -35,7 +35,47 @@ BoothController.prototype.initialize = function() {
     // Listen for local player data changes (e.g., claimedBoothId updated)
     this.app.on('player:data:changed', this.onLocalPlayerDataChanged, this);
 
+    // Listen for successful claims to trigger effects
+    this.app.on('booth:claimSuccess', this.onClaimSuccess, this);
+
     console.log("BoothController initialized.");
+};
+BoothController.prototype.onClaimSuccess = function(data) {
+    console.log("BoothController: Received booth:claimSuccess", data);
+
+    // Validate data
+    const boothId = data ? data.boothId : null;
+    if (!boothId) {
+        console.warn("BoothController: claimSuccess event data did not contain 'boothId'.", data);
+        return;
+    }
+
+    // Find the main booth entity
+    const boothEntity = this.app.root.findByName(boothId);
+    if (!boothEntity) {
+        console.warn(`BoothController: Could not find booth entity named '${boothId}' to play effect.`);
+        return;
+    }
+
+    // Find the pre-placed effect entity by name (as confirmed in hierarchy)
+    const effectEntity = boothEntity.findByName('BoothClaimEffect');
+    if (!effectEntity) {
+        console.warn(`BoothController: Could not find child effect entity named 'BoothClaimEffect' on booth '${boothId}'.`);
+        return;
+    }
+
+    // Get the particle system component
+    const ps = effectEntity.particlesystem;
+    if (!ps) {
+        console.warn(`BoothController: No particle system component found on 'BoothClaimEffect' entity for booth '${boothId}'.`);
+        return;
+    }
+
+    // Trigger the effect
+    console.log(`BoothController: Triggering claim effect for booth ${boothId}`);
+    ps.reset(); // Reset to start state
+    ps.play();  // Play the effect (ensure loop=false in editor template)
+
 };
 
 BoothController.prototype.onEnterZone = function(boothZoneScript) {
