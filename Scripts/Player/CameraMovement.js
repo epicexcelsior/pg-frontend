@@ -3,7 +3,7 @@ var CameraMovement = pc.createScript('cameraMovement');
 
 CameraMovement.attributes.add('mouseSpeed', {
     type: 'number',
-    default: 1.4,
+    default: 1.5,
     description: 'Mouse Sensitivity'
 });
 CameraMovement.attributes.add('mobileOrbitSensitivity', { // New attribute for mobile
@@ -80,16 +80,16 @@ CameraMovement.prototype.initialize = function () {
 
     this.currentDistance = this.distance;
 
-    this.onWheel = (e) => {
-        if (window.isChatActive) return;
-        const delta = Math.sign(e.wheelDelta || -e.deltaY);
-        this.currentDistance -= delta * this.zoomSpeed;
-        this.currentDistance = pc.math.clamp(this.currentDistance, this.minDistance, this.maxDistance);
-    };
+    // this.onWheel = (e) => {
+    //     if (window.isChatActive) return;
+    //     const delta = Math.sign(e.wheelDelta || -e.deltaY);
+    //     this.currentDistance -= delta * this.zoomSpeed;
+    //     this.currentDistance = pc.math.clamp(this.currentDistance, this.minDistance, this.maxDistance);
+    // };
 
-    if (!this.isMobile) {
-        this.canvas.addEventListener('wheel', this.onWheel, { passive: true });
-    }
+    // if (!this.isMobile) {
+    //     this.canvas.addEventListener('wheel', this.onWheel, { passive: true });
+    // }
 
     this.on('destroy', function () {
         app.mouse.off("mousemove", this.onMouseMove, this);
@@ -106,8 +106,10 @@ CameraMovement.prototype.update = function (dt) {
     if (this.isMobile) {
         if (window.touchJoypad && window.touchJoypad.sticks && window.touchJoypad.sticks[this.cameraJoystickId]) {
             const joystick = window.touchJoypad.sticks[this.cameraJoystickId];
-            this.pitch += joystick.y * this.mobileOrbitSensitivity * dt;
-            this.yaw -= joystick.x * this.mobileOrbitSensitivity * dt;
+            var joyX = joystick.x;
+            var joyY = joystick.y;
+            this.pitch += joyY * this.mobileOrbitSensitivity;
+            this.yaw -= joyX * this.mobileOrbitSensitivity;
         }
     }
 
@@ -125,12 +127,14 @@ CameraMovement.prototype.update = function (dt) {
         currentPos.lerp(currentPos, targetPos, 0.2);
         cameraEntity.setLocalPosition(currentPos);
     }
-}; 
+};
 
 CameraMovement.prototype.onMouseMove = function (e) {
     if (pc.Mouse.isPointerLocked() && this.rightMouseDown) {
-        this.yaw -= (this.mouseSpeed * e.dx) / 60;
-        this.pitch -= (this.mouseSpeed * e.dy) / 60;
+        var deltaYaw = (this.mouseSpeed * e.dx) / 60;
+        var deltaPitch = (this.mouseSpeed * e.dy) / 60;
+        this.yaw -= deltaYaw;
+        this.pitch -= deltaPitch;
     }
 };
 
