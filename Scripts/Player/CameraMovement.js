@@ -161,7 +161,7 @@ CameraMovement.prototype.update = function (dt) {
                 
                 if (isMovingForward || isMovingBackward) {
                     // Keep orbit direction consistent with input direction
-                    targetVelocity = Math.abs(targetVelocity) * Math.sign(inputX);
+                    targetVelocity = Math.abs(targetVelocity) * -Math.sign(inputX);
                     
                     // Apply diagonal speed reduction
                     targetVelocity *= diagonalSpeedFactor;
