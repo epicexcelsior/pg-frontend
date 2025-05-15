@@ -105,7 +105,8 @@ DonationPromptHtml.prototype.initialize = function () {
           this.donationNumber.addEventListener('input', () => {
                let val = parseFloat(this.donationNumber.value) || 0.01;
                if (val < 0.01) val = 0.01;
-               this.donationNumber.value = val;
+               if (val > 69) val = 69;
+               this.donationNumber.value = val.toFixed(2);
                this.donationSlider.value = linearToLog(val);
           });
      }
@@ -120,7 +121,7 @@ DonationPromptHtml.prototype.setDonationButtonBackgrounds = function () {
           const logoUrl = this.solanaLogoTexture.getFileUrl();
           this.presetButtons.forEach(btn => {
                btn.style.backgroundImage = `url('${logoUrl}')`;
-               btn.style.backgroundSize = '50px 50px';
+               btn.style.backgroundSize = '69px 69px';
           });
      }
 };
@@ -198,35 +199,35 @@ DonationPromptHtml.prototype.hide = function () {
 
 // === EVENT HANDLERS for UI events ===
 DonationPromptHtml.prototype.onShowPrompt = function (boothScript) {
-    if (!boothScript || !boothScript.claimedBy) {
-        console.error("DonationPromptHtml: Received ui:showDonationPrompt without valid booth script or claimedBy address.");
-        this.hide(); // Ensure it's hidden if data is invalid
-        return;
-    }
-    // Set the recipient based on the booth script context provided by BoothController
-    this.setRecipient(boothScript.claimedBy);
-    console.log("DonationPromptHtml: Received ui:showDonationPrompt for booth ->", boothScript.boothId, "Recipient:", this.recipientAddress);
-    this.show(); // Use existing show method
+     if (!boothScript || !boothScript.claimedBy) {
+          console.error("DonationPromptHtml: Received ui:showDonationPrompt without valid booth script or claimedBy address.");
+          this.hide(); // Ensure it's hidden if data is invalid
+          return;
+     }
+     // Set the recipient based on the booth script context provided by BoothController
+     this.setRecipient(boothScript.claimedBy);
+     console.log("DonationPromptHtml: Received ui:showDonationPrompt for booth ->", boothScript.boothId, "Recipient:", this.recipientAddress);
+     this.show(); // Use existing show method
 };
 
 DonationPromptHtml.prototype.onHidePrompt = function () {
-    // Only hide if it's currently visible (check opacity or a dedicated flag if needed)
-    if (this.donationUIEl.style.opacity > 0) {
-        console.log("DonationPromptHtml: Received ui:hideDonationPrompt.");
-        this.hide(); // Use existing hide method
-        // Optionally clear recipient when hidden
-        // this.recipientAddress = null;
-    }
+     // Only hide if it's currently visible (check opacity or a dedicated flag if needed)
+     if (this.donationUIEl.style.opacity > 0) {
+          console.log("DonationPromptHtml: Received ui:hideDonationPrompt.");
+          this.hide(); // Use existing hide method
+          // Optionally clear recipient when hidden
+          // this.recipientAddress = null;
+     }
 };
 
 // Clean up listeners
-DonationPromptHtml.prototype.destroy = function() {
-    this.app.off('ui:showDonationPrompt', this.onShowPrompt, this);
-    this.app.off('ui:hideDonationPrompt', this.onHidePrompt, this);
+DonationPromptHtml.prototype.destroy = function () {
+     this.app.off('ui:showDonationPrompt', this.onShowPrompt, this);
+     this.app.off('ui:hideDonationPrompt', this.onHidePrompt, this);
 
-    // Remove event listeners from buttons etc. if necessary (though often handled by element removal)
-    // Remove HTML element if needed
-    if (this.container && this.container.parentNode) {
-        this.container.parentNode.removeChild(this.container);
-    }
+     // Remove event listeners from buttons etc. if necessary (though often handled by element removal)
+     // Remove HTML element if needed
+     if (this.container && this.container.parentNode) {
+          this.container.parentNode.removeChild(this.container);
+     }
 };
