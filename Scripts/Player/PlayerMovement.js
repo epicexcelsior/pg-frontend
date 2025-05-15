@@ -44,6 +44,7 @@ PlayerMovement.prototype.initialize = function () {
     this.playerMovementEnabled = true;
     this.app.on('ui:chat:focus', this.disableMovement, this);
     this.app.on('ui:chat:blur', this.enableMovement, this);
+    this.app.on('tutorial:active', this.onTutorialActive, this);
     // --- END ADDED ---
 };
 
@@ -53,6 +54,14 @@ PlayerMovement.prototype.disableMovement = function() {
 
 PlayerMovement.prototype.enableMovement = function() {
     this.playerMovementEnabled = true;
+};
+
+PlayerMovement.prototype.onTutorialActive = function(isActive) {
+    if (isActive) {
+        this.disableMovement();
+    } else {
+        this.enableMovement();
+    }
 };
 
 PlayerMovement.worldDirection = new pc.Vec3();

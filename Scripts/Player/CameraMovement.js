@@ -77,6 +77,7 @@ CameraMovement.prototype.initialize = function () {
     this.yaw = 0;
     this.pitch = 0;
     this.rightMouseDown = false;
+    this.cameraControlsEnabled = true;
     this.mouseMoveActive = false;
     this.lastMouseX = 0;
     this.targetYaw = 0;
@@ -131,9 +132,20 @@ CameraMovement.prototype.initialize = function () {
             this.canvas.removeEventListener('wheel', this.onWheel);
         }
     }, this);
+
+    this.app.on('tutorial:active', this.onTutorialActive, this);
+};
+
+CameraMovement.prototype.onTutorialActive = function(isActive) {
+    this.cameraControlsEnabled = !isActive;
+    if (isActive && this.rightMouseDown) {
+        this.app.mouse.disablePointerLock();
+        this.rightMouseDown = false;
+    }
 };
 
 CameraMovement.prototype.update = function (dt) {
+    if (!this.cameraControlsEnabled) return;
     const normalizedDt = Math.min(dt, 1/30); // Cap delta time to prevent large jumps
     
     // Cache player reference
@@ -288,7 +300,7 @@ CameraMovement.prototype.update = function (dt) {
 };
 
 CameraMovement.prototype.onMouseMove = function (e) {
-    if (window.isChatActive) return;
+    if (window.isChatActive || !this.cameraControlsEnabled) return;
 
     if (pc.Mouse.isPointerLocked() && this.rightMouseDown) {
         // Dynamic sensitivity based on pitch angle
@@ -318,6 +330,7 @@ CameraMovement.prototype.onMouseMove = function (e) {
 };
 
 CameraMovement.prototype.onMouseDown = function (e) {
+    if (!this.cameraControlsEnabled) return;
     if (e.button === pc.MOUSEBUTTON_RIGHT) {
         this.rightMouseDown = true;
         this.app.mouse.enablePointerLock();
@@ -325,6 +338,7 @@ CameraMovement.prototype.onMouseDown = function (e) {
 };
 
 CameraMovement.prototype.onMouseUp = function (e) {
+    if (!this.cameraControlsEnabled) return;
     if (e.button === pc.MOUSEBUTTON_RIGHT) {
         this.rightMouseDown = false;
         this.app.mouse.disablePointerLock();
