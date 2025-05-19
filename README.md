@@ -1,4 +1,7 @@
-Hello Breakout judges,
+Hi Breakout judges!
+
+**Game link:** https://play.plsgive.com
+(landing page: https://plsgive.com)
 
 This repo stores frontend (client-side) scripts for PlayCanvas.
 Other important repos you can access:
