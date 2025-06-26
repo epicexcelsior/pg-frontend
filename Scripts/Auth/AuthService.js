@@ -128,6 +128,8 @@ AuthService.prototype.setState = function(newState, error = null) {
              break;
         case AuthState.ERROR:
             console.error("AuthService Error:", this.lastError);
+            let userFriendlyError = "An unexpected authentication error occurred.";
+
             // Check if this is a specific error we're already showing a modal for
             const errorLower = this.lastError?.toLowerCase() || '';
             const isWalletNotReady = errorLower === 'solana wallet not ready.';
@@ -136,7 +138,6 @@ AuthService.prototype.setState = function(newState, error = null) {
             // Only show toast for errors that aren't already showing a modal
             if (!isWalletNotReady && !isWalletNotInstalled) {
                 // Provide more specific feedback based on the error context
-                let userFriendlyError = "An unexpected authentication error occurred.";
                 if (this.lastError) {
                      if (errorLower.includes('wallet connection cancelled')) {
                         userFriendlyError = "Wallet connection cancelled.";

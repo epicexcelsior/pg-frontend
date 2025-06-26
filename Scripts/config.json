@@ -1,8 +1,9 @@
 {
-  "colyseusEndpoint": "http://localhost:2567",
+  "colyseusEndpoint": "ws://localhost:2567",
   "cloudflareWorkerAuthEndpoint": "http://localhost:8787",
+  "cloudflareWorkerCreateTxEndpoint": "http://localhost:8787/create_donation_transaction",
   "cloudflareWorkerDonationEndpoint": "http://localhost:8787/process_donation",
-  "solanaRpcEndpoint": "https://api.mainnet-beta.solana.com",
+  "solanaRpcEndpoint": "https://api.devnet.solana.com",
   "donationFeeRecipientAddress": "r1eKs83sknjVn8cSx5u7afNx8ykjoi1GWULwZvcaAio",
-  "donationFeePercentage": 3
+  "donationFeePercentage": 1.5
 }
