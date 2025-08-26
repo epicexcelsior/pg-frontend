@@ -8,6 +8,7 @@ const AuthState = {
     FETCHING_SIWS: 'fetching_siws',
     SIGNING_SIWS: 'signing_siws',
     VERIFYING_SIWS: 'verifying_siws',
+    CONNECTING_GRID: 'connecting_grid',
     CONNECTED: 'connected',
     SESSION_EXPIRED: 'session_expired', // Added state
     ERROR: 'error'
@@ -21,6 +22,7 @@ AuthService.prototype.initialize = function () {
     this.walletAddress = null;
     this.lastError = null;
     this.feedbackService = null; // Property to hold the feedback service instance
+    this.authProvider = null; // 'grid' | 'wallet' | null
 
     // Function to get services after app.services is ready
     const getServices = () => {
@@ -105,6 +107,10 @@ AuthService.prototype.setState = function(newState, error = null) {
         case AuthState.VERIFYING_SIWS:
             this.app.fire('auth:verifying_siws'); // Fire specific event
             // Feedback handled in connectWalletFlow step 4
+            break;
+        case AuthState.CONNECTING_GRID:
+            this.app.fire('auth:connecting_grid'); // Fire specific event
+            // Feedback handled in connectWithGrid
             break;
         case AuthState.CONNECTED:
             if (this.feedbackService) this.feedbackService.showSuccess("Successfully signed in!"); // Use this.feedbackService
@@ -198,6 +204,103 @@ AuthService.prototype.setState = function(newState, error = null) {
 
     // Fire generic state change event
     this.app.fire('auth:stateChanged', { state: this.state, address: this.walletAddress, error: this.lastError });
+};
+
+AuthService.prototype.connectWithWallet = async function () {
+    // Renamed from connectWalletFlow for clarity
+    return this.connectWalletFlow();
+};
+
+AuthService.prototype.connectWithGrid = async function (email) {
+    if (this.state !== AuthState.DISCONNECTED && this.state !== AuthState.ERROR) {
+        console.warn("AuthService: connectWithGrid called while not in DISCONNECTED or ERROR state:", this.state);
+        return this.walletAddress; // Already connected or connecting
+    }
+
+    if (!email || typeof email !== 'string' || !email.includes('@')) {
+        const errorMsg = "Invalid email address provided for Grid authentication.";
+        this.setState(AuthState.ERROR, new Error(errorMsg));
+        return null;
+    }
+
+    // Ensure config is loaded and Grid endpoint is available
+    if (!this.app.config || !this.app.config.get('cloudflareWorkerGridAuthEndpoint')) {
+        const errorMsg = "Configuration not loaded or Grid auth endpoint missing.";
+        if (this.feedbackService) this.feedbackService.showError("Configuration Error", errorMsg);
+        this.setState(AuthState.ERROR, new Error(errorMsg));
+        return null;
+    }
+
+    const gridAuthUrl = this.app.config.get('cloudflareWorkerGridAuthEndpoint');
+
+    try {
+        this.setState(AuthState.CONNECTING_GRID);
+        if (this.feedbackService) this.feedbackService.showInfo("Connecting with Grid...");
+
+        const response = await fetch(gridAuthUrl, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ email: email })
+        });
+
+        const data = await response.json();
+        
+        if (!response.ok) {
+            throw new Error(data.error || 'Grid authentication failed');
+        }
+
+        if (!data.sessionToken || !data.walletAddress) {
+            throw new Error("Grid authentication succeeded but session data is incomplete.");
+        }
+
+        // Store session data
+        this.sessionToken = data.sessionToken;
+        this.refreshToken = data.sessionToken; // Grid uses same token for now
+        this.walletAddress = data.walletAddress;
+        this.authProvider = 'grid';
+
+        // Fire events for other systems
+        this.app.fire('auth:addressAvailable', { address: this.walletAddress });
+        this.app.fire('player:data:update', { walletAddress: this.walletAddress });
+
+        console.log("AuthService: Grid authentication completed successfully for:", email);
+        this.setState(AuthState.CONNECTED);
+
+        return this.walletAddress;
+
+    } catch (error) {
+        console.error("AuthService: Grid authentication failed.", error);
+        if (this.feedbackService) {
+            this.feedbackService.hideBlockingPrompt();
+        }
+        this.setState(AuthState.ERROR, error);
+        // Reset partial state
+        this.sessionToken = null;
+        this.refreshToken = null;
+        this.walletAddress = null;
+        this.authProvider = null;
+        return null;
+    }
+};
+
+// Method for HtmlAuthChoice to set Grid session after OTP verification
+AuthService.prototype.setGridSession = function(sessionToken, walletAddress) {
+    if (!sessionToken || !walletAddress) {
+        console.error("AuthService: setGridSession called with incomplete data");
+        return;
+    }
+
+    this.sessionToken = sessionToken;
+    this.refreshToken = sessionToken;
+    this.walletAddress = walletAddress;
+    this.authProvider = 'grid';
+
+    // Fire events for other systems
+    this.app.fire('auth:addressAvailable', { address: this.walletAddress });
+    this.app.fire('player:data:update', { walletAddress: this.walletAddress });
+
+    console.log("AuthService: Grid session set successfully for:", walletAddress);
+    this.setState(AuthState.CONNECTED);
 };
 
 AuthService.prototype.connectWalletFlow = async function () {
@@ -397,6 +500,7 @@ AuthService.prototype.connectWalletFlow = async function () {
         this.sessionToken = sessionToken;
         this.refreshToken = refreshToken;
         this.walletAddress = currentWalletAddress; // Set address only on full success
+        this.authProvider = 'wallet'; // Set provider for wallet flow
 
         // Send wallet address update to Network Layer (using events is preferred)
         this.app.fire('auth:addressAvailable', { address: this.walletAddress }); // Event for network layer
@@ -484,6 +588,7 @@ AuthService.prototype.logout = function(showFeedback = true) {
     this.sessionToken = null;
     this.refreshToken = null;
     this.walletAddress = null;
+    this.authProvider = null;
     // Don't necessarily disconnect the wallet adapter itself, just clear our session
     // if (window.SolanaSDK && window.SolanaSDK.wallet && window.SolanaSDK.wallet.connected) {
     //     window.SolanaSDK.wallet.disconnect().catch(err => console.error("Error during wallet disconnect:", err));
@@ -500,7 +605,7 @@ AuthService.prototype.handleSessionExpired = function() {
     if (this.state === AuthState.CONNECTED) { // Only if we thought we were connected
         this.sessionToken = null; // Clear invalid token
         this.refreshToken = null;
-        // Don't clear walletAddress here, user might want to re-auth with same wallet
+        // Don't clear walletAddress or authProvider here, user might want to re-auth with same method
         this.setState(AuthState.SESSION_EXPIRED); // Trigger specific feedback/modal
     }
 };
@@ -525,6 +630,10 @@ AuthService.prototype.isAuthenticated = function() {
 
 AuthService.prototype.getLastError = function() {
     return this.lastError;
+};
+
+AuthService.prototype.getAuthProvider = function() {
+    return this.authProvider;
 };
 
 // swap method called for script hot-reloading

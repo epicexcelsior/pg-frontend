@@ -145,32 +145,23 @@ ClaimPromptHtml.prototype.onKeyDown = function (event) { // Removed async
 
           // Check if the user is authenticated via AuthService
           if (!this.authService.isAuthenticated()) {
-               console.log("ClaimPromptHtml: User not authenticated. Initiating wallet connection flow...");
-               // Show a message indicating connection is starting
-               this.app.fire('ui:show:message', 'Connecting wallet... Press E again after connecting to claim.');
-               // Initiate the connection flow
-               this.authService.connectWalletFlow().catch(err => {
-                   // Error handling is mostly done within AuthService, but log here too.
-                   console.error("ClaimPromptHtml: Error during connectWalletFlow initiated by claim attempt:", err);
-                   // Optionally show a specific error message via ui:show:message if needed
-               });
+               console.log("ClaimPromptHtml: User not authenticated. Showing authentication choice modal...");
                // Store the boothId to claim for after successful authentication
                this.pendingClaimBoothId = this.currentBooth.boothId;
+               // Show the auth choice modal
+               this.app.fire('ui:showAuthChoice', { boothId: this.currentBooth.boothId });
                // Do NOT proceed with the claim yet. Wait for auth:connected event.
-               // No need to instruct user to press 'E' again. Claim will be auto-triggered after auth.
                event.event.preventDefault();
                event.event.stopPropagation();
                return; // Stop the current claim process, wait for auth to connect
           }
   
           // User is authenticated, proceed with claim request
-          // const boothIdToClaim = this.currentBooth.boothId; // No longer get from currentBooth here
-          const boothIdToClaim = this.pendingClaimBoothId; // Get from pending, should be set during connectWalletFlow
+          const boothIdToClaim = this.currentBooth.boothId; // Use current booth for immediate claims
           if (!boothIdToClaim) {
-              console.error("ClaimPromptHtml: No pending booth ID to claim after authentication!");
+              console.error("ClaimPromptHtml: No booth ID available for claim!");
               return; // Should not happen, but safety check
           }
-          this.pendingClaimBoothId = null; // Clear pending claim
           const userAddress = this.authService.getWalletAddress(); // Get address from the source of truth
 
           console.log(`ClaimPromptHtml: Firing booth:claimRequest for booth '${boothIdToClaim}' by user ${userAddress}`);

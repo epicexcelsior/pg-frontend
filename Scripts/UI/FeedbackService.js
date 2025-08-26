@@ -62,6 +62,9 @@ FeedbackService.prototype.initialize = function() {
         console.warn("FeedbackService: Services registry not found, registered globally as window.feedbackService.");
     }
 
+    // Listen for Grid-specific events
+    this.app.on('grid:showSpendingLimitModal', this.onShowSpendingLimitModal, this);
+
     console.log("FeedbackService initialized.");
 };
 
@@ -434,7 +437,190 @@ FeedbackService.prototype.hideInlineLoading = function(elementRef) {
     }
 };
 
+// --- Grid Spending Limit Modal ---
+
+FeedbackService.prototype.onShowSpendingLimitModal = function(data) {
+    const { currentAmount, recipient, reason } = data;
+    
+    this.showSpendingLimitModal(currentAmount, recipient, reason);
+};
+
+FeedbackService.prototype.showSpendingLimitModal = function(currentAmount, recipient, reason = 'Spending limit exceeded') {
+    const title = "Set Spending Limit";
+    const message = `${reason} To complete this ${currentAmount} SOL donation, please set or increase your daily spending limit.`;
+    
+    const actions = [
+        {
+            label: 'Set Limit & Continue',
+            callback: () => this.promptForSpendingLimit(currentAmount, recipient),
+            type: 'primary'
+        },
+        {
+            label: 'Cancel',
+            callback: () => {},
+            type: 'secondary'
+        }
+    ];
+    
+    this.showBlockingPrompt(title, message, actions);
+};
+
+FeedbackService.prototype.promptForSpendingLimit = function(currentAmount, recipient) {
+    // Create a more advanced modal with input fields
+    const title = "Set Daily Spending Limit";
+    const suggestedLimit = Math.max(currentAmount * 2, 1); // Suggest at least double the current amount, minimum 1 SOL
+    
+    // Create custom modal content for spending limit input
+    const customContent = `
+        <div style="margin: 16px 0;">
+            <label for="spending-limit-input" style="display: block; margin-bottom: 8px; color: #ccc; font-size: 14px;">
+                Daily spending limit (SOL):
+            </label>
+            <input type="number" 
+                   id="spending-limit-input" 
+                   placeholder="${suggestedLimit}" 
+                   min="0.001" 
+                   step="0.001" 
+                   style="width: 100%; padding: 12px; border: 2px solid #333; border-radius: 8px; background: #1a1a2e; color: #fff; font-size: 16px;">
+            <div style="margin-top: 8px; font-size: 12px; color: #888;">
+                Suggested: ${suggestedLimit} SOL (for this ${currentAmount} SOL donation)
+            </div>
+        </div>
+        <div style="margin: 16px 0;">
+            <label for="otp-limit-input" style="display: block; margin-bottom: 8px; color: #ccc; font-size: 14px;">
+                Email verification code:
+            </label>
+            <input type="text" 
+                   id="otp-limit-input" 
+                   placeholder="Enter OTP from email" 
+                   style="width: 100%; padding: 12px; border: 2px solid #333; border-radius: 8px; background: #1a1a2e; color: #fff; font-size: 16px;">
+            <div style="margin-top: 8px; font-size: 12px; color: #888;">
+                Check your email for the verification code
+            </div>
+        </div>
+    `;
+    
+    // Replace modal message with custom input form
+    if (this.modalMessage) {
+        this.modalMessage.innerHTML = customContent;
+    }
+    
+    if (this.modalTitle) {
+        this.modalTitle.textContent = title;
+    }
+    
+    // Clear and set up new actions
+    if (this.modalActions) {
+        this.modalActions.innerHTML = '';
+        
+        const confirmBtn = document.createElement('button');
+        confirmBtn.textContent = 'Update Limit';
+        confirmBtn.className = 'feedback-modal-button primary';
+        confirmBtn.onclick = () => this.submitSpendingLimit(currentAmount, recipient);
+        
+        const cancelBtn = document.createElement('button');
+        cancelBtn.textContent = 'Cancel';
+        cancelBtn.className = 'feedback-modal-button secondary';
+        cancelBtn.onclick = () => this.hideBlockingPrompt();
+        
+        this.modalActions.appendChild(confirmBtn);
+        this.modalActions.appendChild(cancelBtn);
+    }
+    
+    // Show modal if not already visible
+    if (this.modalOverlay) {
+        this.modalOverlay.classList.remove('feedback-modal-hidden');
+    }
+    
+    // Focus the spending limit input
+    setTimeout(() => {
+        const limitInput = document.getElementById('spending-limit-input');
+        if (limitInput) limitInput.focus();
+    }, 100);
+};
+
+FeedbackService.prototype.submitSpendingLimit = async function(currentAmount, recipient) {
+    const limitInput = document.getElementById('spending-limit-input');
+    const otpInput = document.getElementById('otp-limit-input');
+    
+    if (!limitInput || !otpInput) {
+        console.error("FeedbackService: Spending limit inputs not found");
+        return;
+    }
+    
+    const limitValue = parseFloat(limitInput.value.trim());
+    const otpValue = otpInput.value.trim();
+    
+    if (!limitValue || limitValue <= 0) {
+        this.showError("Invalid Limit", "Please enter a valid spending limit amount.");
+        return;
+    }
+    
+    if (!otpValue) {
+        this.showError("Missing OTP", "Please enter the verification code from your email.");
+        return;
+    }
+    
+    try {
+        // Get services
+        const authService = this.app.services?.get('authService');
+        const configLoader = this.app.config;
+        
+        if (!authService || !configLoader) {
+            throw new Error("Required services not available");
+        }
+        
+        const gridSpendingLimitUrl = configLoader.get('cloudflareWorkerGridSpendingLimitEndpoint');
+        const sessionToken = authService.getSessionToken();
+        
+        if (!gridSpendingLimitUrl || !sessionToken) {
+            throw new Error("Grid configuration or session not available");
+        }
+        
+        // Show loading state
+        this.showInfo("Updating spending limit...", 10000);
+        
+        // Convert SOL to lamports for Grid API
+        const limitLamports = Math.round(limitValue * 1000000000);
+        
+        const response = await fetch(gridSpendingLimitUrl, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${sessionToken}`
+            },
+            body: JSON.stringify({
+                policy: {
+                    daily_limit: {
+                        amount: limitLamports,
+                        currency: 'lamports'
+                    }
+                },
+                otp: otpValue
+            })
+        });
+        
+        const data = await response.json();
+        
+        if (!response.ok) {
+            throw new Error(data.error || 'Failed to update spending limit');
+        }
+        
+        this.hideBlockingPrompt();
+        this.showSuccess(`Daily spending limit updated to ${limitValue} SOL! You can now retry your donation.`);
+        
+        console.log("FeedbackService: Spending limit updated successfully");
+        
+    } catch (error) {
+        console.error("FeedbackService: Failed to update spending limit:", error);
+        this.showError("Update Failed", error.message);
+    }
+};
+
 FeedbackService.prototype.destroy = function() {
+    // Clean up event listeners
+    this.app.off('grid:showSpendingLimitModal', this.onShowSpendingLimitModal, this);
+    
     // Clean up injected elements
     if (this.uiRoot && this.uiRoot.parentNode) {
         this.uiRoot.parentNode.removeChild(this.uiRoot);

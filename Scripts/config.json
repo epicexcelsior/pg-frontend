@@ -3,6 +3,10 @@
   "cloudflareWorkerAuthEndpoint": "http://localhost:8787",
   "cloudflareWorkerCreateTxEndpoint": "http://localhost:8787/create_donation_transaction",
   "cloudflareWorkerDonationEndpoint": "http://localhost:8787/process_donation",
+  "cloudflareWorkerGridAuthEndpoint": "http://localhost:8787/grid-auth",
+  "cloudflareWorkerGridDonationEndpoint": "http://localhost:8787/grid-execute-donation",
+  "cloudflareWorkerGridSpendingLimitEndpoint": "http://localhost:8787/grid-set-spending-limit",
+  "cloudflareWorkerGridOnrampEndpoint": "http://localhost:8787/grid-onramp",
   "solanaRpcEndpoint": "https://api.mainnet-beta.solana.com",
   "donationFeeRecipientAddress": "r1eKs83sknjVn8cSx5u7afNx8ykjoi1GWULwZvcaAio",
   "donationFeePercentage": 3

@@ -107,6 +107,12 @@ DonationService.prototype.loadConfigValues = function () {
   this.workerCreateUrl = this.configLoader.get(
     "cloudflareWorkerCreateTxEndpoint"
   );
+  this.gridDonationUrl = this.configLoader.get(
+    "cloudflareWorkerGridDonationEndpoint"
+  );
+  this.gridSpendingLimitUrl = this.configLoader.get(
+    "cloudflareWorkerGridSpendingLimitEndpoint"
+  );
   this.feeRecipient = this.configLoader.get("donationFeeRecipientAddress");
   const feePercent = this.configLoader.get("donationFeePercentage");
 
@@ -117,6 +123,14 @@ DonationService.prototype.loadConfigValues = function () {
   if (!this.workerCreateUrl)
     console.error(
       "DonationService: cloudflareWorkerCreateTxEndpoint missing from config."
+    );
+  if (!this.gridDonationUrl)
+    console.error(
+      "DonationService: cloudflareWorkerGridDonationEndpoint missing from config."
+    );
+  if (!this.gridSpendingLimitUrl)
+    console.error(
+      "DonationService: cloudflareWorkerGridSpendingLimitEndpoint missing from config."
     );
   if (!this.feeRecipient)
     console.error(
@@ -334,6 +348,20 @@ DonationService.prototype.initiateDonation = async function (
     this.workerProcessUrl,
     this.feeRecipient
   );
+
+  // Check auth provider and route accordingly
+  const authProvider = this.authService.getAuthProvider();
+  if (authProvider === 'grid') {
+    console.log("DonationService: Routing to Grid donation flow");
+    return this.handleGridDonation(donationAmount, recipientAddress);
+  } else if (authProvider === 'wallet') {
+    console.log("DonationService: Routing to wallet donation flow");
+    // Continue with existing wallet flow below
+  } else {
+    console.error("DonationService: Unknown auth provider:", authProvider);
+    this.setState(DonationState.FAILED, new Error("Unknown authentication provider."));
+    return;
+  }
 
   if (!window.SolanaSDK || !window.SolanaSDK.wallet) {
     console.error("DonationService: Solana wallet extension not found.");
@@ -737,6 +765,86 @@ DonationService.prototype.handleDonation = async function () {
     } else if (errorMsgLower.includes("confirmation failed")) {
       failureState = DonationState.FAILED_CONFIRMATION;
     }
+    this.setState(failureState, error);
+  }
+};
+
+DonationService.prototype.handleGridDonation = async function() {
+  const sessionToken = this.authService.getSessionToken();
+  const senderAddress = this.authService.getWalletAddress();
+
+  console.log(
+    "Grid donation: Initiating transfer from",
+    senderAddress,
+    "to",
+    this.recipient,
+    "for",
+    this.amount,
+    "SOL"
+  );
+
+  try {
+    this.setState(DonationState.FETCHING_TRANSACTION);
+    
+    const response = await fetch(this.gridDonationUrl, {
+      method: "POST",
+      headers: { 
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${sessionToken}`
+      },
+      body: JSON.stringify({
+        recipient: this.recipient,
+        amount: this.amount
+      }),
+    });
+
+    const data = await response.json();
+    
+    if (!response.ok) {
+      // Handle specific Grid errors
+      if (data.error === 'AUTHORIZATION_REQUIRED') {
+        console.log("DonationService: Grid spending limit exceeded, showing limit modal");
+        this.setState(DonationState.FAILED, new Error("Spending limit exceeded. Please set or increase your daily limit."));
+        // Fire event for FeedbackService to show spending limit modal
+        this.app.fire('grid:showSpendingLimitModal', {
+          currentAmount: this.amount,
+          recipient: this.recipient,
+          reason: data.reason || 'Spending limit exceeded'
+        });
+        return;
+      }
+      throw new Error(data.error || "Grid donation failed");
+    }
+
+    const signature = data.signature;
+    if (!signature) {
+      throw new Error("Grid donation succeeded but signature missing from response.");
+    }
+
+    console.log("Grid donation completed successfully! Signature:", signature);
+    this.setState(DonationState.SUCCESS, null, signature);
+    
+    // Fire confirmation event for backend
+    this.app.fire("donation:confirmedForBackend", {
+      signature: signature,
+      recipient: this.recipient,
+      donor: senderAddress,
+      amountSOL: this.amount,
+    });
+
+  } catch (error) {
+    console.error("Grid donation process failed:", error);
+    let failureState = DonationState.FAILED;
+    const errorMsgLower = error.message?.toLowerCase() || "";
+
+    if (errorMsgLower.includes("authorization") || errorMsgLower.includes("limit")) {
+      failureState = DonationState.FAILED_SUBMISSION;
+    } else if (errorMsgLower.includes("insufficient")) {
+      failureState = DonationState.FAILED_SUBMISSION;
+    } else if (errorMsgLower.includes("network") || errorMsgLower.includes("fetch")) {
+      failureState = DonationState.FAILED_FETCH;
+    }
+    
     this.setState(failureState, error);
   }
 };
