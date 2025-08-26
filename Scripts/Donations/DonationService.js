@@ -7,6 +7,8 @@ const DonationState = {
   VALIDATING_INPUT: "validating_input",
   FETCHING_TRANSACTION: "fetching_transaction",
   AWAITING_SIGNATURE: "awaiting_signature",
+  AWAITING_MOBILE_PAYMENT: "awaiting_mobile_payment",
+  POLLING_SOLANAPAY_TX: "polling_solanapay_tx",
   SUBMITTING_TO_BACKEND: "submitting_to_backend",
   TX_SUBMITTED_PROCESSING: "tx_submitted_processing",
   CONFIRMING_TRANSACTION: "confirming_transaction",
@@ -36,6 +38,7 @@ DonationService.prototype.initialize = function () {
   this.currentTransactionSignature = null;
   this.isDonationInProgress = false;
   this.triggerElement = null;
+  this.pollingTimeout = null;
 
   if (!this.servicesEntity || !this.servicesEntity.script) {
     console.error(
@@ -82,6 +85,10 @@ DonationService.prototype.initialize = function () {
 
   // Listen for UI requests
   this.app.on("ui:donate:request", this._onDonateRequest, this);
+
+  // Listen for Solana Pay polling requests from the UI
+  this.app.on('solanapay:poll', this._pollForSolanaPayTransaction, this);
+  this.app.on('solanapay:poll:stop', this._stopPolling, this);
 
   console.log("DonationService initialized.");
 };
@@ -198,6 +205,13 @@ DonationService.prototype.setState = function (
           10000
         );
         break;
+      case DonationState.AWAITING_MOBILE_PAYMENT:
+        // No automatic toast, the UI is now showing the QR code.
+        // We could show a subtle hint if needed.
+        break;
+      case DonationState.POLLING_SOLANAPAY_TX:
+        this.feedbackService.showInfo("Checking for confirmation on the blockchain...", 15000);
+        break;
       case DonationState.SUBMITTING_TO_BACKEND:
         if (this.triggerElement)
           this.feedbackService.showInlineLoading(
@@ -294,13 +308,24 @@ DonationService.prototype._onDonateRequest = function (data) {
     );
   }
 
-  this.initiateDonation(data.amount, data.recipient);
+  this.initiateDonation(data.amount, data.recipient, data.isSolanaPay);
 };
 
 DonationService.prototype.initiateDonation = async function (
   donationAmount,
-  recipientAddress
+  recipientAddress,
+  isSolanaPay = false
 ) {
+  console.log(`[DEBUG] DonationService.initiateDonation called. isSolanaPay = ${isSolanaPay}`);
+
+  // --- Solana Pay Flow ---
+  if (isSolanaPay) {
+      console.log("DonationService: Initiating Solana Pay flow.");
+      this._handleSolanaPayDonation(donationAmount, recipientAddress);
+      return; // <-- CRITICAL FIX: Exit the function here to prevent the old flow from running.
+  }
+  // --- End Solana Pay Flow ---
+
   console.log(
     "Donation:",
     this.authService,
@@ -445,6 +470,130 @@ DonationService.prototype.initiateDonation = async function (
   );
 
   await this.handleDonation();
+};
+
+DonationService.prototype._handleSolanaPayDonation = function(amount, recipient) {
+    this.isDonationInProgress = true;
+    this.setState(DonationState.VALIDATING_INPUT);
+
+    // Basic validation
+    const MIN_DONATION = 0.001;
+    if (typeof amount !== 'number' || isNaN(amount) || amount < MIN_DONATION) {
+        this.setState(DonationState.FAILED_VALIDATION, new Error(`Invalid amount. Minimum is ${MIN_DONATION} SOL.`));
+        return;
+    }
+
+    try {
+        window.SolanaSDK.gill.address(recipient);
+    } catch (e) {
+        this.setState(DonationState.FAILED_VALIDATION, new Error("Invalid recipient address format."));
+        return;
+    }
+
+    // 1. Generate reference keypair
+    const reference = new window.SolanaSDK.web3.Keypair();
+    const referencePublicKey = reference.publicKey.toBase58();
+    console.log("Generated Solana Pay reference key:", referencePublicKey);
+
+    // 2. Construct Solana Pay URL
+    const label = "Donation to Booth Owner";
+    const message = `Donation of ${amount} SOL to ${recipient.substring(0, 4)}... via PlsGive`;
+    const url = `solana:${recipient}?amount=${amount}&reference=${referencePublicKey}&label=${encodeURIComponent(label)}&message=${encodeURIComponent(message)}`;
+
+    // 3. Generate QR Code
+    window.QRCode.toDataURL(url, { width: 220, margin: 1 }, (err, dataUrl) => {
+        if (err) {
+            console.error("QR Code generation failed:", err);
+            this.setState(DonationState.FAILED_FETCH, new Error("Failed to generate QR code."));
+            return;
+        }
+
+        // 4. Fire event to show QR code in UI
+        this.app.fire('donation:showQR', {
+            qrDataUrl: dataUrl,
+            solanaPayUrl: url,
+            reference: reference, // Pass the whole keypair for polling
+            amount: amount,
+            recipient: recipient
+        });
+
+        this.setState(DonationState.AWAITING_MOBILE_PAYMENT); // A new custom state
+    });
+};
+
+DonationService.prototype._executePoll = async function(data, pollCount, maxPolls) {
+    const { reference, recipient, amount } = data;
+    const referencePublicKey = reference.publicKey.toBase58();
+    const rpc = window.SolanaSDK.rpc;
+
+    if (pollCount >= maxPolls) {
+        this._stopPolling(); // Use the stop function to clean up
+        this.setState(DonationState.FAILED_CONFIRMATION, new Error("Donation not confirmed in time. Please try again."));
+        return;
+    }
+
+    try {
+        console.log(`Polling (${pollCount + 1}/${maxPolls}) for signature with reference: ${referencePublicKey}`);
+        const signatures = await rpc.getSignaturesForAddress(referencePublicKey, {
+            limit: 1,
+            commitment: 'confirmed' // CRITICAL: Set commitment level
+        }).send();
+
+        if (signatures && signatures.length > 0 && signatures[0].signature) {
+            const foundSignature = signatures[0].signature;
+            console.log(`[SUCCESS] Found signature: ${foundSignature}`);
+            console.log("Full signature info:", signatures[0]);
+
+            // For the hackathon, finding a signature is enough proof.
+            this.setState(DonationState.SUCCESS, null, foundSignature);
+            this.isDonationInProgress = false; // Reset flag
+
+            this.app.fire("donation:confirmedForBackend", {
+                signature: foundSignature,
+                recipient: recipient,
+                donor: `sp_${referencePublicKey.substring(0, 8)}`,
+                amountSOL: amount,
+            });
+            this._stopPolling(); // Stop polling since we found it
+            return;
+        }
+    } catch (error) {
+        console.error("Error during polling iteration:", error);
+    }
+
+    // If not found, schedule the next poll
+    this.pollingTimeout = setTimeout(() => {
+        this._executePoll(data, pollCount + 1, maxPolls);
+    }, 3000);
+};
+
+DonationService.prototype._pollForSolanaPayTransaction = async function(data) {
+    if (this.isDonationInProgress && this.state !== DonationState.AWAITING_MOBILE_PAYMENT) {
+        console.warn("Cannot start Solana Pay polling, another donation is already in progress.");
+        return;
+    }
+
+    console.log("Starting to poll for Solana Pay transaction with reference:", data.reference.publicKey.toBase58());
+    this.setState(DonationState.POLLING_SOLANAPAY_TX);
+
+    const maxPolls = 60; // Poll for 3 minutes (60 * 3s)
+    this._executePoll(data, 0, maxPolls);
+};
+
+DonationService.prototype._stopPolling = function() {
+    // If a timeout is active, clear it.
+    if (this.pollingTimeout) {
+        console.log("Stopping active Solana Pay polling timeout.");
+        clearTimeout(this.pollingTimeout);
+        this.pollingTimeout = null;
+    }
+
+    // If we are in a Solana Pay state, always reset.
+    if (this.state === DonationState.POLLING_SOLANAPAY_TX || this.state === DonationState.AWAITING_MOBILE_PAYMENT) {
+        console.log("Resetting donation state from Solana Pay flow.");
+        this.setState(DonationState.IDLE);
+        this.isDonationInProgress = false;
+    }
 };
 
 DonationService.prototype.handleDonation = async function () {

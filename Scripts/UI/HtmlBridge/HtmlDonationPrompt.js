@@ -28,6 +28,36 @@ DonationPromptHtml.prototype.initialize = function () {
           return;
      }
 
+     // --- Start Solana Pay Additions ---
+     this.solanaPayCheckbox = this.container.querySelector('#solanaPayCheckbox');
+     this.solanaPayQRView = this.container.querySelector('#solanaPayQR');
+     this.qrCodeCanvas = this.container.querySelector('#qrCodeCanvas');
+     this.solanaPayLink = this.container.querySelector('#solanaPayLink');
+     this.qrDoneBtn = this.container.querySelector('#qrDoneBtn');
+     this.qrCancelBtn = this.container.querySelector('#qrCancelBtn');
+     this.qrOverlay = this.container.querySelector('#qr-overlay'); // Get overlay
+     this.currentPollData = null; // To store data for polling
+
+     if (!this.solanaPayCheckbox || !this.solanaPayQRView || !this.qrCodeCanvas || !this.solanaPayLink || !this.qrDoneBtn || !this.qrCancelBtn || !this.qrOverlay) {
+          console.error("DonationPromptHtml: One or more Solana Pay UI elements are missing from the HTML.");
+          // return; // Don't block initialization if these are missing
+     } else {
+          // Add listeners for the new QR view buttons
+          this.qrDoneBtn.addEventListener('click', () => {
+               if (this.currentPollData) {
+                    this.app.fire('solanapay:poll', this.currentPollData);
+                    // Optionally disable the button to prevent multiple clicks
+                    this.qrDoneBtn.disabled = true;
+                    this.qrDoneBtn.textContent = "Polling...";
+               }
+          });
+
+          this.qrCancelBtn.addEventListener('click', () => {
+               this.hideQRView();
+          });
+     }
+     // --- End Solana Pay Additions ---
+
      gsap.set(this.donationUIEl, {
           y: 100,
           opacity: 0,
@@ -56,11 +86,14 @@ DonationPromptHtml.prototype.initialize = function () {
                var donationAmount = parseFloat(btn.getAttribute('data-amount'));
                if (isNaN(donationAmount)) return;
                if (!this.recipientAddress) return;
-               // Retrieve directly from the service registry
+               
+               const isSolanaPay = this.solanaPayCheckbox ? this.solanaPayCheckbox.checked : false;
+               console.log("[DEBUG] Preset Button Click -> Checkbox state:", this.solanaPayCheckbox?.checked, "isSolanaPay:", isSolanaPay);
+
                const donationService = this.app.services?.get('donationService');
                if (donationService) {
-                    console.log("HtmlDonationPrompt: Found donationService via registry. Calling initiateDonation...");
-                    donationService.initiateDonation(donationAmount, this.recipientAddress);
+                    console.log(`HtmlDonationPrompt: Calling initiateDonation from preset (Solana Pay: ${isSolanaPay})...`);
+                    donationService.initiateDonation(donationAmount, this.recipientAddress, isSolanaPay);
                } else {
                     console.error("HtmlDonationPrompt: Could not find donationService in app.services registry.");
                }
@@ -77,11 +110,14 @@ DonationPromptHtml.prototype.initialize = function () {
                var donationAmount = donationNumberInput ? parseFloat(donationNumberInput.value) : NaN;
                if (isNaN(donationAmount)) return;
                if (!this.recipientAddress) return;
-               // Retrieve directly from the service registry
+               
+               const isSolanaPay = this.solanaPayCheckbox ? this.solanaPayCheckbox.checked : false;
+               console.log("[DEBUG] Go Button Click -> Checkbox state:", this.solanaPayCheckbox?.checked, "isSolanaPay:", isSolanaPay);
+
                const donationService = this.app.services?.get('donationService');
                if (donationService) {
-                    console.log("HtmlDonationPrompt: Found donationService via registry. Calling initiateDonation...");
-                    donationService.initiateDonation(donationAmount, this.recipientAddress);
+                    console.log(`HtmlDonationPrompt: Calling initiateDonation (Solana Pay: ${isSolanaPay})...`);
+                    donationService.initiateDonation(donationAmount, this.recipientAddress, isSolanaPay);
                } else {
                     console.error("HtmlDonationPrompt: Could not find donationService in app.services registry.");
                }
@@ -114,6 +150,8 @@ DonationPromptHtml.prototype.initialize = function () {
      // Listen for UI events from BoothController (or UIManager)
      this.app.on('ui:showDonationPrompt', this.onShowPrompt, this);
      this.app.on('ui:hideDonationPrompt', this.onHidePrompt, this);
+     this.app.on('donation:showQR', this.showQRView, this); // Listen for QR event
+     this.app.on('donation:stateChanged', this.onDonationStateChanged, this); // Listen for state changes
 };
 
 DonationPromptHtml.prototype.setDonationButtonBackgrounds = function () {
@@ -195,6 +233,7 @@ DonationPromptHtml.prototype.hide = function () {
      } catch (err) {
           console.warn("DonationPromptHtml: Unable to re-enable pointer lock automatically:", err);
      }
+     this.hideQRView(); // Also ensure QR view is hidden
 };
 
 // === EVENT HANDLERS for UI events ===
@@ -215,15 +254,61 @@ DonationPromptHtml.prototype.onHidePrompt = function () {
      if (this.donationUIEl.style.opacity > 0) {
           console.log("DonationPromptHtml: Received ui:hideDonationPrompt.");
           this.hide(); // Use existing hide method
+          this.hideQRView(); // Also ensure QR view is hidden
           // Optionally clear recipient when hidden
           // this.recipientAddress = null;
      }
+};
+
+DonationPromptHtml.prototype.onDonationStateChanged = function(data) {
+    // Hide the QR prompt automatically on success or failure
+    if (data.state === 'success' || data.state.startsWith('failed')) {
+        if (!this.solanaPayQRView.classList.contains('hidden')) {
+            this.hideQRView();
+        }
+    }
+};
+
+DonationPromptHtml.prototype.showQRView = function(data) {
+     if (!this.solanaPayQRView || !this.qrCodeCanvas || !this.solanaPayLink || !this.qrOverlay) return;
+
+     this.currentPollData = data; // Store data needed for polling
+
+     // Generate QR code on the canvas
+     if (window.QRCode && typeof window.QRCode.toCanvas === 'function') {
+         window.QRCode.toCanvas(this.qrCodeCanvas, data.solanaPayUrl, { width: 200 }, (error) => {
+             if (error) console.error("QR Code generation failed:", error);
+         });
+     }
+
+     this.solanaPayLink.href = data.solanaPayUrl;
+     
+     // Reset button state
+     this.qrDoneBtn.disabled = false;
+     this.qrDoneBtn.textContent = "I've Sent the Donation";
+
+     this.donationUIEl.classList.add('hidden');
+     this.solanaPayQRView.classList.remove('hidden');
+     this.qrOverlay.classList.remove('hidden'); // Show overlay
+};
+
+DonationPromptHtml.prototype.hideQRView = function() {
+     if (!this.solanaPayQRView || !this.qrOverlay) return;
+     this.solanaPayQRView.classList.add('hidden');
+     this.donationUIEl.classList.remove('hidden'); // Show the main UI again
+     this.qrOverlay.classList.add('hidden'); // Hide overlay
+     
+     // Stop polling if it's active
+     this.app.fire('solanapay:poll:stop');
+     this.currentPollData = null;
 };
 
 // Clean up listeners
 DonationPromptHtml.prototype.destroy = function () {
      this.app.off('ui:showDonationPrompt', this.onShowPrompt, this);
      this.app.off('ui:hideDonationPrompt', this.onHidePrompt, this);
+     this.app.off('donation:showQR', this.showQRView, this);
+     this.app.off('donation:stateChanged', this.onDonationStateChanged, this);
 
      // Remove event listeners from buttons etc. if necessary (though often handled by element removal)
      // Remove HTML element if needed

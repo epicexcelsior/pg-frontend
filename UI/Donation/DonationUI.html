@@ -1,21 +1,40 @@
-<div id="donationUI" class="donation-ui">
-     <!-- Row 1: Donation Preset Buttons -->
-     <div class="donation-buttons">
-          <button class="donation-button" data-amount="0.01"></button>
-          <button class="donation-button" data-amount="0.05"></button>
-          <button class="donation-button" data-amount="0.25"></button>
-          <button class="donation-button" data-amount="0.5"></button>
-          <button class="donation-button" data-amount="1"></button>
-     </div>
+<div class="donation-prompt-container">
+    <div id="donationUI" class="donation-ui">
+        <div class="solanapay-container">
+            <div class="solanapay-option">
+                <input type="checkbox" id="solanaPayCheckbox">
+                <label for="solanaPayCheckbox">Use Solana Pay (Mobile)</label>
+            </div>
+        </div>
+        <!-- Row 1: Donation Preset Buttons -->
+        <div class="donation-buttons">
+            <button class="donation-button" data-amount="0.01"></button>
+            <button class="donation-button" data-amount="0.05"></button>
+            <button class="donation-button" data-amount="0.25"></button>
+            <button class="donation-button" data-amount="0.5"></button>
+            <button class="donation-button" data-amount="1"></button>
+        </div>
 
-     <hr class="divider" />
+        <hr class="divider" />
 
-     <!-- Row 2: GO Button + Slider + Number -->
-     <div class="slider-row">
-          <button class="go-button">GIVE!</button>
-          <div class="slider-wrapper">
-               <input type="range" id="donationSlider" class="donation-slider" min="-2" max="1.83885" step="0.00001" value="0" />
-               <input type="number" id="donationNumber" class="donation-number" min="0.01" max="69" step="0.01" value="1" />
-          </div>
-     </div>
+        <!-- Row 2: GO Button + Slider + Number -->
+        <div class="slider-row">
+            <button class="go-button">GIVE!</button>
+            <div class="slider-wrapper">
+                <input type="range" id="donationSlider" class="donation-slider" min="-2" max="1.83885" step="0.00001" value="0" />
+                <input type="number" id="donationNumber" class="donation-number" min="0.01" max="69" step="0.01" value="1" />
+            </div>
+        </div>
+    </div>
+    <div id="qr-overlay" class="hidden"></div>
+    <div id="solanaPayQR" class="hidden">
+        <h3>Scan with your Mobile Wallet</h3>
+        <p class="instructions">Scan the QR code with your phone's camera, then approve the transaction in your mobile Solana wallet. Click the purple button once complete.</p>
+        <canvas id="qrCodeCanvas"></canvas>
+        <p>Or use the link: <a id="solanaPayLink" href="#" target="_blank" rel="noopener noreferrer">Solana Pay Link</a></p>
+        <div class="qr-buttons">
+            <button id="qrDoneBtn">I've Sent the Donation</button>
+            <button id="qrCancelBtn" class="secondary">Cancel</button>
+        </div>
+    </div>
 </div>

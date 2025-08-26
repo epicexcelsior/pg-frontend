@@ -3,7 +3,7 @@
   "cloudflareWorkerAuthEndpoint": "http://localhost:8787",
   "cloudflareWorkerCreateTxEndpoint": "http://localhost:8787/create_donation_transaction",
   "cloudflareWorkerDonationEndpoint": "http://localhost:8787/process_donation",
-  "solanaRpcEndpoint": "https://api.devnet.solana.com",
+  "solanaRpcEndpoint": "https://api.mainnet-beta.solana.com",
   "donationFeeRecipientAddress": "r1eKs83sknjVn8cSx5u7afNx8ykjoi1GWULwZvcaAio",
-  "donationFeePercentage": 1.5
+  "donationFeePercentage": 3
 }
