@@ -1,0 +1,69 @@
+<!-- Onramp Modal HTML -->
+<div id="onramp-modal-overlay" class="onramp-modal-hidden">
+    <div id="onramp-modal">
+        <div class="onramp-modal-header">
+            <h2>Add Funds to Your Wallet</h2>
+            <button id="onramp-close" class="onramp-close-btn" aria-label="Close">&times;</button>
+        </div>
+        
+        <div class="onramp-modal-content">
+            <p class="onramp-description">
+                Add funds to your Grid wallet using your credit card, debit card, or bank account.
+                Funds will be available in your wallet within minutes.
+            </p>
+            
+            <div class="onramp-form">
+                <div class="form-group">
+                    <label for="onramp-amount">Amount</label>
+                    <div class="amount-input-container">
+                        <span class="currency-symbol">$</span>
+                        <input type="number" 
+                               id="onramp-amount" 
+                               placeholder="50" 
+                               min="1" 
+                               max="10000" 
+                               step="0.01"
+                               class="amount-input">
+                        <select id="onramp-currency" class="currency-select">
+                            <option value="USD">USD</option>
+                            <option value="EUR">EUR</option>
+                            <option value="GBP">GBP</option>
+                        </select>
+                    </div>
+                </div>
+                
+                <div class="preset-amounts">
+                    <button type="button" class="preset-amount-btn" data-amount="25">$25</button>
+                    <button type="button" class="preset-amount-btn" data-amount="50">$50</button>
+                    <button type="button" class="preset-amount-btn" data-amount="100">$100</button>
+                    <button type="button" class="preset-amount-btn" data-amount="250">$250</button>
+                </div>
+                
+                <div id="onramp-status" class="onramp-status" style="display: none;">
+                    Status updates will appear here
+                </div>
+                
+                <div class="onramp-actions">
+                    <button id="add-funds-btn" class="onramp-btn primary" disabled>
+                        Add Funds
+                    </button>
+                    <button id="cancel-onramp-btn" class="onramp-btn secondary" style="display: none;">
+                        Cancel
+                    </button>
+                </div>
+                
+                <div class="onramp-security-info">
+                    <div class="security-icons">
+                        <span class="security-icon">🔒</span>
+                        <span class="security-icon">💳</span>
+                        <span class="security-icon">🛡️</span>
+                    </div>
+                    <p class="security-text">
+                        Your payment information is processed securely and is never stored on our servers.
+                        Payments are handled by our trusted partner Grid.
+                    </p>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>

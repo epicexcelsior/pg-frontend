@@ -1,0 +1,349 @@
+/* Onramp Modal Styles */
+#onramp-modal-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background-color: rgba(0, 0, 0, 0.7);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    z-index: 2000;
+    opacity: 1;
+    transition: opacity 0.3s ease;
+    backdrop-filter: blur(4px);
+}
+
+#onramp-modal-overlay.onramp-modal-hidden {
+    opacity: 0;
+    pointer-events: none;
+}
+
+#onramp-modal {
+    background: linear-gradient(145deg, #1a1a2e, #16213e);
+    border-radius: 16px;
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+    max-width: 480px;
+    width: 90%;
+    max-height: 90vh;
+    overflow-y: auto;
+    transform: translateY(0);
+    transition: transform 0.3s ease;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+#onramp-modal-overlay.onramp-modal-hidden #onramp-modal {
+    transform: translateY(-50px);
+}
+
+.onramp-modal-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 24px 24px 16px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.onramp-modal-header h2 {
+    color: #ffffff;
+    font-size: 24px;
+    font-weight: 600;
+    margin: 0;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+}
+
+.onramp-close-btn {
+    background: none;
+    border: none;
+    color: #888;
+    font-size: 28px;
+    cursor: pointer;
+    padding: 0;
+    width: 32px;
+    height: 32px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+    transition: all 0.2s ease;
+}
+
+.onramp-close-btn:hover {
+    color: #fff;
+    background-color: rgba(255, 255, 255, 0.1);
+    transform: scale(1.1);
+}
+
+.onramp-modal-content {
+    padding: 24px;
+}
+
+.onramp-description {
+    color: #ccc;
+    font-size: 14px;
+    line-height: 1.5;
+    margin: 0 0 24px 0;
+    text-align: center;
+}
+
+.onramp-form {
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+}
+
+.form-group {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.form-group label {
+    color: #fff;
+    font-size: 14px;
+    font-weight: 500;
+}
+
+.amount-input-container {
+    display: flex;
+    align-items: center;
+    background: rgba(255, 255, 255, 0.05);
+    border: 2px solid rgba(255, 255, 255, 0.1);
+    border-radius: 12px;
+    overflow: hidden;
+    transition: border-color 0.3s ease;
+}
+
+.amount-input-container:focus-within {
+    border-color: #667eea;
+    box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.2);
+}
+
+.currency-symbol {
+    color: #888;
+    font-size: 18px;
+    font-weight: 600;
+    padding: 0 12px;
+    background: rgba(255, 255, 255, 0.05);
+    border-right: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.amount-input {
+    background: none;
+    border: none;
+    color: #fff;
+    font-size: 18px;
+    font-weight: 500;
+    padding: 16px 12px;
+    flex: 1;
+    outline: none;
+}
+
+.amount-input::placeholder {
+    color: #666;
+}
+
+.currency-select {
+    background: rgba(255, 255, 255, 0.05);
+    border: none;
+    border-left: 1px solid rgba(255, 255, 255, 0.1);
+    color: #fff;
+    font-size: 14px;
+    padding: 16px 12px;
+    outline: none;
+    cursor: pointer;
+}
+
+.currency-select option {
+    background: #1a1a2e;
+    color: #fff;
+}
+
+.preset-amounts {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 8px;
+    margin: 16px 0;
+}
+
+.preset-amount-btn {
+    background: rgba(255, 255, 255, 0.05);
+    border: 2px solid rgba(255, 255, 255, 0.1);
+    color: #ccc;
+    padding: 12px 8px;
+    border-radius: 8px;
+    cursor: pointer;
+    font-size: 14px;
+    font-weight: 500;
+    transition: all 0.2s ease;
+}
+
+.preset-amount-btn:hover:not(:disabled) {
+    background: rgba(102, 126, 234, 0.2);
+    border-color: #667eea;
+    color: #fff;
+    transform: translateY(-2px);
+}
+
+.preset-amount-btn:active {
+    transform: translateY(0);
+}
+
+.preset-amount-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.onramp-status {
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 8px;
+    padding: 16px;
+    color: #ccc;
+    font-size: 14px;
+    text-align: center;
+    line-height: 1.4;
+}
+
+.onramp-actions {
+    display: flex;
+    gap: 12px;
+    justify-content: stretch;
+}
+
+.onramp-btn {
+    padding: 16px 24px;
+    border: none;
+    border-radius: 12px;
+    font-size: 16px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    flex: 1;
+    position: relative;
+    overflow: hidden;
+}
+
+.onramp-btn.primary {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: #fff;
+    box-shadow: 0 4px 20px rgba(102, 126, 234, 0.3);
+}
+
+.onramp-btn.primary:hover:not(:disabled) {
+    transform: translateY(-2px);
+    box-shadow: 0 6px 30px rgba(102, 126, 234, 0.4);
+}
+
+.onramp-btn.primary:active {
+    transform: translateY(0);
+}
+
+.onramp-btn.secondary {
+    background: rgba(255, 255, 255, 0.1);
+    color: #ccc;
+    border: 2px solid rgba(255, 255, 255, 0.2);
+}
+
+.onramp-btn.secondary:hover:not(:disabled) {
+    background: rgba(255, 255, 255, 0.15);
+    color: #fff;
+    border-color: rgba(255, 255, 255, 0.3);
+}
+
+.onramp-btn:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+    transform: none !important;
+    box-shadow: none !important;
+}
+
+.onramp-btn.loading {
+    position: relative;
+    color: transparent;
+}
+
+.onramp-btn.loading::after {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 20px;
+    height: 20px;
+    margin: -10px 0 0 -10px;
+    border: 2px solid rgba(255, 255, 255, 0.3);
+    border-radius: 50%;
+    border-top-color: #fff;
+    animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+}
+
+.onramp-security-info {
+    margin-top: 24px;
+    padding-top: 20px;
+    border-top: 1px solid rgba(255, 255, 255, 0.1);
+    text-align: center;
+}
+
+.security-icons {
+    display: flex;
+    justify-content: center;
+    gap: 16px;
+    margin-bottom: 12px;
+}
+
+.security-icon {
+    font-size: 24px;
+    opacity: 0.7;
+}
+
+.security-text {
+    color: #888;
+    font-size: 12px;
+    line-height: 1.4;
+    margin: 0;
+}
+
+/* Responsive adjustments */
+@media (max-width: 480px) {
+    #onramp-modal {
+        width: 95%;
+        margin: 20px;
+    }
+    
+    .onramp-modal-content {
+        padding: 20px;
+    }
+    
+    .preset-amounts {
+        grid-template-columns: repeat(2, 1fr);
+        gap: 12px;
+    }
+    
+    .onramp-actions {
+        flex-direction: column;
+    }
+}
+
+/* Accessibility improvements */
+@media (prefers-reduced-motion: reduce) {
+    #onramp-modal-overlay,
+    #onramp-modal,
+    .onramp-btn,
+    .preset-amount-btn,
+    .amount-input-container {
+        transition: none;
+    }
+    
+    .onramp-btn.loading::after {
+        animation: none;
+    }
+}

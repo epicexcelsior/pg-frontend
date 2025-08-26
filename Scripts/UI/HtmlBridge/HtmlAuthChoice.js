@@ -60,6 +60,7 @@ HtmlAuthChoice.prototype.initialize = function() {
     // State management
     this.pendingBoothId = null;
     this.emailValue = '';
+    this.waitingForOTP = false;
 
     // Listen for events
     this.app.on('ui:showAuthChoice', this.onShowAuthChoice, this);
@@ -162,6 +163,7 @@ HtmlAuthChoice.prototype.hide = function() {
 };
 
 HtmlAuthChoice.prototype.resetToChoice = function() {
+    this.waitingForOTP = false;
     if (this.emailInput) this.emailInput.style.display = 'block';
     if (this.otpInput) this.otpInput.style.display = 'none';
     if (this.emailSubmitBtn) {
@@ -188,38 +190,79 @@ HtmlAuthChoice.prototype.handleEmailSubmit = async function() {
         return;
     }
 
-    // Single step Grid authentication - no OTP on frontend
-    const email = this.emailInput.value.trim();
-    if (!email || !this.isValidEmail(email)) {
-        if (this.feedbackService) {
-            this.feedbackService.showError("Invalid Email", "Please enter a valid email address.");
-        }
-        return;
-    }
-
-    this.emailValue = email;
-    this.setLoading(true, 'Authenticating with Grid...');
-
-    try {
-        // Use the AuthService Grid authentication method (handles the complete flow)
-        const walletAddress = await this.authService.connectWithGrid(email);
-        
-        if (walletAddress) {
-            this.hide();
-            
-            // Trigger booth claim if we have a pending booth
-            if (this.pendingBoothId) {
-                this.app.fire('booth:claimRequest', this.pendingBoothId);
+    if (!this.waitingForOTP) {
+        // Step 1: Send OTP
+        const email = this.emailInput.value.trim();
+        if (!email || !this.isValidEmail(email)) {
+            if (this.feedbackService) {
+                this.feedbackService.showError("Invalid Email", "Please enter a valid email address.");
             }
-        } else {
-            throw new Error('Grid authentication failed - no wallet address returned');
+            return;
         }
 
-    } catch (error) {
-        console.error("Grid authentication error:", error);
-        this.setLoading(false);
-        if (this.feedbackService) {
-            this.feedbackService.showError("Authentication Failed", error.message);
+        this.emailValue = email;
+        this.setLoading(true, 'Sending verification code...');
+
+        try {
+            const result = await this.authService.connectWithGrid(email);
+            
+            if (result && result.requiresOTP) {
+                // Switch to OTP input
+                this.waitingForOTP = true;
+                this.emailInput.style.display = 'none';
+                this.otpInput.style.display = 'block';
+                this.setLoading(false);
+                this.emailSubmitBtn.textContent = 'Verify Code';
+                
+                // Focus OTP input
+                setTimeout(() => this.otpInput.focus(), 100);
+                
+                if (this.feedbackService) {
+                    this.feedbackService.showSuccess("Verification code sent to your email!");
+                }
+            } else {
+                throw new Error('Unexpected response from Grid authentication');
+            }
+
+        } catch (error) {
+            console.error("Grid OTP request error:", error);
+            this.setLoading(false);
+            if (this.feedbackService) {
+                this.feedbackService.showError("Authentication Failed", error.message);
+            }
+        }
+    } else {
+        // Step 2: Verify OTP
+        const otpCode = this.otpInput.value.trim();
+        if (!otpCode || otpCode.length < 4) {
+            if (this.feedbackService) {
+                this.feedbackService.showError("Invalid Code", "Please enter the verification code from your email.");
+            }
+            return;
+        }
+
+        this.setLoading(true, 'Verifying code...');
+
+        try {
+            const walletAddress = await this.authService.connectWithGrid(this.emailValue, otpCode);
+            
+            if (walletAddress) {
+                this.hide();
+                
+                // Trigger booth claim if we have a pending booth
+                if (this.pendingBoothId) {
+                    this.app.fire('booth:claimRequest', this.pendingBoothId);
+                }
+            } else {
+                throw new Error('Grid authentication failed - no wallet address returned');
+            }
+
+        } catch (error) {
+            console.error("Grid OTP verification error:", error);
+            this.setLoading(false);
+            if (this.feedbackService) {
+                this.feedbackService.showError("Verification Failed", error.message);
+            }
         }
     }
 };

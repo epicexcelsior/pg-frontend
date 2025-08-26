@@ -23,6 +23,13 @@ WalletDisplay.attributes.add("connectButtonEntity", {
   description:
     "The Button Element entity used for connecting and disconnecting.",
 });
+
+WalletDisplay.attributes.add("addFundsButtonEntity", {
+  type: "entity",
+  title: "Add Funds Button Entity",
+  description: "The Button Element entity for Grid onramp (Add Funds).",
+  array: false
+});
 // Optional: Add disconnect button attribute if you have a separate one
 // WalletDisplay.attributes.add('disconnectButtonEntity', { type: 'entity', title: 'Disconnect Button Entity' });
 
@@ -58,9 +65,12 @@ WalletDisplay.prototype.initialize = function () {
   this.addressTextElement = this.walletAddressTextEntity?.element;
   this.balanceTextElement = this.walletBalanceTextEntity?.element;
   this.connectButton = this.connectButtonEntity?.button;
+  this.addFundsButton = this.addFundsButtonEntity?.button;
   // Attempt to find a child Text element for the button label
   this.connectButtonTextElement =
     this.connectButtonEntity?.findByName("Text")?.element;
+  this.addFundsButtonTextElement =
+    this.addFundsButtonEntity?.findByName("Text")?.element;
 
   // Validate UI elements
   if (!this.addressTextElement)
@@ -79,10 +89,22 @@ WalletDisplay.prototype.initialize = function () {
     console.warn(
       "WalletDisplay: Text element child of Connect Button not found (needed for label changes)."
     );
+  if (!this.addFundsButton)
+    console.log(
+      "WalletDisplay: Add Funds Button Entity not configured (optional for Grid users)."
+    );
+  if (this.addFundsButton && !this.addFundsButtonTextElement)
+    console.warn(
+      "WalletDisplay: Add Funds Button configured but Text element child not found."
+    );
 
   // Add button listeners
   if (this.connectButton) {
     this.connectButton.on("click", this.onConnectClick, this);
+  }
+  
+  if (this.addFundsButton) {
+    this.addFundsButton.on("click", this.onAddFundsClick, this);
   }
   // Add listener for separate disconnect button if attribute exists
 
@@ -146,13 +168,67 @@ WalletDisplay.prototype.onConnectClick = function () {
     console.log("WalletDisplay: Disconnect/Logout requested via button.");
     this.app.fire("auth:logout:request"); // Fire event for AuthService to handle
   } else if (state === "disconnected" || state === "error") {
-    // If disconnected or error, attempt connection
-    console.log("WalletDisplay: Connect requested via button.");
-    this.authService.connectWalletFlow(); // AuthService handles the flow and state changes
+    // Show auth choice modal instead of directly connecting wallet
+    console.log("WalletDisplay: Showing auth choice modal.");
+    this.app.fire("ui:showAuthChoice");
   } else {
     // If connecting/verifying, button should ideally be disabled, but handle defensively
     console.log("WalletDisplay: Connect button clicked while in state:", state);
   }
+};
+
+WalletDisplay.prototype.onAddFundsClick = function () {
+  if (!this.authService) {
+    console.error(
+      "WalletDisplay: AuthService not available for add funds click."
+    );
+    return;
+  }
+
+  // Verify user is authenticated with Grid
+  if (!this.authService.isAuthenticated()) {
+    console.warn("WalletDisplay: User not authenticated for add funds.");
+    // Show auth choice to sign in
+    this.app.fire("ui:showAuthChoice");
+    return;
+  }
+
+  if (this.authService.getAuthProvider() !== 'grid') {
+    console.warn("WalletDisplay: Add funds only available for Grid users.");
+    // Show message that Grid is required
+    if (this.app.services?.get('feedbackService')) {
+      this.app.services.get('feedbackService').showInfo(
+        "Add Funds is only available for Grid wallet users. Please sign in with your email.",
+        8000
+      );
+    }
+    return;
+  }
+
+  console.log("WalletDisplay: Opening onramp modal.");
+  
+  // Parse current balance to suggest a reasonable amount
+  let suggestedAmount = 50; // Default
+  if (this.balanceTextElement && this.balanceTextElement.text) {
+    const balanceText = this.balanceTextElement.text;
+    const solMatch = balanceText.match(/(\d+\.?\d*) SOL/);
+    if (solMatch) {
+      const currentBalance = parseFloat(solMatch[1]);
+      // Suggest adding enough to get to at least $100 worth (rough estimate)
+      if (currentBalance < 0.5) { // Less than ~$50 worth
+        suggestedAmount = 100;
+      } else if (currentBalance < 1) { // Less than ~$100 worth  
+        suggestedAmount = 50;
+      } else {
+        suggestedAmount = 25; // Just a top-up
+      }
+    }
+  }
+
+  // Fire event to show onramp modal
+  this.app.fire("ui:showOnrampModal", { 
+    suggestedAmount: suggestedAmount 
+  });
 };
 
 WalletDisplay.prototype.onAuthStateChanged = function (data) {
@@ -177,17 +253,20 @@ WalletDisplay.prototype.updateDisplay = function () {
   const state = this.authService.getState();
   const address = this.authService.getWalletAddress();
   const error = this.authService.getLastError();
+  const authProvider = this.authService.getAuthProvider();
 
   let connectButtonText = "Connect";
   let connectButtonEnabled = true;
   let addressText = "Not Connected";
   let balanceText = ""; // Clear balance initially, fetched async
+  let showAddFundsButton = false; // Only show for Grid users
 
   switch (state) {
     case "connecting_wallet":
     case "fetching_siws":
     case "signing_siws":
     case "verifying_siws":
+    case "connecting_grid":
       addressText = "Connecting...";
       connectButtonText = "Connecting...";
       connectButtonEnabled = false; // Disable button during process
@@ -196,6 +275,7 @@ WalletDisplay.prototype.updateDisplay = function () {
       addressText = this.formatAddress(address);
       connectButtonText = "Disconnect"; // Change button text to reflect action
       connectButtonEnabled = true;
+      showAddFundsButton = (authProvider === 'grid'); // Only show for Grid users
       this.fetchAndUpdateBalance(address); // Fetch balance now that we are connected
       break;
     case "disconnected":
@@ -231,6 +311,16 @@ WalletDisplay.prototype.updateDisplay = function () {
   if (this.connectButton) {
     // Ensure button component itself is enabled/disabled
     this.connectButtonEntity.enabled = connectButtonEnabled;
+  }
+  
+  // Show/hide Add Funds button based on auth provider
+  if (this.addFundsButton && this.addFundsButtonEntity) {
+    this.addFundsButtonEntity.enabled = showAddFundsButton;
+    
+    // Update button text if available
+    if (this.addFundsButtonTextElement) {
+      this.addFundsButtonTextElement.text = "Add Funds";
+    }
   }
 };
 

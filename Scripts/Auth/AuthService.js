@@ -211,7 +211,7 @@ AuthService.prototype.connectWithWallet = async function () {
     return this.connectWalletFlow();
 };
 
-AuthService.prototype.connectWithGrid = async function (email) {
+AuthService.prototype.connectWithGrid = async function (email, otpCode = null) {
     if (this.state !== AuthState.DISCONNECTED && this.state !== AuthState.ERROR) {
         console.warn("AuthService: connectWithGrid called while not in DISCONNECTED or ERROR state:", this.state);
         return this.walletAddress; // Already connected or connecting
@@ -235,38 +235,78 @@ AuthService.prototype.connectWithGrid = async function (email) {
 
     try {
         this.setState(AuthState.CONNECTING_GRID);
-        if (this.feedbackService) this.feedbackService.showInfo("Connecting with Grid...");
-
-        const response = await fetch(gridAuthUrl, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ email: email })
-        });
-
-        const data = await response.json();
         
-        if (!response.ok) {
-            throw new Error(data.error || 'Grid authentication failed');
+        if (!otpCode) {
+            // Step 1: Send OTP to email
+            if (this.feedbackService) this.feedbackService.showInfo("Sending verification code...");
+            
+            const response = await fetch(gridAuthUrl, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ email: email })
+            });
+
+            const data = await response.json();
+            
+            if (!response.ok) {
+                throw new Error(data.error || 'Failed to send verification code');
+            }
+
+            if (data.success) {
+                if (this.feedbackService) this.feedbackService.showSuccess("Verification code sent to your email!");
+                // Return special response to indicate OTP step
+                return { requiresOTP: true, email: email };
+            } else {
+                throw new Error("Failed to send verification code");
+            }
+        } else {
+            // Step 2: Verify OTP and complete authentication
+            if (this.feedbackService) this.feedbackService.showInfo("Verifying code...");
+            
+            const response = await fetch(gridAuthUrl, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ 
+                    email: email, 
+                    otp_code: otpCode 
+                })
+            });
+
+            const data = await response.json();
+            
+            if (!response.ok) {
+                throw new Error(data.error || 'Grid authentication failed');
+            }
+
+            if (!data.sessionToken || !data.walletAddress) {
+                throw new Error("Grid authentication succeeded but session data is incomplete.");
+            }
+
+            // Store session data
+            this.sessionToken = data.sessionToken;
+            this.refreshToken = data.sessionToken; // Grid uses same token for now
+            this.walletAddress = data.walletAddress;
+            this.authProvider = 'grid';
+            
+            // Store additional Grid-specific data
+            if (data.gridUserId) {
+                this.gridUserId = data.gridUserId;
+            }
+            
+            // Set up token refresh if expiration info is provided
+            if (data.expires_at || data.expires_in) {
+                this.scheduleTokenRefresh(data.expires_at, data.expires_in);
+            }
+
+            // Fire events for other systems
+            this.app.fire('auth:addressAvailable', { address: this.walletAddress });
+            this.app.fire('player:data:update', { walletAddress: this.walletAddress });
+
+            console.log("AuthService: Grid authentication completed successfully for:", email);
+            this.setState(AuthState.CONNECTED);
+
+            return this.walletAddress;
         }
-
-        if (!data.sessionToken || !data.walletAddress) {
-            throw new Error("Grid authentication succeeded but session data is incomplete.");
-        }
-
-        // Store session data
-        this.sessionToken = data.sessionToken;
-        this.refreshToken = data.sessionToken; // Grid uses same token for now
-        this.walletAddress = data.walletAddress;
-        this.authProvider = 'grid';
-
-        // Fire events for other systems
-        this.app.fire('auth:addressAvailable', { address: this.walletAddress });
-        this.app.fire('player:data:update', { walletAddress: this.walletAddress });
-
-        console.log("AuthService: Grid authentication completed successfully for:", email);
-        this.setState(AuthState.CONNECTED);
-
-        return this.walletAddress;
 
     } catch (error) {
         console.error("AuthService: Grid authentication failed.", error);

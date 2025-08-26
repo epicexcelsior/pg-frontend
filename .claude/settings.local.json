@@ -4,7 +4,15 @@
       "Read(/C:\\Obsidian\\Das Gehirn\\Pls Give\\Docs/**)",
       "Read(/C:\\Users\\Epic\\Documents\\GitHub\\cf-workers\\src/**)",
       "Read(/C:\\Users\\Epic\\Documents\\GitHub\\cf-workers/**)",
-      "WebFetch(domain:docs.squads.xyz)"
+      "WebFetch(domain:docs.squads.xyz)",
+      "WebSearch",
+      "Bash(npm run lint)",
+      "Bash(npm run:*)",
+      "Bash(node:*)",
+      "Read(/C:\\Obsidian\\Das Gehirn\\Pls Give\\Docs/**)",
+      "Read(/C:\\Obsidian\\Das Gehirn\\Pls Give\\Docs/**)",
+      "Read(/C:\\Obsidian\\Das Gehirn\\Pls Give\\Docs/**)",
+      "Read(/C:\\Obsidian\\Das Gehirn\\Pls Give\\Docs/**)"
     ],
     "deny": [],
     "ask": []

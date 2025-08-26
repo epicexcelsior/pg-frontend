@@ -932,6 +932,10 @@ DonationService.prototype._handleDonateError = function (error, failureState) {
         if (backendError.includes("insufficient funds")) {
           userMessage =
             "Donation Failed: Insufficient SOL balance for this donation and transaction fees.";
+          // Check if user is Grid user and suggest adding funds
+          if (this.authService && this.authService.getAuthProvider() === 'grid') {
+            userMessage += " You can add funds to your Grid wallet using the Add Funds button.";
+          }
         } else if (
           backendError.includes("blockhash expired") ||
           backendError.includes("blockhash not found")

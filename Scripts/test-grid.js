@@ -114,6 +114,46 @@ async function testGridSpendingLimit(sessionToken, limitSOL = 1.0) {
     }
 }
 
+// Test Grid Onramp
+async function testGridOnramp(sessionToken, amount = 50, currency = 'USD') {
+    console.log("Testing Grid Onramp...");
+    try {
+        const response = await fetch(`${workerBaseUrl}/grid-onramp`, {
+            method: 'POST',
+            headers: { 
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${sessionToken}`
+            },
+            body: JSON.stringify({ 
+                amount: amount,
+                currency: currency,
+                success_url: `${window.location.origin}?onramp_success=true`,
+                cancel_url: `${window.location.origin}?onramp_cancelled=true`
+            })
+        });
+
+        const data = await response.json();
+        console.log("Grid Onramp Response:", {
+            status: response.status,
+            ok: response.ok,
+            data: data
+        });
+
+        if (response.ok && data.onramp_url) {
+            console.log("✅ Grid onramp session created!");
+            console.log("🔗 Onramp URL:", data.onramp_url);
+            console.log("💡 You can test by opening this URL in a new tab");
+            return data;
+        } else {
+            console.log("❌ Grid onramp failed:", data.error);
+            return null;
+        }
+    } catch (error) {
+        console.error("❌ Grid onramp error:", error);
+        return null;
+    }
+}
+
 // Run full test suite
 async function runGridTests() {
     console.log("🚀 Running Grid API integration tests...");
@@ -131,6 +171,9 @@ async function runGridTests() {
     // Test 3: Execute donation
     await testGridDonation(authResult.sessionToken);
 
+    // Test 4: Test onramp (creates session but doesn't actually purchase)
+    await testGridOnramp(authResult.sessionToken, 25, 'USD');
+
     console.log("✅ Grid API integration tests completed!");
 }
 
@@ -140,6 +183,7 @@ if (typeof window !== 'undefined') {
         testGridAuth,
         testGridDonation,
         testGridSpendingLimit,
+        testGridOnramp,
         runGridTests
     };
     console.log("Grid test functions available as window.testGrid");
@@ -149,5 +193,5 @@ if (typeof window !== 'undefined') {
 if (typeof window !== 'undefined' && window.location) {
     console.log("To run tests, execute: testGrid.runGridTests()");
 } else if (typeof module !== 'undefined' && module.exports) {
-    module.exports = { testGridAuth, testGridDonation, testGridSpendingLimit, runGridTests };
+    module.exports = { testGridAuth, testGridDonation, testGridSpendingLimit, testGridOnramp, runGridTests };
 }
