@@ -58,7 +58,6 @@ HtmlAuthChoice.prototype.initialize = function() {
     }
 
     // State management
-    this.currentStep = 'choice'; // 'choice', 'email_input', 'otp_input'
     this.pendingBoothId = null;
     this.emailValue = '';
 
@@ -163,14 +162,15 @@ HtmlAuthChoice.prototype.hide = function() {
 };
 
 HtmlAuthChoice.prototype.resetToChoice = function() {
-    this.currentStep = 'choice';
-    this.emailInput.style.display = 'block';
-    this.otpInput.style.display = 'none';
-    this.emailSubmitBtn.textContent = 'Continue with Email';
-    this.emailSubmitBtn.disabled = false;
-    this.emailSubmitBtn.classList.remove('loading');
-    this.emailInput.value = this.emailValue;
-    this.otpInput.value = '';
+    if (this.emailInput) this.emailInput.style.display = 'block';
+    if (this.otpInput) this.otpInput.style.display = 'none';
+    if (this.emailSubmitBtn) {
+        this.emailSubmitBtn.textContent = 'Sign in with Email';
+        this.emailSubmitBtn.disabled = false;
+        this.emailSubmitBtn.classList.remove('loading');
+    }
+    if (this.emailInput) this.emailInput.value = this.emailValue;
+    if (this.otpInput) this.otpInput.value = '';
 };
 
 HtmlAuthChoice.prototype.handleEmailSubmit = async function() {
@@ -188,100 +188,38 @@ HtmlAuthChoice.prototype.handleEmailSubmit = async function() {
         return;
     }
 
-    if (this.currentStep === 'choice' || this.currentStep === 'email_input') {
-        // Step 1: Email submission
-        const email = this.emailInput.value.trim();
-        if (!email || !this.isValidEmail(email)) {
-            if (this.feedbackService) {
-                this.feedbackService.showError("Invalid Email", "Please enter a valid email address.");
-            }
-            return;
+    // Single step Grid authentication - no OTP on frontend
+    const email = this.emailInput.value.trim();
+    if (!email || !this.isValidEmail(email)) {
+        if (this.feedbackService) {
+            this.feedbackService.showError("Invalid Email", "Please enter a valid email address.");
         }
+        return;
+    }
 
-        this.emailValue = email;
-        this.setLoading(true, 'Sending verification email...');
+    this.emailValue = email;
+    this.setLoading(true, 'Authenticating with Grid...');
 
-        try {
-            const response = await fetch(gridAuthUrl, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ email: email })
-            });
-
-            const data = await response.json();
-            
-            if (!response.ok) {
-                throw new Error(data.error || 'Failed to send verification email');
-            }
-
-            // Success - show OTP input
-            this.currentStep = 'otp_input';
-            this.emailInput.style.display = 'none';
-            this.otpInput.style.display = 'block';
-            this.emailSubmitBtn.textContent = 'Verify & Sign In';
-            this.setLoading(false);
-            
-            if (this.feedbackService) {
-                this.feedbackService.showSuccess("Verification email sent! Please check your email and enter the OTP.");
-            }
-            
-            // Focus OTP input
-            setTimeout(() => this.otpInput.focus(), 100);
-
-        } catch (error) {
-            console.error("Grid email auth error:", error);
-            this.setLoading(false);
-            if (this.feedbackService) {
-                this.feedbackService.showError("Authentication Error", error.message);
-            }
-        }
-
-    } else if (this.currentStep === 'otp_input') {
-        // Step 2: OTP verification (placeholder - Grid handles this in the auth flow)
-        const otp = this.otpInput.value.trim();
-        if (!otp) {
-            if (this.feedbackService) {
-                this.feedbackService.showError("Missing OTP", "Please enter the verification code from your email.");
-            }
-            return;
-        }
-
-        this.setLoading(true, 'Verifying...');
-
-        try {
-            // For now, we'll assume the Grid API handles OTP verification internally
-            // In a complete implementation, this might require a separate verification endpoint
-            const response = await fetch(gridAuthUrl, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ 
-                    email: this.emailValue,
-                    otp: otp 
-                })
-            });
-
-            const data = await response.json();
-            
-            if (!response.ok) {
-                throw new Error(data.error || 'OTP verification failed');
-            }
-
-            // Success - update AuthService with Grid session
-            this.authService.setGridSession(data.sessionToken, data.walletAddress);
-            
+    try {
+        // Use the AuthService Grid authentication method (handles the complete flow)
+        const walletAddress = await this.authService.connectWithGrid(email);
+        
+        if (walletAddress) {
             this.hide();
             
             // Trigger booth claim if we have a pending booth
             if (this.pendingBoothId) {
                 this.app.fire('booth:claimRequest', this.pendingBoothId);
             }
+        } else {
+            throw new Error('Grid authentication failed - no wallet address returned');
+        }
 
-        } catch (error) {
-            console.error("Grid OTP verification error:", error);
-            this.setLoading(false);
-            if (this.feedbackService) {
-                this.feedbackService.showError("Verification Failed", error.message);
-            }
+    } catch (error) {
+        console.error("Grid authentication error:", error);
+        this.setLoading(false);
+        if (this.feedbackService) {
+            this.feedbackService.showError("Authentication Failed", error.message);
         }
     }
 };
