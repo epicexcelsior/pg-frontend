@@ -102,7 +102,7 @@ FeedbackService.prototype.injectHtml = function(htmlResource) {
         this.modalOverlay.style.width = '100%';
         this.modalOverlay.style.height = '100%';
         this.modalOverlay.style.backgroundColor = 'rgba(0, 0, 0, 0.5)'; // Semi-transparent black background
-        this.modalOverlay.style.zIndex = '1000'; // Ensure it's on top
+        this.modalOverlay.style.zIndex = '100000'; // Ensure it's above all in-game overlays
         this.modalOverlay.style.display = 'flex'; // Use flexbox for centering content
         this.modalOverlay.style.justifyContent = 'center';
         this.modalOverlay.style.alignItems = 'center';
@@ -570,10 +570,10 @@ FeedbackService.prototype.submitSpendingLimit = async function(currentAmount, re
             throw new Error("Required services not available");
         }
         
-        const gridSpendingLimitUrl = configLoader.get('cloudflareWorkerGridSpendingLimitEndpoint');
-        const sessionToken = authService.getSessionToken();
+        const gridSpendingLimitUrl = configLoader.get('cloudflareWorkerGridSpendingLimitEndpoint') || configLoader.get('gridSpendingLimitEndpoint');
+        const sessionId = authService.gridSessionId;
         
-        if (!gridSpendingLimitUrl || !sessionToken) {
+        if (!gridSpendingLimitUrl || !sessionId) {
             throw new Error("Grid configuration or session not available");
         }
         
@@ -587,9 +587,10 @@ FeedbackService.prototype.submitSpendingLimit = async function(currentAmount, re
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
-                'Authorization': `Bearer ${sessionToken}`
+                ...(authService.getSessionToken() ? { 'Authorization': `Bearer ${authService.getSessionToken()}` } : {})
             },
             body: JSON.stringify({
+                session_id: sessionId,
                 policy: {
                     daily_limit: {
                         amount: limitLamports,

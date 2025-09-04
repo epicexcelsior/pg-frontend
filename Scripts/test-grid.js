@@ -5,20 +5,59 @@ console.log("Starting Grid API integration test...");
 
 // Test configuration
 const testEmail = "test@example.com";
-const workerBaseUrl = "http://localhost:8787";
+const colyseusBaseUrl = "http://localhost:3001/api";
 
 // Test Grid Authentication
 async function testGridAuth() {
     console.log("Testing Grid Authentication...");
     try {
-        const response = await fetch(`${workerBaseUrl}/grid-auth`, {
+        // Step 1: Send OTP
+        console.log("Step 1: Sending OTP");
+        const step1Response = await fetch(`${colyseusBaseUrl}/grid-auth`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ email: testEmail })
         });
 
+        const step1Data = await step1Response.json();
+        console.log("Grid Auth Step 1 Response:", {
+            status: step1Response.status,
+            ok: step1Response.ok,
+            data: step1Data
+        });
+
+        if (!step1Response.ok || !step1Data.session_id) {
+            console.log("❌ Grid authentication step 1 failed:", step1Data.error);
+            return null;
+        }
+
+        console.log("✅ Step 1 successful! Session ID:", step1Data.session_id);
+        console.log("📧 Check your email for OTP and then run step 2:");
+        console.log(`await testGridAuthStep2("${step1Data.session_id}", "YOUR_OTP_CODE");`);
+        
+        return { sessionId: step1Data.session_id, step: 1 };
+    } catch (error) {
+        console.error("❌ Grid authentication error:", error);
+        return null;
+    }
+}
+
+// Test Grid Authentication Step 2
+async function testGridAuthStep2(sessionId, otpCode) {
+    console.log("Testing Grid Authentication Step 2...");
+    try {
+        const response = await fetch(`${colyseusBaseUrl}/grid-auth`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ 
+                email: testEmail,
+                otp_code: otpCode,
+                session_id: sessionId
+            })
+        });
+
         const data = await response.json();
-        console.log("Grid Auth Response:", {
+        console.log("Grid Auth Step 2 Response:", {
             status: response.status,
             ok: response.ok,
             data: data
@@ -26,28 +65,35 @@ async function testGridAuth() {
 
         if (response.ok && data.sessionToken && data.walletAddress) {
             console.log("✅ Grid authentication successful!");
-            return { sessionToken: data.sessionToken, walletAddress: data.walletAddress };
+            return { 
+                sessionToken: data.sessionToken, 
+                walletAddress: data.walletAddress,
+                sessionId: sessionId
+            };
         } else {
-            console.log("❌ Grid authentication failed:", data.error);
+            console.log("❌ Grid authentication step 2 failed:", data.error);
             return null;
         }
     } catch (error) {
-        console.error("❌ Grid authentication error:", error);
+        console.error("❌ Grid authentication step 2 error:", error);
         return null;
     }
 }
 
 // Test Grid Donation
-async function testGridDonation(sessionToken, recipient = "11111111111111111111111111111112", amount = 0.001) {
+async function testGridDonation(sessionId, recipient = "11111111111111111111111111111112", amount = 0.001) {
     console.log("Testing Grid Donation...");
     try {
-        const response = await fetch(`${workerBaseUrl}/grid-execute-donation`, {
+        const response = await fetch(`${colyseusBaseUrl}/grid-execute-donation`, {
             method: 'POST',
             headers: { 
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${sessionToken}`
+                'Content-Type': 'application/json'
             },
-            body: JSON.stringify({ recipient, amount })
+            body: JSON.stringify({ 
+                session_id: sessionId,
+                recipient: recipient,
+                amount: amount 
+            })
         });
 
         const data = await response.json();
@@ -57,7 +103,7 @@ async function testGridDonation(sessionToken, recipient = "111111111111111111111
             data: data
         });
 
-        if (response.ok && data.signature) {
+        if (response.ok && data.success && data.signature) {
             console.log("✅ Grid donation successful!");
             return data.signature;
         } else {
@@ -74,21 +120,19 @@ async function testGridDonation(sessionToken, recipient = "111111111111111111111
 }
 
 // Test Grid Spending Limit
-async function testGridSpendingLimit(sessionToken, limitSOL = 1.0) {
+async function testGridSpendingLimit(sessionId, limitSOL = 1.0) {
     console.log("Testing Grid Spending Limit...");
     try {
-        const response = await fetch(`${workerBaseUrl}/grid-set-spending-limit`, {
+        const response = await fetch(`${colyseusBaseUrl}/grid-set-spending-limit`, {
             method: 'POST',
             headers: { 
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${sessionToken}`
+                'Content-Type': 'application/json'
             },
             body: JSON.stringify({ 
+                session_id: sessionId,
                 policy: {
-                    daily_limit: {
-                        amount: Math.round(limitSOL * 1000000000), // Convert SOL to lamports
-                        currency: 'lamports'
-                    }
+                    amount: Math.round(limitSOL * 1000000000), // lamports
+                    period: 'day'
                 },
                 otp: 'test-otp' 
             })
@@ -115,16 +159,16 @@ async function testGridSpendingLimit(sessionToken, limitSOL = 1.0) {
 }
 
 // Test Grid Onramp
-async function testGridOnramp(sessionToken, amount = 50, currency = 'USD') {
+async function testGridOnramp(sessionId, amount = 50, currency = 'USD') {
     console.log("Testing Grid Onramp...");
     try {
-        const response = await fetch(`${workerBaseUrl}/grid-onramp`, {
+        const response = await fetch(`${colyseusBaseUrl}/grid-onramp`, {
             method: 'POST',
             headers: { 
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${sessionToken}`
+                'Content-Type': 'application/json'
             },
             body: JSON.stringify({ 
+                session_id: sessionId,
                 amount: amount,
                 currency: currency,
                 success_url: `${window.location.origin}?onramp_success=true`,
@@ -158,21 +202,44 @@ async function testGridOnramp(sessionToken, amount = 50, currency = 'USD') {
 async function runGridTests() {
     console.log("🚀 Running Grid API integration tests...");
     
-    // Test 1: Authentication
-    const authResult = await testGridAuth();
-    if (!authResult) {
-        console.log("❌ Test suite failed at authentication step");
+    // Test 1: Authentication Step 1 (Send OTP)
+    console.log("=== Step 1: Authentication (Send OTP) ===");
+    const authStep1Result = await testGridAuth();
+    if (!authStep1Result) {
+        console.log("❌ Test suite failed at authentication step 1");
         return;
     }
 
-    // Test 2: Set spending limit (optional, may fail with API restrictions)
-    await testGridSpendingLimit(authResult.sessionToken);
+    console.log("📧 Please check your email for the OTP code.");
+    console.log("When you have the OTP, run the following to continue:");
+    console.log(`runGridTestsStep2("${authStep1Result.sessionId}", "YOUR_OTP_CODE");`);
+    
+    return authStep1Result;
+}
 
-    // Test 3: Execute donation
-    await testGridDonation(authResult.sessionToken);
+// Run test suite step 2 after getting OTP
+async function runGridTestsStep2(sessionId, otpCode) {
+    console.log("🚀 Continuing Grid API integration tests...");
+    
+    // Test 2: Authentication Step 2 (Verify OTP)
+    console.log("=== Step 2: Authentication (Verify OTP) ===");
+    const authResult = await testGridAuthStep2(sessionId, otpCode);
+    if (!authResult) {
+        console.log("❌ Test suite failed at authentication step 2");
+        return;
+    }
 
-    // Test 4: Test onramp (creates session but doesn't actually purchase)
-    await testGridOnramp(authResult.sessionToken, 25, 'USD');
+    // Test 3: Set spending limit (optional, may fail with API restrictions)
+    console.log("=== Step 3: Set Spending Limit ===");
+    await testGridSpendingLimit(authResult.sessionId);
+
+    // Test 4: Execute donation
+    console.log("=== Step 4: Execute Donation ===");
+    await testGridDonation(authResult.sessionId);
+
+    // Test 5: Test onramp (creates session but doesn't actually purchase)
+    console.log("=== Step 5: Test Onramp ===");
+    await testGridOnramp(authResult.sessionId, 25, 'USD');
 
     console.log("✅ Grid API integration tests completed!");
 }
@@ -181,10 +248,12 @@ async function runGridTests() {
 if (typeof window !== 'undefined') {
     window.testGrid = {
         testGridAuth,
+        testGridAuthStep2,
         testGridDonation,
         testGridSpendingLimit,
         testGridOnramp,
-        runGridTests
+        runGridTests,
+        runGridTestsStep2
     };
     console.log("Grid test functions available as window.testGrid");
 }
@@ -193,5 +262,13 @@ if (typeof window !== 'undefined') {
 if (typeof window !== 'undefined' && window.location) {
     console.log("To run tests, execute: testGrid.runGridTests()");
 } else if (typeof module !== 'undefined' && module.exports) {
-    module.exports = { testGridAuth, testGridDonation, testGridSpendingLimit, testGridOnramp, runGridTests };
+    module.exports = { 
+        testGridAuth, 
+        testGridAuthStep2,
+        testGridDonation, 
+        testGridSpendingLimit, 
+        testGridOnramp, 
+        runGridTests,
+        runGridTestsStep2
+    };
 }

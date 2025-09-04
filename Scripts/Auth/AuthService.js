@@ -124,11 +124,20 @@ AuthService.prototype.setState = function(newState, error = null) {
         case AuthState.SESSION_EXPIRED:
              console.warn("AuthService: Session expired.");
              if (this.feedbackService) {
-                 this.feedbackService.showBlockingPrompt( // Use modal for required action
-                     "Session Expired",
-                     "Your session has expired. Please sign in again to continue.",
-                     [{ label: 'Sign In', callback: () => this.connectWalletFlow(), type: 'primary' }] // Assuming connectWalletFlow handles re-auth
-                 );
+                 // Show provider-appropriate re-auth prompt
+                 if (this.authProvider === 'grid') {
+                     this.feedbackService.showBlockingPrompt(
+                        "Session Expired",
+                        "Your session has expired. Please sign in again to continue.",
+                        [{ label: 'Sign in with Email', callback: () => this.app.fire('ui:showAuthChoice'), type: 'primary' }]
+                     );
+                 } else {
+                     this.feedbackService.showBlockingPrompt(
+                        "Session Expired",
+                        "Your session has expired. Please sign in again to continue.",
+                        [{ label: 'Sign In', callback: () => this.connectWalletFlow(), type: 'primary' }]
+                     );
+                 }
              }
              this.app.fire('auth:sessionExpired');
              break;
@@ -212,9 +221,15 @@ AuthService.prototype.connectWithWallet = async function () {
 };
 
 AuthService.prototype.connectWithGrid = async function (email, otpCode = null) {
-    if (this.state !== AuthState.DISCONNECTED && this.state !== AuthState.ERROR) {
+    // Allow OTP verification even if in CONNECTING_GRID state
+    if (this.state !== AuthState.DISCONNECTED && this.state !== AuthState.ERROR && this.state !== AuthState.CONNECTING_GRID) {
         console.warn("AuthService: connectWithGrid called while not in DISCONNECTED or ERROR state:", this.state);
         return this.walletAddress; // Already connected or connecting
+    }
+    
+    // If we have an OTP code and we're in CONNECTING_GRID state, proceed with verification
+    if (otpCode && this.state === AuthState.CONNECTING_GRID) {
+        console.log("AuthService: Proceeding with OTP verification in CONNECTING_GRID state");
     }
 
     if (!email || typeof email !== 'string' || !email.includes('@')) {
@@ -224,17 +239,20 @@ AuthService.prototype.connectWithGrid = async function (email, otpCode = null) {
     }
 
     // Ensure config is loaded and Grid endpoint is available
-    if (!this.app.config || !this.app.config.get('cloudflareWorkerGridAuthEndpoint')) {
+    if (!this.app.config || !this.app.config.get('gridAuthEndpoint')) {
         const errorMsg = "Configuration not loaded or Grid auth endpoint missing.";
         if (this.feedbackService) this.feedbackService.showError("Configuration Error", errorMsg);
         this.setState(AuthState.ERROR, new Error(errorMsg));
         return null;
     }
 
-    const gridAuthUrl = this.app.config.get('cloudflareWorkerGridAuthEndpoint');
+    const gridAuthUrl = this.app.config.get('gridAuthEndpoint');
 
     try {
-        this.setState(AuthState.CONNECTING_GRID);
+        // Only set CONNECTING_GRID state if not already in it (for initial OTP request)
+        if (this.state !== AuthState.CONNECTING_GRID) {
+            this.setState(AuthState.CONNECTING_GRID);
+        }
         
         if (!otpCode) {
             // Step 1: Send OTP to email
@@ -243,7 +261,9 @@ AuthService.prototype.connectWithGrid = async function (email, otpCode = null) {
             const response = await fetch(gridAuthUrl, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ email: email })
+                body: JSON.stringify({ 
+                    email: email
+                })
             });
 
             const data = await response.json();
@@ -252,23 +272,32 @@ AuthService.prototype.connectWithGrid = async function (email, otpCode = null) {
                 throw new Error(data.error || 'Failed to send verification code');
             }
 
-            if (data.success) {
+            // Check for Grid API response structure (Colyseus server format)
+            if (data.step === 'otp_sent' && data.otp_sent && data.session_id) {
                 if (this.feedbackService) this.feedbackService.showSuccess("Verification code sent to your email!");
+                // Store session_id for step 2
+                this.gridSessionId = data.session_id;
                 // Return special response to indicate OTP step
-                return { requiresOTP: true, email: email };
+                return { requiresOTP: true, email: email, sessionId: data.session_id };
             } else {
-                throw new Error("Failed to send verification code");
+                throw new Error("Failed to send verification code - " + (data.message || "Unknown error"));
             }
         } else {
             // Step 2: Verify OTP and complete authentication
             if (this.feedbackService) this.feedbackService.showInfo("Verifying code...");
+            
+            // Use stored session_id from step 1
+            if (!this.gridSessionId) {
+                throw new Error("Session expired. Please request a new verification code.");
+            }
             
             const response = await fetch(gridAuthUrl, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ 
                     email: email, 
-                    otp_code: otpCode 
+                    otp_code: otpCode,
+                    session_id: this.gridSessionId
                 })
             });
 
@@ -278,7 +307,7 @@ AuthService.prototype.connectWithGrid = async function (email, otpCode = null) {
                 throw new Error(data.error || 'Grid authentication failed');
             }
 
-            if (!data.sessionToken || !data.walletAddress) {
+            if (!data.success || !data.sessionToken || !data.walletAddress) {
                 throw new Error("Grid authentication succeeded but session data is incomplete.");
             }
 
@@ -303,6 +332,8 @@ AuthService.prototype.connectWithGrid = async function (email, otpCode = null) {
             this.app.fire('player:data:update', { walletAddress: this.walletAddress });
 
             console.log("AuthService: Grid authentication completed successfully for:", email);
+            // Keep gridSessionId for subsequent Grid API calls (donation/onramp/spending limit)
+            
             this.setState(AuthState.CONNECTED);
 
             return this.walletAddress;
@@ -313,12 +344,34 @@ AuthService.prototype.connectWithGrid = async function (email, otpCode = null) {
         if (this.feedbackService) {
             this.feedbackService.hideBlockingPrompt();
         }
-        this.setState(AuthState.ERROR, error);
+        
+        // Provide specific error messages for Grid API errors
+        let specificError = error;
+        const errorMessage = error.message || '';
+        
+        if (errorMessage.includes('VALIDATION_ERROR')) {
+            if (errorMessage.includes('Invalid OTP code') || errorMessage.includes('invalid code')) {
+                specificError = new Error('Invalid verification code. Please check the code and try again.');
+            } else if (errorMessage.includes('Invalid email')) {
+                specificError = new Error('Invalid email address format.');
+            } else {
+                specificError = new Error('Please check your email and verification code.');
+            }
+        } else if (errorMessage.includes('OTP_EXPIRED')) {
+            specificError = new Error('Verification code has expired. Please request a new one.');
+        } else if (errorMessage.includes('RESOURCE_NOT_FOUND')) {
+            specificError = new Error('Authentication session expired. Please try again.');
+        } else if (errorMessage.includes('500 Internal Server Error')) {
+            specificError = new Error('Failed to authenticate with Grid.');
+        }
+        
+        this.setState(AuthState.ERROR, specificError);
         // Reset partial state
         this.sessionToken = null;
         this.refreshToken = null;
         this.walletAddress = null;
         this.authProvider = null;
+        this.gridSessionId = null; // Clean up Grid session ID
         return null;
     }
 };
@@ -629,6 +682,7 @@ AuthService.prototype.logout = function(showFeedback = true) {
     this.refreshToken = null;
     this.walletAddress = null;
     this.authProvider = null;
+    this.gridSessionId = null; // Clean up Grid session ID
     // Don't necessarily disconnect the wallet adapter itself, just clear our session
     // if (window.SolanaSDK && window.SolanaSDK.wallet && window.SolanaSDK.wallet.connected) {
     //     window.SolanaSDK.wallet.disconnect().catch(err => console.error("Error during wallet disconnect:", err));

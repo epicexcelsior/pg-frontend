@@ -61,6 +61,7 @@ HtmlAuthChoice.prototype.initialize = function() {
     this.pendingBoothId = null;
     this.emailValue = '';
     this.waitingForOTP = false;
+    this.isSubmitting = false;
 
     // Listen for events
     this.app.on('ui:showAuthChoice', this.onShowAuthChoice, this);
@@ -176,12 +177,15 @@ HtmlAuthChoice.prototype.resetToChoice = function() {
 };
 
 HtmlAuthChoice.prototype.handleEmailSubmit = async function() {
+    if (this.isSubmitting) return;
+    this.isSubmitting = true;
     if (!this.authService || !this.configLoader) {
         console.error("HtmlAuthChoice: Required services not available.");
+        this.isSubmitting = false;
         return;
     }
 
-    const gridAuthUrl = this.configLoader.get('cloudflareWorkerGridAuthEndpoint');
+    const gridAuthUrl = this.app.config?.get('gridAuthEndpoint');
     if (!gridAuthUrl) {
         console.error("HtmlAuthChoice: Grid auth endpoint not configured.");
         if (this.feedbackService) {
@@ -230,6 +234,8 @@ HtmlAuthChoice.prototype.handleEmailSubmit = async function() {
             if (this.feedbackService) {
                 this.feedbackService.showError("Authentication Failed", error.message);
             }
+        } finally {
+            this.isSubmitting = false;
         }
     } else {
         // Step 2: Verify OTP
@@ -238,6 +244,7 @@ HtmlAuthChoice.prototype.handleEmailSubmit = async function() {
             if (this.feedbackService) {
                 this.feedbackService.showError("Invalid Code", "Please enter the verification code from your email.");
             }
+            this.isSubmitting = false;
             return;
         }
 
@@ -263,6 +270,12 @@ HtmlAuthChoice.prototype.handleEmailSubmit = async function() {
             if (this.feedbackService) {
                 this.feedbackService.showError("Verification Failed", error.message);
             }
+            // Keep OTP input visible for retry
+            this.waitingForOTP = true;
+            if (this.emailInput) this.emailInput.style.display = 'none';
+            if (this.otpInput) this.otpInput.style.display = 'block';
+        } finally {
+            this.isSubmitting = false;
         }
     }
 };

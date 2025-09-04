@@ -68,10 +68,10 @@ OnrampService.prototype.loadConfigValues = function() {
         return;
     }
     
-    this.gridOnrampUrl = this.configLoader.get('cloudflareWorkerGridOnrampEndpoint');
+    this.gridOnrampUrl = this.configLoader.get('cloudflareWorkerGridOnrampEndpoint') || this.configLoader.get('gridOnrampEndpoint');
     
     if (!this.gridOnrampUrl) {
-        console.error("OnrampService: cloudflareWorkerGridOnrampEndpoint missing from config.");
+        console.error("OnrampService: gridOnrampEndpoint missing from config.");
     }
     
     console.log("OnrampService: Config values loaded - Onramp URL:", this.gridOnrampUrl);
@@ -164,10 +164,15 @@ OnrampService.prototype.initiateOnramp = async function(amount = null, currency 
         this.setState(OnrampState.CREATING_SESSION);
         
         // Create onramp session
-        const sessionToken = this.authService.getSessionToken();
+        const gridSessionId = this.authService.gridSessionId;
         const currentUrl = window.location.href;
         
+        if (!gridSessionId) {
+            throw new Error("Grid session not available. Please sign in with Grid again.");
+        }
+        
         const requestBody = {
+            session_id: gridSessionId,
             ...(amount && { amount: amount }),
             currency: currency,
             success_url: `${currentUrl}?onramp_status=success`,
@@ -178,7 +183,7 @@ OnrampService.prototype.initiateOnramp = async function(amount = null, currency 
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
-                'Authorization': `Bearer ${sessionToken}`
+                ...(this.authService?.getSessionToken() ? { 'Authorization': `Bearer ${this.authService.getSessionToken()}` } : {})
             },
             body: JSON.stringify(requestBody)
         });
