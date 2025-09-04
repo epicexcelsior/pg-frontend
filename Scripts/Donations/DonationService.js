@@ -107,16 +107,6 @@ DonationService.prototype.loadConfigValues = function () {
   this.workerCreateUrl = this.configLoader.get(
     "cloudflareWorkerCreateTxEndpoint"
   );
-<<<<<<< HEAD
-  // Prefer Cloudflare Worker endpoints when available, fall back to legacy keys
-  this.gridDonationUrl = this.configLoader.get(
-    "cloudflareWorkerGridDonationEndpoint"
-  ) || this.configLoader.get("gridDonationEndpoint");
-  this.gridSpendingLimitUrl = this.configLoader.get(
-    "cloudflareWorkerGridSpendingLimitEndpoint"
-  ) || this.configLoader.get("gridSpendingLimitEndpoint");
-=======
->>>>>>> parent of 46bd9e7 (grid frontend)
   this.feeRecipient = this.configLoader.get("donationFeeRecipientAddress");
   const feePercent = this.configLoader.get("donationFeePercentage");
 
@@ -348,35 +338,6 @@ DonationService.prototype.initiateDonation = async function (
     this.feeRecipient
   );
 
-<<<<<<< HEAD
-  // Determine provider early, but only require external wallet for wallet flow
-  const authProvider = this.authService.getAuthProvider();
-  const isGridProvider = authProvider === 'grid';
-  if (authProvider !== 'grid' && authProvider !== 'wallet') {
-    console.error("DonationService: Unknown auth provider:", authProvider);
-    this.setState(DonationState.FAILED, new Error("Unknown authentication provider."));
-    return;
-  }
-  if (!isGridProvider) {
-    if (!window.SolanaSDK || !window.SolanaSDK.wallet) {
-      console.error("DonationService: Solana wallet extension not found.");
-      this.setState(DonationState.NO_WALLET);
-      if (this.feedbackService) {
-        this.feedbackService.showBlockingPrompt(
-          "Do you have a Solana wallet?",
-          "Please install the Phantom wallet browser extension. More wallets will be supported in the future.",
-          [
-            {
-              label: "Install Phantom",
-              callback: () => window.open("https://phantom.app/", "_blank"),
-              style: { backgroundColor: "#aa9fec", color: "white" },
-            },
-            { label: "OK", callback: () => {}, type: "secondary" },
-          ]
-        );
-      }
-      return;
-=======
   if (!window.SolanaSDK || !window.SolanaSDK.wallet) {
     console.error("DonationService: Solana wallet extension not found.");
     this.setState(DonationState.NO_WALLET);
@@ -393,7 +354,6 @@ DonationService.prototype.initiateDonation = async function (
           { label: "OK", callback: () => {}, type: "secondary" },
         ]
       );
->>>>>>> parent of 46bd9e7 (grid frontend)
     }
   }
 
@@ -788,113 +748,6 @@ DonationService.prototype.handleDonation = async function () {
   }
 };
 
-<<<<<<< HEAD
-DonationService.prototype.handleGridDonation = async function(overrideAmount, overrideRecipient) {
-  const sessionToken = this.authService.getSessionToken();
-  const senderAddress = this.authService.getWalletAddress();
-  const gridSessionId = this.authService.gridSessionId;
-
-  // Prefer explicit arguments; fall back to instance fields
-  const amountSOL = (typeof overrideAmount === 'number' && !isNaN(overrideAmount)) ? overrideAmount : this.amount;
-  const recipientAddress = overrideRecipient || this.recipient;
-
-  console.log(
-    "Grid donation: Initiating transfer from",
-    senderAddress,
-    "to",
-    recipientAddress,
-    "for",
-    amountSOL,
-    "SOL"
-  );
-
-  try {
-    this.setState(DonationState.FETCHING_TRANSACTION);
-    
-    // Validate inputs defensively (in case state was not set for any reason)
-    if (!recipientAddress || typeof recipientAddress !== 'string') {
-      throw new Error("Recipient address missing for Grid donation");
-    }
-    if (typeof amountSOL !== 'number' || isNaN(amountSOL) || amountSOL <= 0) {
-      throw new Error("Amount missing/invalid for Grid donation");
-    }
-
-    // Build request body; include session_id for Colyseus fallback; worker will ignore it
-    const requestBody = {
-      recipient: recipientAddress,
-      amount: amountSOL,
-      ...(gridSessionId ? { session_id: gridSessionId } : {})
-    };
-    
-    const headers = {
-      "Content-Type": "application/json",
-      ...(sessionToken ? { Authorization: `Bearer ${sessionToken}` } : {})
-    };
-    
-    const response = await fetch(this.gridDonationUrl, {
-      method: "POST",
-      headers,
-      body: JSON.stringify(requestBody),
-    });
-
-    const data = await response.json();
-    
-    if (!response.ok) {
-      // Map 401 to session expiry
-      if (response.status === 401) {
-        this.authService?.handleSessionExpired();
-        throw new Error(data.error || "Authentication error");
-      }
-      // Handle specific Grid errors
-      if (data.error === 'AUTHORIZATION_REQUIRED' || response.status === 403) {
-        console.log("DonationService: Grid spending limit exceeded, showing limit modal");
-        this.setState(DonationState.FAILED, new Error("Spending limit exceeded. Please set or increase your daily limit."));
-        // Fire event for FeedbackService to show spending limit modal
-        this.app.fire('grid:showSpendingLimitModal', {
-          currentAmount: amountSOL,
-          recipient: recipientAddress,
-          reason: data.reason || 'Spending limit exceeded'
-        });
-        return;
-      }
-      throw new Error(data.error || "Grid donation failed");
-    }
-
-    const signature = data.signature;
-    if (!signature) {
-      throw new Error("Grid donation succeeded but signature missing from response.");
-    }
-
-    console.log("Grid donation completed successfully! Signature:", signature);
-    this.setState(DonationState.SUCCESS, null, signature);
-    
-    // Fire confirmation event for backend
-    this.app.fire("donation:confirmedForBackend", {
-      signature: signature,
-      recipient: recipientAddress,
-      donor: senderAddress,
-      amountSOL: amountSOL,
-    });
-
-  } catch (error) {
-    console.error("Grid donation process failed:", error);
-    let failureState = DonationState.FAILED;
-    const errorMsgLower = error.message?.toLowerCase() || "";
-
-    if (errorMsgLower.includes("authorization") || errorMsgLower.includes("limit")) {
-      failureState = DonationState.FAILED_SUBMISSION;
-    } else if (errorMsgLower.includes("insufficient")) {
-      failureState = DonationState.FAILED_SUBMISSION;
-    } else if (errorMsgLower.includes("network") || errorMsgLower.includes("fetch")) {
-      failureState = DonationState.FAILED_FETCH;
-    }
-    
-    this.setState(failureState, error);
-  }
-};
-
-=======
->>>>>>> parent of 46bd9e7 (grid frontend)
 DonationService.prototype._getUserBalance = async function (publicKeyString) {
   if (!window.SolanaSDK?.rpc) return null;
   try {
