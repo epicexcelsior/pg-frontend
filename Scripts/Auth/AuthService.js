@@ -8,7 +8,6 @@ const AuthState = {
     FETCHING_SIWS: 'fetching_siws',
     SIGNING_SIWS: 'signing_siws',
     VERIFYING_SIWS: 'verifying_siws',
-    CONNECTING_GRID: 'connecting_grid',
     CONNECTED: 'connected',
     SESSION_EXPIRED: 'session_expired', // Added state
     ERROR: 'error'
@@ -22,7 +21,6 @@ AuthService.prototype.initialize = function () {
     this.walletAddress = null;
     this.lastError = null;
     this.feedbackService = null; // Property to hold the feedback service instance
-    this.authProvider = null; // 'grid' | 'wallet' | null
 
     // Function to get services after app.services is ready
     const getServices = () => {
@@ -107,10 +105,6 @@ AuthService.prototype.setState = function(newState, error = null) {
         case AuthState.VERIFYING_SIWS:
             this.app.fire('auth:verifying_siws'); // Fire specific event
             // Feedback handled in connectWalletFlow step 4
-            break;
-        case AuthState.CONNECTING_GRID:
-            this.app.fire('auth:connecting_grid'); // Fire specific event
-            // Feedback handled in connectWithGrid
             break;
         case AuthState.CONNECTED:
             if (this.feedbackService) this.feedbackService.showSuccess("Successfully signed in!"); // Use this.feedbackService
@@ -215,6 +209,7 @@ AuthService.prototype.setState = function(newState, error = null) {
     this.app.fire('auth:stateChanged', { state: this.state, address: this.walletAddress, error: this.lastError });
 };
 
+<<<<<<< HEAD
 AuthService.prototype.connectWithWallet = async function () {
     // Renamed from connectWalletFlow for clarity
     return this.connectWalletFlow();
@@ -396,6 +391,8 @@ AuthService.prototype.setGridSession = function(sessionToken, walletAddress) {
     this.setState(AuthState.CONNECTED);
 };
 
+=======
+>>>>>>> parent of 46bd9e7 (grid frontend)
 AuthService.prototype.connectWalletFlow = async function () {
     // TODO: Pass the triggering element (e.g., button) reference for inline loading
     // const triggerElement = arguments[0]; // Example if passed as argument
@@ -593,7 +590,6 @@ AuthService.prototype.connectWalletFlow = async function () {
         this.sessionToken = sessionToken;
         this.refreshToken = refreshToken;
         this.walletAddress = currentWalletAddress; // Set address only on full success
-        this.authProvider = 'wallet'; // Set provider for wallet flow
 
         // Send wallet address update to Network Layer (using events is preferred)
         this.app.fire('auth:addressAvailable', { address: this.walletAddress }); // Event for network layer
@@ -681,8 +677,11 @@ AuthService.prototype.logout = function(showFeedback = true) {
     this.sessionToken = null;
     this.refreshToken = null;
     this.walletAddress = null;
+<<<<<<< HEAD
     this.authProvider = null;
     this.gridSessionId = null; // Clean up Grid session ID
+=======
+>>>>>>> parent of 46bd9e7 (grid frontend)
     // Don't necessarily disconnect the wallet adapter itself, just clear our session
     // if (window.SolanaSDK && window.SolanaSDK.wallet && window.SolanaSDK.wallet.connected) {
     //     window.SolanaSDK.wallet.disconnect().catch(err => console.error("Error during wallet disconnect:", err));
@@ -699,7 +698,7 @@ AuthService.prototype.handleSessionExpired = function() {
     if (this.state === AuthState.CONNECTED) { // Only if we thought we were connected
         this.sessionToken = null; // Clear invalid token
         this.refreshToken = null;
-        // Don't clear walletAddress or authProvider here, user might want to re-auth with same method
+        // Don't clear walletAddress here, user might want to re-auth with same wallet
         this.setState(AuthState.SESSION_EXPIRED); // Trigger specific feedback/modal
     }
 };
@@ -724,10 +723,6 @@ AuthService.prototype.isAuthenticated = function() {
 
 AuthService.prototype.getLastError = function() {
     return this.lastError;
-};
-
-AuthService.prototype.getAuthProvider = function() {
-    return this.authProvider;
 };
 
 // swap method called for script hot-reloading

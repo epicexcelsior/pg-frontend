@@ -107,6 +107,7 @@ DonationService.prototype.loadConfigValues = function () {
   this.workerCreateUrl = this.configLoader.get(
     "cloudflareWorkerCreateTxEndpoint"
   );
+<<<<<<< HEAD
   // Prefer Cloudflare Worker endpoints when available, fall back to legacy keys
   this.gridDonationUrl = this.configLoader.get(
     "cloudflareWorkerGridDonationEndpoint"
@@ -114,6 +115,8 @@ DonationService.prototype.loadConfigValues = function () {
   this.gridSpendingLimitUrl = this.configLoader.get(
     "cloudflareWorkerGridSpendingLimitEndpoint"
   ) || this.configLoader.get("gridSpendingLimitEndpoint");
+=======
+>>>>>>> parent of 46bd9e7 (grid frontend)
   this.feeRecipient = this.configLoader.get("donationFeeRecipientAddress");
   const feePercent = this.configLoader.get("donationFeePercentage");
 
@@ -124,14 +127,6 @@ DonationService.prototype.loadConfigValues = function () {
   if (!this.workerCreateUrl)
     console.error(
       "DonationService: cloudflareWorkerCreateTxEndpoint missing from config."
-    );
-  if (!this.gridDonationUrl)
-    console.error(
-      "DonationService: cloudflareWorkerGridDonationEndpoint missing from config."
-    );
-  if (!this.gridSpendingLimitUrl)
-    console.error(
-      "DonationService: cloudflareWorkerGridSpendingLimitEndpoint missing from config."
     );
   if (!this.feeRecipient)
     console.error(
@@ -353,6 +348,7 @@ DonationService.prototype.initiateDonation = async function (
     this.feeRecipient
   );
 
+<<<<<<< HEAD
   // Determine provider early, but only require external wallet for wallet flow
   const authProvider = this.authService.getAuthProvider();
   const isGridProvider = authProvider === 'grid';
@@ -380,6 +376,24 @@ DonationService.prototype.initiateDonation = async function (
         );
       }
       return;
+=======
+  if (!window.SolanaSDK || !window.SolanaSDK.wallet) {
+    console.error("DonationService: Solana wallet extension not found.");
+    this.setState(DonationState.NO_WALLET);
+    if (this.feedbackService) {
+      this.feedbackService.showBlockingPrompt(
+        "Do you have a Solana wallet?",
+        "Please install the Phantom wallet browser extension. More wallets will be supported in the future.",
+        [
+          {
+            label: "Install Phantom",
+            callback: () => window.open("https://phantom.app/", "_blank"),
+            style: { backgroundColor: "#aa9fec", color: "white" },
+          },
+          { label: "OK", callback: () => {}, type: "secondary" },
+        ]
+      );
+>>>>>>> parent of 46bd9e7 (grid frontend)
     }
   }
 
@@ -774,6 +788,7 @@ DonationService.prototype.handleDonation = async function () {
   }
 };
 
+<<<<<<< HEAD
 DonationService.prototype.handleGridDonation = async function(overrideAmount, overrideRecipient) {
   const sessionToken = this.authService.getSessionToken();
   const senderAddress = this.authService.getWalletAddress();
@@ -878,6 +893,8 @@ DonationService.prototype.handleGridDonation = async function(overrideAmount, ov
   }
 };
 
+=======
+>>>>>>> parent of 46bd9e7 (grid frontend)
 DonationService.prototype._getUserBalance = async function (publicKeyString) {
   if (!window.SolanaSDK?.rpc) return null;
   try {

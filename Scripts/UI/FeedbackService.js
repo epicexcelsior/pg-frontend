@@ -62,9 +62,6 @@ FeedbackService.prototype.initialize = function() {
         console.warn("FeedbackService: Services registry not found, registered globally as window.feedbackService.");
     }
 
-    // Listen for Grid-specific events
-    this.app.on('grid:showSpendingLimitModal', this.onShowSpendingLimitModal, this);
-
     console.log("FeedbackService initialized.");
 };
 
@@ -437,6 +434,7 @@ FeedbackService.prototype.hideInlineLoading = function(elementRef) {
     }
 };
 
+<<<<<<< HEAD
 // --- Grid Spending Limit Modal ---
 
 FeedbackService.prototype.onShowSpendingLimitModal = function(data) {
@@ -618,10 +616,9 @@ FeedbackService.prototype.submitSpendingLimit = async function(currentAmount, re
     }
 };
 
+=======
+>>>>>>> parent of 46bd9e7 (grid frontend)
 FeedbackService.prototype.destroy = function() {
-    // Clean up event listeners
-    this.app.off('grid:showSpendingLimitModal', this.onShowSpendingLimitModal, this);
-    
     // Clean up injected elements
     if (this.uiRoot && this.uiRoot.parentNode) {
         this.uiRoot.parentNode.removeChild(this.uiRoot);
