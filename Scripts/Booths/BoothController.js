@@ -38,6 +38,9 @@ BoothController.prototype.initialize = function() {
     // Listen for successful claims to trigger effects
     this.app.on('booth:claimSuccess', this.onClaimSuccess, this);
 
+    // Listen for donation confirmations to trigger booth donation effect
+    this.app.on('effects:donation', this.onDonationEffect, this);
+
     console.log("BoothController initialized.");
 };
 BoothController.prototype.onClaimSuccess = function(data) {
@@ -76,6 +79,62 @@ BoothController.prototype.onClaimSuccess = function(data) {
     ps.reset(); // Reset to start state
     ps.play();  // Play the effect (ensure loop=false in editor template)
 
+};
+
+BoothController.prototype.onDonationEffect = function(data) {
+    console.log("BoothController: Received effects:donation", data);
+
+    const recipient = data ? data.recipient : null;
+    if (!recipient || typeof recipient !== 'string') {
+        console.warn("BoothController: effects:donation missing valid 'recipient'.", data);
+        return;
+    }
+
+    // Traverse scene to find booth entities whose BoothClaimZone is claimed by recipient
+    /** @type {pc.Entity[]} */
+    const matchingBooths = [];
+    const traverseAndCollect = (entity) => {
+        if (!entity) return;
+        if (entity.script && entity.script.boothClaimZone) {
+            const zone = entity.script.boothClaimZone;
+            if (zone && zone.claimedBy === recipient) {
+                matchingBooths.push(entity);
+            }
+        }
+        const children = entity.children || [];
+        for (var i = 0; i < children.length; i++) {
+            traverseAndCollect(children[i]);
+        }
+    };
+    traverseAndCollect(this.app.root);
+
+    if (matchingBooths.length === 0) {
+        console.warn(`BoothController: No booth with claimedBy '${recipient}' found to play donation effect.`);
+        return;
+    }
+
+    for (var b = 0; b < matchingBooths.length; b++) {
+        var boothEntity = matchingBooths[b];
+        var boothId = boothEntity?.name || '(unknown)';
+
+        // Find the pre-placed donation effect entity by name
+        const effectEntity = boothEntity.findByName('BoothDonateEffect');
+        if (!effectEntity) {
+            console.warn(`BoothController: Could not find child effect entity named 'BoothDonateEffect' on booth '${boothId}'.`);
+            continue;
+        }
+
+        // Get the particle system component
+        const ps = effectEntity.particlesystem;
+        if (!ps) {
+            console.warn(`BoothController: No particle system on 'BoothDonateEffect' for booth '${boothId}'.`);
+            continue;
+        }
+
+        console.log(`BoothController: Triggering donation effect for booth ${boothId} (recipient ${recipient})`);
+        ps.reset();
+        ps.play();
+    }
 };
 
 BoothController.prototype.onEnterZone = function(boothZoneScript) {

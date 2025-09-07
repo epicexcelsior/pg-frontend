@@ -118,16 +118,27 @@ AuthService.prototype.setState = function(newState, error = null) {
         case AuthState.SESSION_EXPIRED:
              console.warn("AuthService: Session expired.");
              if (this.feedbackService) {
-                 this.feedbackService.showBlockingPrompt( // Use modal for required action
-                     "Session Expired",
-                     "Your session has expired. Please sign in again to continue.",
-                     [{ label: 'Sign In', callback: () => this.connectWalletFlow(), type: 'primary' }] // Assuming connectWalletFlow handles re-auth
-                 );
+                 // Show provider-appropriate re-auth prompt
+                 if (this.authProvider === 'grid') {
+                     this.feedbackService.showBlockingPrompt(
+                        "Session Expired",
+                        "Your session has expired. Please sign in again to continue.",
+                        [{ label: 'Sign in with Email', callback: () => this.app.fire('ui:showAuthChoice'), type: 'primary' }]
+                     );
+                 } else {
+                     this.feedbackService.showBlockingPrompt(
+                        "Session Expired",
+                        "Your session has expired. Please sign in again to continue.",
+                        [{ label: 'Sign In', callback: () => this.connectWalletFlow(), type: 'primary' }]
+                     );
+                 }
              }
              this.app.fire('auth:sessionExpired');
              break;
         case AuthState.ERROR:
             console.error("AuthService Error:", this.lastError);
+            let userFriendlyError = "An unexpected authentication error occurred.";
+
             // Check if this is a specific error we're already showing a modal for
             const errorLower = this.lastError?.toLowerCase() || '';
             const isWalletNotReady = errorLower === 'solana wallet not ready.';
@@ -136,7 +147,6 @@ AuthService.prototype.setState = function(newState, error = null) {
             // Only show toast for errors that aren't already showing a modal
             if (!isWalletNotReady && !isWalletNotInstalled) {
                 // Provide more specific feedback based on the error context
-                let userFriendlyError = "An unexpected authentication error occurred.";
                 if (this.lastError) {
                      if (errorLower.includes('wallet connection cancelled')) {
                         userFriendlyError = "Wallet connection cancelled.";
