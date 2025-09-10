@@ -79,6 +79,14 @@ BoothController.prototype.onClaimSuccess = function(data) {
     ps.reset(); // Reset to start state
     ps.play();  // Play the effect (ensure loop=false in editor template)
 
+    // --- Play Sound Effect ---
+    if (boothEntity.sound) {
+        console.log(`BoothController: Playing claim sound for booth ${boothId}`);
+        boothEntity.sound.play("claimSound");
+    } else {
+        console.warn(`BoothController: No sound component found on booth entity '${boothId}'.`);
+    }
+
 };
 
 BoothController.prototype.onDonationEffect = function(data) {
@@ -134,6 +142,14 @@ BoothController.prototype.onDonationEffect = function(data) {
         console.log(`BoothController: Triggering donation effect for booth ${boothId} (recipient ${recipient})`);
         ps.reset();
         ps.play();
+
+        // --- Play Sound Effect ---
+        if (boothEntity.sound) {
+            console.log(`BoothController: Playing donation sound for booth ${boothId}`);
+            boothEntity.sound.play("donationSound");
+        } else {
+            console.warn(`BoothController: No sound component found on booth entity '${boothId}'.`);
+        }
     }
 };
 
