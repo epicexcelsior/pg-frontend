@@ -11,9 +11,13 @@ BoothController.attributes.add('servicesEntity', { type: 'entity', title: 'Servi
 BoothController.prototype.initialize = function() {
     console.log("BoothController initializing...");
 
-    this.authService = this.app.services?.get('authService'); // Get AuthService via registry
-    if (!this.authService) {
-        console.error("BoothController: AuthService not found via app.services. Booth interactions might fail.");
+    this.privyService = this.app.services?.get('privyService'); // Get PrivyService via registry
+    if (!this.privyService) {
+        console.warn("BoothController: PrivyService not found yet. Will wait for services initialization.");
+        this.app.once('services:initialized', () => {
+            this.privyService = this.app.services.get('privyService');
+            console.log("BoothController: PrivyService found after services initialization.");
+        });
     }
 
     // Store the booth zone the player is currently inside
@@ -228,6 +232,11 @@ BoothController.prototype.onAuthStateChanged = function(authStateData) {
     if (this.currentZoneScript) {
         console.log("BoothController: Auth state changed while player in zone. Re-evaluating prompt.");
         this.decideAndShowPrompt();
+    }
+    // If user logged out, request unclaim on server
+    if (authStateData && authStateData.state === 'disconnected') {
+        console.log("BoothController: Auth disconnected. Requesting unclaimIfOwned.");
+        this.app.fire('booth:unclaimIfOwned');
     }
 };
 

@@ -8,18 +8,20 @@ PlayerData.prototype.initialize = function() {
     this.walletAddress = "";
     this.username = "";
     this.claimedBoothId = "";
+    this.twitterHandle = ""; // To store the user's Twitter handle
     // Add other relevant player data fields as needed
 
     // Listen for updates from AuthService or Network sync events
     this.app.on('player:data:update', this.updateData, this);
     this.app.on('auth:stateChanged', this.handleAuthStateChange, this); // Listen for auth changes too
+    this.app.on('auth:userAvailable', this.handleUserAvailable, this); // Listen for the full user object
     this.app.on('booth:claimSuccess', this.handleBoothClaimSuccess, this); // Listen for successful claims
 
-    // Initial population if auth service is already connected when this initializes
-    const authService = this.app.services?.get('authService');
-    if (authService && authService.isAuthenticated()) {
-        this.walletAddress = authService.getWalletAddress();
-        console.log("PlayerData: Initial wallet address set from AuthService:", this.walletAddress);
+    // Initial population if privy service is already connected when this initializes
+    const privyService = this.app.services?.get('privyService');
+    if (privyService && privyService.isAuthenticated()) {
+        this.walletAddress = privyService.getWalletAddress();
+        console.log("PlayerData: Initial wallet address set from PrivyService:", this.walletAddress);
     }
      // Initial username (might come from localStorage or network later)
      this.username = window.userName || ""; // Use global temporarily, replace with event/service later
@@ -43,6 +45,11 @@ PlayerData.prototype.updateData = function(data) {
     if (data.hasOwnProperty('claimedBoothId') && this.claimedBoothId !== data.claimedBoothId) {
         this.claimedBoothId = data.claimedBoothId;
         console.log("PlayerData: Claimed Booth ID updated to:", this.claimedBoothId);
+        changed = true;
+    }
+    if (data.hasOwnProperty('twitterHandle') && this.twitterHandle !== data.twitterHandle) {
+        this.twitterHandle = data.twitterHandle;
+        console.log("PlayerData: Twitter handle updated to:", this.twitterHandle);
         changed = true;
     }
     // Add checks for other data fields
@@ -85,6 +92,12 @@ PlayerData.prototype.handleAuthStateChange = function(authStateData) {
     }
 };
 
+PlayerData.prototype.handleUserAvailable = function(data) {
+    if (data && data.user && data.user.twitter) {
+        this.updateData({ twitterHandle: data.user.twitter.username });
+    }
+};
+
 // --- Getters for convenience ---
 PlayerData.prototype.getWalletAddress = function() {
     return this.walletAddress;
@@ -96,6 +109,10 @@ PlayerData.prototype.getUsername = function() {
 
 PlayerData.prototype.getClaimedBoothId = function() {
     return this.claimedBoothId;
+};
+
+PlayerData.prototype.getTwitterHandle = function() {
+    return this.twitterHandle;
 };
 
 

@@ -83,6 +83,7 @@ MessageBroker.prototype.setupAppEventListeners = function () {
 
     // --- Booth Actions ---
     this.app.on('booth:claimRequest', this.sendClaimBoothRequest, this);
+    this.app.on('booth:unclaimIfOwned', this.sendUnclaimIfOwned, this);
 
     // --- Chat ---
     this.app.on('network:send:chatMessage', this.sendChatMessage, this); // Match ChatController event
@@ -133,6 +134,19 @@ MessageBroker.prototype.sendClaimBoothRequest = function (boothId) {
         this.room.send('claimBooth', { boothId: boothId });
     } else {
         console.warn("MessageBroker: Cannot send claimBooth request. Not connected or boothId missing.");
+    }
+};
+
+MessageBroker.prototype.sendUnclaimIfOwned = function () {
+    if (!this.room) {
+        console.warn("MessageBroker: Cannot send unclaimIfOwned. Not connected.");
+        return;
+    }
+    try {
+        console.log("MessageBroker: Sending unclaimIfOwned request");
+        this.room.send('unclaimIfOwned', {});
+    } catch (e) {
+        console.warn("MessageBroker: Failed to send unclaimIfOwned:", e);
     }
 };
 

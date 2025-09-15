@@ -83,14 +83,18 @@ HtmlLoginManager.prototype.onSubmitClick = function() {
     const username = this.usernameInputEl.value.trim();
     if (!username) return;
 
-    window.userName = username;
+    // Store username in localStorage
     localStorage.setItem('userName', username);
+    this.app.fire('user:setname', username);
 
-    if (this.playButtonEl) {
-        this.playButtonEl.disabled = true;
-        this.playButtonEl.innerText = "Loading...";
-    }
+    // Instead of directly connecting to a wallet, we just show the main UI
+    // The user will be prompted to log in when they try to perform an action (like claiming a booth).
+    // Or, we can have a dedicated login button. For now, we proceed to the game.
 
+    // Hide the login screen
+    this.hideLoginScreen();
+
+    // Start scene preload if it hasn't started already
     if (!this.scenePreloader) {
         console.error("HtmlLoginManager: Preloader not found during submit.");
         if (this.playButtonEl) this.playButtonEl.innerText = "Error!";

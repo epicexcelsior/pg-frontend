@@ -6,48 +6,51 @@ var LogoutButton = pc.createScript('logoutButton');
 
 // initialize code called once per entity
 LogoutButton.prototype.initialize = function() {
-    // Assuming the script is attached directly to the entity with the Button component
-    const button = this.entity.button;
-
-    if (button) {
-        // Setup callback for when the button is pressed
-        button.on('click', this.onLogoutClick, this);
-        console.log("LogoutButton initialized for entity:", this.entity.name);
-    } else {
-        console.error("LogoutButton: No Button component found on entity:", this.entity.name);
+    this.privyService = this.app.services?.get('privyService');
+    if (!this.privyService) {
+        console.warn("LogoutButton: PrivyService not found.");
+        this.app.once('services:initialized', () => {
+            this.privyService = this.app.services.get('privyService');
+        });
     }
 
-    // Optional: Listen to auth state changes to disable the button if not authenticated
-    this.app.on('auth:stateChanged', this.updateButtonState, this);
-    // Initial state update
-    this.updateButtonState();
-};
-
-LogoutButton.prototype.onLogoutClick = function(event) {
-    console.log("LogoutButton: Clicked. Firing 'auth:logout:request' event.");
-    // Fire an event to request logout. AuthService should handle the actual logout process.
-    this.app.fire('auth:logout:request');
-};
-
-LogoutButton.prototype.updateButtonState = function() {
-    const button = this.entity.button;
-    if (!button) return;
-
-    let isAuthenticated = false;
-    // Check auth state via AuthService if available
-    const authService = this.app.services?.get('authService');
-    if (authService) {
-        isAuthenticated = authService.isAuthenticated();
+    this.logoutButton = document.getElementById('logoutButton');
+    if (this.logoutButton) {
+        this.logoutButton.addEventListener('click', this.onLogoutClicked.bind(this));
+        // Initial state check
+        this.onAuthStateChanged({ state: this.privyService?.getState() || 'disconnected' });
     } else {
-        // Fallback or initial state: Assume not authenticated if service isn't ready
-        // This might briefly show the button as disabled until AuthService initializes
-        isAuthenticated = false;
-        console.warn("LogoutButton: AuthService not available for state check.");
+        console.warn("LogoutButton: DOM element with id 'logoutButton' not found.");
     }
+    
+    this.app.on('auth:stateChanged', this.onAuthStateChanged, this);
+};
 
-    // Enable the button only if the user is authenticated
-    this.entity.enabled = isAuthenticated;
-    // console.log("LogoutButton: Updated enabled state based on auth:", isAuthenticated);
+LogoutButton.prototype.onLogoutClicked = function() {
+    console.log("Logout button clicked.");
+    if (this.privyService) {
+        this.privyService.logout();
+    } else {
+        console.error("LogoutButton: Cannot log out, PrivyService not available.");
+    }
+};
+
+LogoutButton.prototype.onAuthStateChanged = function(stateData) {
+    if (!this.logoutButton) return;
+    const isAuthenticated = stateData.state === 'connected';
+
+    if (isAuthenticated) {
+        this.logoutButton.style.display = 'block';
+    } else {
+        this.logoutButton.style.display = 'none';
+    }
+};
+
+LogoutButton.prototype.destroy = function() {
+    if (this.logoutButton) {
+        this.logoutButton.removeEventListener('click', this.onLogoutClicked.bind(this));
+    }
+    this.app.off('auth:stateChanged', this.onAuthStateChanged, this);
 };
 
 // swap method called for script hot-reloading

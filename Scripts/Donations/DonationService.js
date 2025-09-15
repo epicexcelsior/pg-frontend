@@ -30,15 +30,17 @@ DonationService.attributes.add("servicesEntity", {
 
 DonationService.prototype.initialize = function () {
   console.log("DonationService initializing...");
-  this.authService = null;
-  this.feedbackService = null;
-  this.configLoader = null;
   this.state = DonationState.IDLE;
   this.lastError = null;
   this.currentTransactionSignature = null;
   this.isDonationInProgress = false;
   this.triggerElement = null;
   this.pollingTimeout = null;
+
+  // This service now depends on PrivyService, not AuthService
+  this.privyService = null;
+  this.feedbackService = null;
+  this.configLoader = null;
 
   if (!this.servicesEntity || !this.servicesEntity.script) {
     console.error(
@@ -50,11 +52,11 @@ DonationService.prototype.initialize = function () {
 
   // Get services from registry
   if (this.app.services) {
-    this.authService = this.app.services.get("authService");
+    this.privyService = this.app.services.get("privyService");
     this.feedbackService = this.app.services.get("feedbackService");
 
-    if (!this.authService)
-      console.warn("DonationService: AuthService not found in registry.");
+    if (!this.privyService)
+      console.warn("DonationService: PrivyService not found in registry.");
     if (!this.feedbackService)
       console.warn("DonationService: FeedbackService not found in registry.");
   } else {
@@ -331,37 +333,8 @@ DonationService.prototype.initiateDonation = async function (
   }
   // --- End Solana Pay Flow ---
 
-  console.log(
-    "Donation:",
-    this.authService,
-    this.feedbackService,
-    this.configLoader,
-    this.workerProcessUrl,
-    this.feeRecipient
-  );
-
-  if (!window.SolanaSDK || !window.SolanaSDK.wallet) {
-    console.error("DonationService: Solana wallet extension not found.");
-    this.setState(DonationState.NO_WALLET);
-    if (this.feedbackService) {
-      this.feedbackService.showBlockingPrompt(
-        "Do you have a Solana wallet?",
-        "Please install the Phantom wallet browser extension. More wallets will be supported in the future.",
-        [
-          {
-            label: "Install Phantom",
-            callback: () => window.open("https://phantom.app/", "_blank"),
-            style: { backgroundColor: "#aa9fec", color: "white" },
-          },
-          { label: "OK", callback: () => {}, type: "secondary" },
-        ]
-      );
-    }
-    return;
-  }
-
   if (
-    !this.authService ||
+    !this.privyService ||
     !this.feedbackService ||
     !this.configLoader ||
     !this.workerProcessUrl ||
@@ -383,11 +356,17 @@ DonationService.prototype.initiateDonation = async function (
     }
     return;
   }
-  if (!this.authService.isAuthenticated()) {
+  if (!this.privyService.isAuthenticated()) {
     console.error("DonationService: User not authenticated.");
+    // Prompt user to log in via Privy
+    this.feedbackService.showBlockingPrompt(
+      "Authentication Required",
+      "Please sign in to make a donation.",
+      [{ label: 'Sign In', callback: () => this.privyService.login(), type: 'primary' }]
+    );
     this.setState(
       DonationState.FAILED,
-      new Error("Authentication required. Please sign in.")
+      new Error("Authentication required.")
     );
     return;
   }
@@ -643,9 +622,8 @@ DonationService.prototype._stopPolling = function () {
 };
 
 DonationService.prototype.handleDonation = async function () {
-  const { wallet, rpc, web3 } = window.SolanaSDK;
-  const sessionToken = this.authService.getSessionToken();
-  const payerPublicKey58 = this.authService.getWalletAddress();
+  const sessionToken = await this.privyService.getAccessToken();
+  const payerPublicKey58 = this.privyService.getWalletAddress();
 
   console.log(
     "Fetching donation transaction from backend for recipient:",
@@ -656,11 +634,14 @@ DonationService.prototype.handleDonation = async function () {
     this.setState(DonationState.FETCHING_TRANSACTION);
     const createResponse = await fetch(this.workerCreateUrl, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${sessionToken}` // Use Privy Access Token
+      },
       body: JSON.stringify({
         recipient: this.recipient,
         amount: this.amount,
-        sessionToken: sessionToken,
+        walletAddress: payerPublicKey58 // Pass the wallet address for the server
       }),
     });
 
@@ -674,37 +655,40 @@ DonationService.prototype.handleDonation = async function () {
     console.log("Received transaction message from backend.");
 
     // Use web3.js to deserialize the full transaction from backend
-    const txBytes = window.Buffer.from(base64TxMessage, "base64");
-    const transaction = web3.Transaction.from(txBytes);
+    const txBytes = pc.Buffer.from(base64TxMessage, "base64");
+    const transaction = window.SolanaSDK.web3.Transaction.from(txBytes);
     console.log("Received transaction from backend.");
 
     this.setState(DonationState.AWAITING_SIGNATURE);
     let signedTransaction;
     try {
-      if (typeof wallet.signTransaction !== "function") {
-        throw new Error(
-          "Wallet adapter error: 'signTransaction' method missing."
-        );
-      }
-      signedTransaction = await wallet.signTransaction(transaction);
-      console.log("Transaction signed by wallet.");
+        if (!this.privyService || typeof this.privyService.signTransaction !== 'function') {
+            throw new Error("PrivyService is not available or signTransaction method is missing.");
+        }
+        // SIGN a transaction using the Privy Service, which communicates with the iframe
+        signedTransaction = await this.privyService.signTransaction(transaction);
+
+        if (!signedTransaction) {
+            throw new Error("Signing was cancelled or failed.");
+        }
+
+        console.log("Transaction signed via Privy.");
     } catch (signError) {
-      console.error("Wallet signing failed:", signError);
-      const errorMsg = signError.message?.toLowerCase();
-      if (errorMsg.includes("cancelled") || errorMsg.includes("rejected")) {
-        throw new Error("Transaction cancelled in wallet.");
-      } else {
-        throw new Error(`Wallet signing error: ${signError.message}`);
-      }
+        console.error("Privy signing failed:", signError);
+        const errorMsg = signError.message?.toLowerCase();
+        if (errorMsg.includes("cancelled") || errorMsg.includes("rejected")) {
+            throw new Error("Transaction cancelled in wallet.");
+        } else {
+            throw new Error(`Wallet signing error: ${signError.message}`);
+        }
     }
 
     const serializedTx = signedTransaction.serialize({
-      requireAllSignatures: true,
+      requireAllSignatures: false, // Signatures are not required as the server will verify the fee payer
     });
-    const base64Transaction = Buffer.from(serializedTx).toString("base64");
+    const base64Transaction = pc.Buffer.from(serializedTx).toString("base64");
 
     const payload = {
-      sessionToken: sessionToken,
       rawTransaction: base64Transaction,
     };
 
@@ -712,7 +696,10 @@ DonationService.prototype.handleDonation = async function () {
     console.log("Sending signed transaction to submission server...");
     const response = await fetch(this.workerProcessUrl, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${sessionToken}` // Use Privy Access Token
+      },
       body: JSON.stringify(payload),
     });
 
@@ -840,9 +827,8 @@ DonationService.prototype._handleDonateError = function (error, failureState) {
   const cause = error.cause;
 
   switch (failureState) {
-    case DonationState.NO_WALLET:
-      userMessage =
-        "Please install a Solana wallet extension (e.g., Phantom) to make donations.";
+    case DonationState.NO_WALLET: // This case is now handled by privyService
+      userMessage = "Please use the login button to connect your wallet or create one.";
       isCritical = false;
       break;
     case DonationState.FAILED_VALIDATION:
@@ -859,9 +845,8 @@ DonationService.prototype._handleDonateError = function (error, failureState) {
       break;
     case DonationState.FAILED_SUBMISSION:
       if (cause?.status === 401) {
-        userMessage =
-          "Authentication Error: Your session is invalid. Please sign in again.";
-        this.authService?.handleSessionExpired();
+        userMessage = "Authentication Error: Your session is invalid. Please sign in again.";
+        this.privyService?.logout(); // Use privy service to handle logout
       } else if (cause?.status === 400) {
         userMessage = `Donation Error: ${
           cause.body?.error ||

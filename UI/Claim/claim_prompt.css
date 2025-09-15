@@ -1,0 +1,89 @@
+/* Claim Prompt Styles */
+.claim-prompt-overlay {
+    position: fixed;
+    bottom: 20px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 1000;
+    pointer-events: none;
+}
+
+.claim-prompt-container {
+    background: #1a1a2e;
+    border: 2px solid #9945FF;
+    border-radius: 12px;
+    padding: 20px;
+    min-width: 280px;
+    text-align: center;
+    pointer-events: auto;
+}
+
+.claim-prompt-title {
+    color: #ffffff;
+    font-size: 18px;
+    font-weight: bold;
+    margin: 0 0 10px 0;
+    font-family: 'Segoe UI', sans-serif;
+}
+
+.claim-prompt-description {
+    color: #cccccc;
+    font-size: 14px;
+    margin: 0 0 15px 0;
+    line-height: 1.4;
+    font-family: 'Segoe UI', sans-serif;
+}
+
+.key-hint {
+    background: linear-gradient(135deg, #9945FF, #667eea);
+    color: white;
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-weight: bold;
+    font-size: 12px;
+    margin: 0 2px;
+    box-shadow: 0 2px 4px rgba(153, 69, 255, 0.3);
+}
+
+.claim-button {
+    background: linear-gradient(135deg, #9945FF, #667eea);
+    border: 2px solid rgba(255, 255, 255, 0.2);
+    color: white;
+    padding: 12px 24px;
+    border-radius: 10px;
+    font-size: 16px;
+    font-weight: bold;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    font-family: 'Segoe UI', sans-serif;
+    min-width: 120px;
+    box-shadow: 0 4px 12px rgba(153, 69, 255, 0.3);
+}
+
+.claim-button:hover {
+    background: linear-gradient(135deg, #a955ff, #7b8dff);
+    transform: translateY(-2px) scale(1.05);
+    box-shadow: 0 6px 18px rgba(153, 69, 255, 0.5);
+    border-color: rgba(255, 255, 255, 0.4);
+}
+
+.claim-button:active {
+    transform: translateY(0) scale(1.02);
+    box-shadow: 0 2px 8px rgba(153, 69, 255, 0.4);
+}
+
+/* Responsive adjustments */
+@media (max-width: 480px) {
+    .claim-prompt-container {
+        min-width: 240px;
+        padding: 15px;
+    }
+    
+    .claim-prompt-title {
+        font-size: 16px;
+    }
+    
+    .claim-prompt-description {
+        font-size: 13px;
+    }
+}

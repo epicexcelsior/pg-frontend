@@ -1,241 +1,121 @@
 ///<reference path="c:\Users\Epic\.vscode-insiders\extensions\playcanvas\build\playcanvas.d.ts"
-var ClaimPromptHtml = pc.createScript('claimPromptHtml');
+var HtmlClaimPrompt = pc.createScript('htmlClaimPrompt');
 
 // === ATTRIBUTES ===
-ClaimPromptHtml.attributes.add('css', { type: 'asset', assetType: 'css', title: 'CSS Asset' });
-ClaimPromptHtml.attributes.add('html', { type: 'asset', assetType: 'html', title: 'HTML Asset' });
-ClaimPromptHtml.attributes.add('claimIcon', { type: 'asset', assetType: 'texture', title: 'Claim Icon' });
-ClaimPromptHtml.attributes.add('servicesEntity', { type: 'entity', title: 'Services Entity', description: 'Entity with core services (AuthService, ConfigLoader, etc.)' });
+HtmlClaimPrompt.attributes.add('css', { type: 'asset', assetType: 'css', title: 'CSS Asset' });
+HtmlClaimPrompt.attributes.add('html', { type: 'asset', assetType: 'html', title: 'HTML Asset' });
+
 // === INITIALIZE ===
-ClaimPromptHtml.prototype.initialize = function () {
-     if (this.css && this.css.resource) {
-          const style = document.createElement('style');
-          document.head.appendChild(style);
-          style.innerHTML = this.css.resource.data || this.css.resource;
-     }
+HtmlClaimPrompt.prototype.initialize = function () {
+    // 1. Inject HTML and CSS
+    if (this.css && this.css.resource) {
+        const style = document.createElement('style');
+        document.head.appendChild(style);
+        style.innerHTML = this.css.resource;
+    }
+    this.container = document.createElement('div');
+    this.container.innerHTML = this.html.resource;
+    document.body.appendChild(this.container);
 
-     let htmlContent = "";
-     if (this.html && this.html.resource) {
-          htmlContent = this.html.resource.data || this.html.resource;
-     }
-     this.container = document.createElement('div');
-     this.container.innerHTML = htmlContent;
-     document.body.appendChild(this.container);
+    // 2. Get DOM Elements
+    this.claimPromptEl = this.container.querySelector('#claimPrompt');
+    this.claimButton = this.container.querySelector('#claimButton');
 
-     this.claimPromptEl = this.container.querySelector('#claimPrompt');
-     if (!this.claimPromptEl) {
-          console.error("ClaimPromptHtml: Element with id 'claimPrompt' not found!");
-          return;
-     }
+    if (!this.claimPromptEl || !this.claimButton) {
+        console.error("HtmlClaimPrompt: Required DOM elements (#claimPrompt, #claimButton) not found!");
+        return;
+    }
 
-     if (this.claimIcon && this.claimIcon.resource) {
-          const iconElem = this.container.querySelector('.claim-icon');
-          if (iconElem) {
-               iconElem.src = this.claimIcon.getFileUrl();
-          }
-     }
+    // 3. Get PrivyService
+    this.privyService = this.app.services?.get('privyService');
+    if (!this.privyService) {
+        this.app.once('services:initialized', () => {
+            this.privyService = this.app.services.get('privyService');
+        });
+    }
 
-     gsap.set(this.claimPromptEl, {
-          y: 50,
-          opacity: 0,
-          pointerEvents: 'none'
-     });
+    // 4. Setup Listeners
+    this.claimButton.addEventListener('click', this.onClaimClick.bind(this));
+    this.app.keyboard.on(pc.EVENT_KEYDOWN, this.onKeyDown, this);
+    this.app.on('ui:showClaimPrompt', this.onShowPrompt, this);
+    this.app.on('ui:hideClaimPrompt', this.hide, this);
+    this.app.on('auth:stateChanged', this.onAuthStateChanged, this);
 
-     if (this.app.uiManager) {
-          this.app.uiManager.registerComponent(this);
-     }
+    // 5. Initial State
+    this.currentBoothId = null;
+    gsap.set(this.claimPromptEl, { y: 50, opacity: 0, pointerEvents: 'none' });
 
-     this.currentBooth = null;
-
-     this.app.keyboard.on(pc.EVENT_KEYDOWN, this.onKeyDown, this);
-
-     // Get AuthService reference
-     this.authService = null;
-     if (this.servicesEntity && this.servicesEntity.script && this.servicesEntity.script.authService) {
-         this.authService = this.servicesEntity.script.authService;
-         console.log("ClaimPromptHtml: Found AuthService.");
-     } else {
-         console.error("ClaimPromptHtml: Services Entity or AuthService script not found!");
-         // Optionally listen for services:initialized if late initialization is possible
-         this.app.once('services:initialized', () => {
-              if (this.servicesEntity && this.servicesEntity.script && this.servicesEntity.script.authService) {
-                  this.authService = this.servicesEntity.script.authService;
-                  console.log("ClaimPromptHtml: Found late-initialized AuthService.");
-              } else {
-                   console.error("ClaimPromptHtml: Still couldn't find AuthService after initialization event.");
-              }
-         });
-     }
-     this.pendingClaimBoothId = null; // Initialize
-
-     // Listen for auth:connected event to auto-trigger claim after auth flow
-     this.app.on('auth:connected', this.onAuthConnected, this);
-
-     // Listen for UI events from BoothController (or UIManager)
-     this.app.on('ui:showClaimPrompt', this.onShowPrompt, this);
-     this.app.on('ui:hideClaimPrompt', this.onHidePrompt, this);
+    console.log("HtmlClaimPrompt initialized (Privy Version).");
 };
 
-// === THEMING ===
-ClaimPromptHtml.prototype.setTheme = function (theme) {
-     if (this.claimPromptEl) {
-          this.claimPromptEl.style.fontFamily = theme.fontFamily;
-     }
+// === EVENT HANDLERS ===
+HtmlClaimPrompt.prototype.onShowPrompt = function (boothZoneScript) {
+    if (!boothZoneScript || !boothZoneScript.boothId) return;
+    this.currentBoothId = boothZoneScript.boothId;
+    gsap.to(this.claimPromptEl, { duration: 0.5, y: 0, opacity: 1, pointerEvents: 'auto', ease: 'expo.out' });
 };
 
-// === SHOW / HIDE METHODS ===
-ClaimPromptHtml.prototype.show = function () {
-     gsap.to(this.claimPromptEl, {
-          duration: this._animSettings('duration'),
-          y: 0,
-          opacity: 1,
-          pointerEvents: 'auto',
-          ease: this._animSettings('expo.in')
-     });
-};
-
-ClaimPromptHtml.prototype.hide = function () {
-     gsap.to(this.claimPromptEl, {
-          duration: this._animSettings('duration'),
-          y: 50,
-          opacity: 0,
-          pointerEvents: 'none',
-          ease: this._animSettings('expo.out')
-     });
-};
-
-// === EVENT HANDLERS for UI events ===
-ClaimPromptHtml.prototype.onShowPrompt = function (boothScript) {
-    // Only show if not already showing for a different booth (or same booth)
-    if (!this.currentBooth) {
-        this.currentBooth = boothScript;
-        console.log("ClaimPromptHtml: Received ui:showClaimPrompt for booth ->", boothScript.boothId);
-        this.show(); // Use existing show method
-    } else if (this.currentBooth !== boothScript) {
-        // If showing for a different booth, update context but don't re-animate if already visible
-        console.log("ClaimPromptHtml: Switching context to booth ->", boothScript.boothId);
-        this.currentBooth = boothScript;
-        // Ensure it's visible if somehow hidden
-        if (this.claimPromptEl.style.opacity < 1) {
-            this.show();
-        }
+HtmlClaimPrompt.prototype.hide = function () {
+    this.currentBoothId = null;
+    gsap.to(this.claimPromptEl, { duration: 0.5, y: 50, opacity: 0, pointerEvents: 'none', ease: 'expo.in' });
+    
+    // Also hide the Privy iframe if it's open
+    if (this.privyService && this.privyService.forceHide) {
+        this.privyService.forceHide();
     }
 };
 
-ClaimPromptHtml.prototype.onHidePrompt = function () {
-    if (this.currentBooth) {
-        console.log("ClaimPromptHtml: Received ui:hideClaimPrompt. Hiding for booth ->", this.currentBooth.boothId);
-        this.currentBooth = null;
-        this.hide(); // Use existing hide method
+HtmlClaimPrompt.prototype.onClaimClick = function () {
+    if (!this.currentBoothId || !this.privyService) {
+        console.error("HtmlClaimPrompt: Cannot claim - no booth ID or PrivyService.");
+        return;
     }
-};
 
-// --- Removed register/unregister methods ---
-
-// Claim booth (press E)
-ClaimPromptHtml.prototype.onKeyDown = function (event) { // Removed async
-     if (event.key === pc.KEY_E && this.currentBooth && this.claimPromptEl.style.opacity > 0) {
-
-          if (!this.authService) {
-               console.error("ClaimPromptHtml: AuthService not available.");
-               // Optionally fire a generic UI error event
-               // this.app.fire('ui:show:error', 'Internal Error: Auth Service unavailable.');
-               return;
-          }
-
-          // Check if the user is authenticated via AuthService
-          if (!this.authService.isAuthenticated()) {
-               console.log("ClaimPromptHtml: User not authenticated. Initiating wallet connection flow...");
-               // Show a message indicating connection is starting
-               this.app.fire('ui:show:message', 'Connecting wallet... Press E again after connecting to claim.');
-               // Initiate the connection flow
-               this.authService.connectWalletFlow().catch(err => {
-                   // Error handling is mostly done within AuthService, but log here too.
-                   console.error("ClaimPromptHtml: Error during connectWalletFlow initiated by claim attempt:", err);
-                   // Optionally show a specific error message via ui:show:message if needed
-               });
-               // Store the boothId to claim for after successful authentication
-               this.pendingClaimBoothId = this.currentBooth.boothId;
-               // Do NOT proceed with the claim yet. Wait for auth:connected event.
-               // No need to instruct user to press 'E' again. Claim will be auto-triggered after auth.
-               event.event.preventDefault();
-               event.event.stopPropagation();
-               return; // Stop the current claim process, wait for auth to connect
-          }
-  
-          // User is authenticated, proceed with claim request
-          // const boothIdToClaim = this.currentBooth.boothId; // No longer get from currentBooth here
-          const boothIdToClaim = this.pendingClaimBoothId; // Get from pending, should be set during connectWalletFlow
-          if (!boothIdToClaim) {
-              console.error("ClaimPromptHtml: No pending booth ID to claim after authentication!");
-              return; // Should not happen, but safety check
-          }
-          this.pendingClaimBoothId = null; // Clear pending claim
-          const userAddress = this.authService.getWalletAddress(); // Get address from the source of truth
-
-          console.log(`ClaimPromptHtml: Firing booth:claimRequest for booth '${boothIdToClaim}' by user ${userAddress}`);
-          // Fire the application event that MessageBroker listens for
-          this.app.fire('booth:claimRequest', boothIdToClaim);
-
-          // Hide prompt immediately after firing request
-          this.currentBooth = null;
-          this.hide();
-
-          // Prevent default browser behavior (like typing 'e' in an input field)
-          event.event.preventDefault();
-          event.event.stopPropagation();
-     }
-};
-
-// --- New handler for auth:connected event ---
-ClaimPromptHtml.prototype.onAuthConnected = function(authStateData) {
-    if (this.pendingClaimBoothId) {
-        const boothIdToClaim = this.pendingClaimBoothId;
-        this.pendingClaimBoothId = null; // Clear it immediately
-
-        console.log(`ClaimPromptHtml: AuthService connected. Auto-firing booth:claimRequest for pending booth '${boothIdToClaim}'`);
-        // Fire the application event to claim the booth
-        this.app.fire('booth:claimRequest', boothIdToClaim);
-
-        // Hide prompt immediately as claim request is sent
-        this.hide(); // Hide the claim prompt
+    if (this.privyService.isAuthenticated()) {
+        console.log(`HtmlClaimPrompt: Firing claim request for ${this.currentBoothId}`);
+        this.app.fire('booth:claimRequest', this.currentBoothId);
+        this.hide();
     } else {
-        console.warn("ClaimPromptHtml: AuthService connected, but no pending booth claim.");
+        console.log("HtmlClaimPrompt: User not authenticated. Triggering login.");
+        // Store the booth ID for after authentication
+        this.pendingBoothClaim = this.currentBoothId;
+        // Use generic login. The Privy UI will handle provider selection.
+        this.privyService.login();
+        // Don't hide immediately - let the auth flow complete
     }
 };
 
-// Removed sendClaimRequest function - Replaced by firing 'booth:claimRequest' event in onKeyDown
 
-// === UTILITY: Retrieve Animation Settings from UIManager ===
-ClaimPromptHtml.prototype._animSettings = function (prop) {
-     const uiMgr = this.app.uiManager;
-     if (!uiMgr) {
-          const fallback = { duration: 0.5, easeIn: 'expo.out', easeOut: 'expo.in' };
-          return fallback[prop];
-     }
-     return uiMgr.getAnimationSettings()[prop];
-};
-
-// Clean up listeners
-ClaimPromptHtml.prototype.destroy = function() {
-    this.app.off('ui:showClaimPrompt', this.onShowPrompt, this);
-    this.app.off('ui:hideClaimPrompt', this.onHidePrompt, this);
-    this.app.off('auth:connected', this.onAuthConnected, this); // Clean up new listener
-    this.app.keyboard.off(pc.EVENT_KEYDOWN, this.onKeyDown, this);
-
-    // Remove HTML element if needed
-    if (this.container && this.container.parentNode) {
-        this.container.parentNode.removeChild(this.container);
+HtmlClaimPrompt.prototype.onKeyDown = function (event) {
+    if (event.key === pc.KEY_E && this.currentBoothId) {
+        this.onClaimClick();
+        event.event.preventDefault();
+        event.event.stopPropagation();
     }
 };
 
-// Clean up listeners
-ClaimPromptHtml.prototype.destroy = function() {
-    this.app.off('ui:showClaimPrompt', this.onShowPrompt, this);
-    this.app.off('ui:hideClaimPrompt', this.onHidePrompt, this);
-    this.app.keyboard.off(pc.EVENT_KEYDOWN, this.onKeyDown, this);
+HtmlClaimPrompt.prototype.onAuthStateChanged = function (stateData) {
+    // If user just became authenticated and we have a pending booth claim
+    if (stateData.state === 'connected' && this.pendingBoothClaim) {
+        console.log(`HtmlClaimPrompt: Authentication completed. Auto-claiming booth ${this.pendingBoothClaim}`);
+        // Small delay to ensure all state is updated
+        setTimeout(() => {
+            this.app.fire('booth:claimRequest', this.pendingBoothClaim);
+            this.pendingBoothClaim = null;
+            this.hide();
+        }, 100);
+    }
+};
 
-    // Remove HTML element if needed
+// === CLEANUP ===
+HtmlClaimPrompt.prototype.destroy = function() {
+    this.app.off('ui:showClaimPrompt', this.onShowPrompt, this);
+    this.app.off('ui:hideClaimPrompt', this.hide, this);
+    this.app.off('auth:stateChanged', this.onAuthStateChanged, this);
+    this.app.keyboard.off(pc.EVENT_KEYDOWN, this.onKeyDown, this);
+    if (this.claimButton) {
+        this.claimButton.removeEventListener('click', this.onClaimClick.bind(this));
+    }
     if (this.container && this.container.parentNode) {
         this.container.parentNode.removeChild(this.container);
     }
