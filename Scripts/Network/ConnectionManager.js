@@ -66,6 +66,7 @@ ConnectionManager.prototype.connect = async function() {
         }
 
         console.log("ConnectionManager: Successfully joined room. Session ID:", this.room.sessionId);
+        this.app.room = this.room; // Expose room globally
         this.setupRoomLifecycleListeners(); // Setup leave/error listeners immediately
 
         // Fire event with the room object for other network scripts to use
@@ -95,6 +96,7 @@ ConnectionManager.prototype.setupRoomLifecycleListeners = function() {
         console.log("ConnectionManager: Left room. Code:", code);
         const wasConnected = !!this.room;
         this.room = null; // Clear room reference
+        this.app.room = null; // Clear global room reference
         if (wasConnected) {
             this.app.fire("colyseus:disconnected", { code: code });
         }

@@ -1,9 +1,11 @@
 {
   "colyseusEndpoint": "ws://localhost:2567",
-  "cloudflareWorkerCreateTxEndpoint": "http://127.0.0.1:28804/create_donation_transaction",
-  "cloudflareWorkerDonationEndpoint": "http://127.0.0.1:28804/process_donation",
+  "cloudflareWorkerCreateTxEndpoint": "http://127.0.0.1:8787/create_donation_transaction",
+  "cloudflareWorkerDonationEndpoint": "http://127.0.0.1:8787/process_donation",
   "privyHostOrigin": "https://localhost:5173",
+  "cloudflareWorkerAnnounceEndpoint": "http://127.0.0.1:8787/announceDonation",
   "donationFeeRecipientAddress": "r1eKs83sknjVn8cSx5u7afNx8ykjoi1GWULwZvcaAio",
-  "solanaRpcUrl": "https://api.devnet.solana.com",
-  "donationFeePercentage": 10
+  "heliusRpcUrl": "https://mainnet.helius-rpc.com/?api-key=3a8dbca3-c068-49c7-9d16-f1224d21aa32",
+  "donationFeePercentage": 10,
+  "privyAppId": "ciot16npk0016jq0f805v642z"
 }

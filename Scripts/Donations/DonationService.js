@@ -37,8 +37,8 @@ DonationService.prototype.initialize = function () {
   this.triggerElement = null;
   this.pollingTimeout = null;
 
-  // This service now depends on PrivyService, not AuthService
-  this.privyService = null;
+  // This service now depends on privyManager, not AuthService
+  this.privyManager = null;
   this.feedbackService = null;
   this.configLoader = null;
 
@@ -52,11 +52,11 @@ DonationService.prototype.initialize = function () {
 
   // Get services from registry
   if (this.app.services) {
-    this.privyService = this.app.services.get("privyService");
+    this.privyManager = this.app.services.get("privyManager");
     this.feedbackService = this.app.services.get("feedbackService");
 
-    if (!this.privyService)
-      console.warn("DonationService: PrivyService not found in registry.");
+    if (!this.privyManager)
+      console.warn("DonationService: privyManager not found in registry.");
     if (!this.feedbackService)
       console.warn("DonationService: FeedbackService not found in registry.");
   } else {
@@ -334,7 +334,7 @@ DonationService.prototype.initiateDonation = async function (
   // --- End Solana Pay Flow ---
 
   if (
-    !this.privyService ||
+    !this.privyManager ||
     !this.feedbackService ||
     !this.configLoader ||
     !this.workerProcessUrl ||
@@ -356,13 +356,13 @@ DonationService.prototype.initiateDonation = async function (
     }
     return;
   }
-  if (!this.privyService.isAuthenticated()) {
+  if (!this.privyManager.isAuthenticated()) {
     console.error("DonationService: User not authenticated.");
     // Prompt user to log in via Privy
     this.feedbackService.showBlockingPrompt(
       "Authentication Required",
       "Please sign in to make a donation.",
-      [{ label: 'Sign In', callback: () => this.privyService.login(), type: 'primary' }]
+      [{ label: 'Sign In', callback: () => this.privyManager.login(), type: 'primary' }]
     );
     this.setState(
       DonationState.FAILED,
@@ -622,8 +622,8 @@ DonationService.prototype._stopPolling = function () {
 };
 
 DonationService.prototype.handleDonation = async function () {
-  const sessionToken = await this.privyService.getAccessToken();
-  const payerPublicKey58 = this.privyService.getWalletAddress();
+  const sessionToken = await this.privyManager.getAccessToken();
+    const payerPublicKey58 = this.privyManager.getWalletAddress();
 
   console.log(
     "Fetching donation transaction from backend for recipient:",
@@ -662,11 +662,11 @@ DonationService.prototype.handleDonation = async function () {
     this.setState(DonationState.AWAITING_SIGNATURE);
     let signedTransaction;
     try {
-        if (!this.privyService || typeof this.privyService.signTransaction !== 'function') {
-            throw new Error("PrivyService is not available or signTransaction method is missing.");
+        if (!this.privyManager || typeof this.privyManager.sendTransaction !== 'function') {
+            throw new Error("privyManager is not available or sendTransaction method is missing.");
         }
-        // SIGN a transaction using the Privy Service, which communicates with the iframe
-        signedTransaction = await this.privyService.signTransaction(transaction);
+        // SIGN a transaction using the Privy Service, which communicates via popup
+        signedTransaction = await this.privyManager.sendTransaction(transaction);
 
         if (!signedTransaction) {
             throw new Error("Signing was cancelled or failed.");
@@ -827,7 +827,7 @@ DonationService.prototype._handleDonateError = function (error, failureState) {
   const cause = error.cause;
 
   switch (failureState) {
-    case DonationState.NO_WALLET: // This case is now handled by privyService
+    case DonationState.NO_WALLET: // This case is now handled by privyManager
       userMessage = "Please use the login button to connect your wallet or create one.";
       isCritical = false;
       break;
@@ -846,7 +846,7 @@ DonationService.prototype._handleDonateError = function (error, failureState) {
     case DonationState.FAILED_SUBMISSION:
       if (cause?.status === 401) {
         userMessage = "Authentication Error: Your session is invalid. Please sign in again.";
-        this.privyService?.logout(); // Use privy service to handle logout
+        this.privyManager?.logout(); // Use privy service to handle logout
       } else if (cause?.status === 400) {
         userMessage = `Donation Error: ${
           cause.body?.error ||

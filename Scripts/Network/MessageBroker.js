@@ -1,180 +1,47 @@
+// C:\Users\Epic\Documents\GitHub\pg-frontend\Scripts\Network\MessageBroker.js
 var MessageBroker = pc.createScript('messageBroker');
 
-// initialize code called once per entity
 MessageBroker.prototype.initialize = function () {
-    console.log("MessageBroker: Initializing...");
-    this.room = null;
-
-    // Listen for connection events
-    this.app.on('colyseus:connected', this.onConnected, this);
-    this.app.on('colyseus:disconnected', this.onDisconnected, this);
-
-    // Setup listeners for outgoing message requests from the app
     this.setupAppEventListeners();
-};
-
-MessageBroker.prototype.onConnected = function (room) {
-    console.log("MessageBroker: Received colyseus:connected event.");
-    if (!room) {
-        console.error("MessageBroker: Cannot initialize listeners. Room object is missing.");
-        return;
+    if (this.app.room) {
+        this.setupRoomMessageListeners(this.app.room);
+    } else {
+        this.app.once('colyseus:connected', this.setupRoomMessageListeners, this);
     }
-    this.room = room;
-    this.setupRoomMessageListeners(); // Start listening for incoming messages
 };
 
-MessageBroker.prototype.onDisconnected = function (data) {
-    console.log("MessageBroker: Received colyseus:disconnected event.", data);
-    this.room = null;
-    // No need to remove listeners specifically if using app.on/app.off correctly elsewhere
-};
-
-// Listen for specific messages FROM the Colyseus Room
-MessageBroker.prototype.setupRoomMessageListeners = function () {
-    if (!this.room) return;
-
-    console.log("MessageBroker: Setting up room message listeners...");
-
-    // --- Booth Messages ---
-    this.room.onMessage("claimSuccess", (data) => {
-        console.log(`[MessageBroker] Received claimSuccess:`, data);
-        // Fire specific event for UI/other systems
-        this.app.fire('booth:claimSuccess', data);
-        // Note: PlayerData/BoothController might listen to this
-    });
-
-    this.room.onMessage("claimError", (data) => {
-        console.warn(`[MessageBroker] Received claimError: Booth '${data.boothId}', Reason: ${data.reason}`);
-        // Fire specific event for UI/other systems
-        this.app.fire('booth:claimError', data);
-    });
-
-    // --- Donation Messages ---
-    this.room.onMessage("donationConfirmed", (data) => {
-        console.log(`[MessageBroker] Received donationConfirmed:`, data);
-        // Fire events for effects and chat (or a single more generic event)
+MessageBroker.prototype.setupRoomMessageListeners = function (room) {
+    if (!room) return;
+    room.onMessage("claimSuccess", (data) => this.app.fire('booth:claimSuccess', data));
+    room.onMessage("claimError", (data) => this.app.fire('booth:claimError', data));
+    room.onMessage("donationConfirmed", (data) => {
         this.app.fire('effects:donation', { recipient: data.recipient, amount: data.amountSOL });
-        this.app.fire('chat:newMessage', { type: 'system', content: `${data.sender.substring(0, 4)}... donated ${data.amountSOL} SOL to ${data.recipient.substring(0, 4)}...!` });
-        // Could also fire a more specific event: this.app.fire('donation:confirmed', data);
+        this.app.fire('chat:newMessage', { type: 'system', content: `${data.senderUsername} donated ${data.amountSOL} SOL!` });
     });
-
-    // --- Chat Messages ---
-    this.room.onMessage("chatMessage", (data) => {
-        // Expected data: { senderName: string, content: string } or similar
-        console.log(`[MessageBroker] Received chatMessage:`, data);
-        // Fire event for ChatController/HtmlChat to display
-        // Ensure data and data.sender exist before accessing username
+    room.onMessage("chatMessage", (data) => {
         const senderName = data?.sender?.username || 'Unknown';
         this.app.fire('chat:newMessage', { type: 'user', sender: senderName, content: data.content });
     });
-
-    // Add listeners for any other custom messages here...
-    // e.g., this.room.onMessage("serverNotification", (data) => { ... });
 };
 
-// Listen for events FROM the application requesting to send messages
 MessageBroker.prototype.setupAppEventListeners = function () {
-    console.log("MessageBroker: Setting up app event listeners for outgoing messages...");
-
-    // --- Player Updates ---
-    this.app.on("player:move", this.sendPlayerMove, this);
-    this.app.on('user:setname', this.sendUsernameUpdate, this);
-    this.app.on('auth:addressAvailable', this.sendAddressUpdate, this); // Or listen for a more specific 'player:updateAddress' event
-
-    // --- Booth Actions ---
-    this.app.on('booth:claimRequest', this.sendClaimBoothRequest, this);
-    this.app.on('booth:unclaimIfOwned', this.sendUnclaimIfOwned, this);
-
-    // --- Chat ---
-    this.app.on('network:send:chatMessage', this.sendChatMessage, this); // Match ChatController event
-
-    // Add listeners for any other outgoing message requests...
-    // e.g., this.app.on('interaction:request', this.sendInteraction, this);
-   // --- Donation Messages (Outgoing) ---
-   this.app.on('donation:confirmedForBackend', this.sendDonationConfirmed, this);
+    this.app.on("player:move", (data) => this.sendMessage("updatePosition", data));
+    this.app.on('user:setname', (username) => this.sendMessage("setUsername", { username }));
+    this.app.on('booth:claimRequest', (data) => this.sendMessage('claimBooth', data));
+    this.app.on('network:send:chatMessage', (data) => this.sendMessage("chatMessage", data));
+    this.app.on('donation:confirmedForBackend', (data) => this.sendMessage("donationConfirmed", data));
+    this.app.on('network:send:updateAddress', (address) => this.sendMessage('updateAddress', { walletAddress: address }));
+    
+    // [!code ++]
+    // FIX: Add the missing listener to handle the unclaim request on logout.
+    this.app.on('network:send:unclaimBooth', () => this.sendMessage('unclaimBooth'));
+    // [!code --]
 };
 
-// --- Methods to Send Messages ---
-
-MessageBroker.prototype.sendPlayerMove = function (data) {
-    if (this.room) {
-        // console.log("MessageBroker: Sending updatePosition:", data); // Optional: Verbose logging
-        this.room.send("updatePosition", data);
+MessageBroker.prototype.sendMessage = function(type, payload) {
+    if (this.app.room) {
+        this.app.room.send(type, payload);
     } else {
-        console.warn("MessageBroker: Cannot send player:move, not connected.");
+        console.warn(`MessageBroker: Cannot send '${type}', room not available.`);
     }
 };
-
-MessageBroker.prototype.sendUsernameUpdate = function (confirmedUsername) {
-    // TODO: Should ideally get username from AuthService or PlayerData, not rely on event payload directly if possible
-    if (this.room && confirmedUsername) {
-        // Check against current server state if possible/needed (might be complex here)
-        // For simplicity, just send the update request. Server should handle duplicates.
-        console.log(`MessageBroker: Sending setUsername: ${confirmedUsername}`);
-        this.room.send("setUsername", { username: confirmedUsername });
-        // Note: We don't update window.userName here. AuthService/PlayerData should be source of truth.
-    } else {
-        console.warn("MessageBroker: Cannot send setUsername. Not connected or username empty.");
-    }
-};
-
-MessageBroker.prototype.sendAddressUpdate = function (data) {
-    // Expecting data = { address: "0x..." } from 'auth:addressAvailable'
-    if (this.room && data && data.address) {
-        console.log("MessageBroker: Sending updateAddress:", data.address);
-        this.room.send("updateAddress", { walletAddress: data.address });
-    } else {
-        console.warn("MessageBroker: Cannot send updateAddress. Not connected or address missing.");
-    }
-};
-
-MessageBroker.prototype.sendClaimBoothRequest = function (boothId) {
-    if (this.room && boothId) {
-        console.log(`MessageBroker: Sending claimBooth request for '${boothId}'`);
-        this.room.send('claimBooth', { boothId: boothId });
-    } else {
-        console.warn("MessageBroker: Cannot send claimBooth request. Not connected or boothId missing.");
-    }
-};
-
-MessageBroker.prototype.sendUnclaimIfOwned = function () {
-    if (!this.room) {
-        console.warn("MessageBroker: Cannot send unclaimIfOwned. Not connected.");
-        return;
-    }
-    try {
-        console.log("MessageBroker: Sending unclaimIfOwned request");
-        this.room.send('unclaimIfOwned', {});
-    } catch (e) {
-        console.warn("MessageBroker: Failed to send unclaimIfOwned:", e);
-    }
-};
-
-MessageBroker.prototype.sendChatMessage = function (messageData) {
-    // messageData is expected to be { content: "string" } from ChatController
-    const actualContent = messageData?.content; // Extract the actual string
-    if (this.room && actualContent) {
-        console.log("MessageBroker: Sending chatMessage:", actualContent);
-        // Send only the actual string content under the 'content' key
-        this.room.send("chatMessage", { content: actualContent });
-    } else {
-        console.warn("MessageBroker: Cannot send chatMessage. Not connected or message empty/invalid.", messageData);
-    }
-};
-
-MessageBroker.prototype.sendDonationConfirmed = function (data) {
-    console.log(`[MessageBroker] Received 'donation:confirmedForBackend' event. Sending to room:`, data);
-    // data is expected to be { signature, recipient, donor, amountSOL }
-    if (this.room && data && data.signature && data.recipient && data.donor && typeof data.amountSOL === 'number') {
-        this.room.send("donationConfirmed", data);
-    } else {
-        console.warn("MessageBroker: Cannot send donationConfirmed. Not connected or data missing/invalid.", data);
-    }
-};
-
-// Add other send methods as needed...
-// MessageBroker.prototype.sendSomeOtherMessage = function(payload) { ... };
-
-
-// swap method called for script hot-reloading
-// MessageBroker.prototype.swap = function(old) { };
