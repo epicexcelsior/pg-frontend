@@ -8,17 +8,14 @@ PlayerSync.attributes.add('playerPrefab', {
 });
 
 PlayerSync.prototype.initialize = function() {
-    console.log("PlayerSync: Initializing script.");
     this.playerEntities = {};
     this.room = null;
     this.localSessionId = null;
     this.app.on('colyseus:connected', this.onConnected, this);
     this.app.on('colyseus:disconnected', this.onDisconnected, this);
-    console.log("PlayerSync: Event listeners for 'colyseus:connected' and 'colyseus:disconnected' registered.");
 };
 
 PlayerSync.prototype.onConnected = function(room) {
-    console.log("PlayerSync: 'colyseus:connected' event received.");
     if (!room) {
         console.error("PlayerSync: Room object is null or undefined.");
         return;
@@ -35,7 +32,6 @@ PlayerSync.prototype.onConnected = function(room) {
     this.localSessionId = room.sessionId;
 
     this.room.state.players.onAdd((playerState, sessionId) => {
-        console.log(`PlayerSync: onAdd event for session ID: ${sessionId}`, playerState);
         this.spawnPlayer(playerState, sessionId);
         playerState.onChange(() => this.handlePlayerChange(playerState, sessionId));
     });
@@ -61,12 +57,11 @@ PlayerSync.prototype.onDisconnected = function(data) {
 };
 
 PlayerSync.prototype.spawnPlayer = function(playerState, sessionId) {
-    console.log(`PlayerSync: Spawning player for session ID: ${sessionId}`);
     if (this.playerEntities[sessionId]) {
         console.warn(`PlayerSync: Player entity for session ID ${sessionId} already exists. Aborting spawn.`);
         return;
     }
-    
+
     const isLocalPlayer = (sessionId === this.localSessionId);
     const playerEntity = this.playerPrefab.resource.instantiate();
     playerEntity.name = isLocalPlayer ? "LocalPlayer" : sessionId;
@@ -92,28 +87,21 @@ PlayerSync.prototype.spawnPlayer = function(playerState, sessionId) {
     if (isLocalPlayer) {
         // For local player, use setPosition
         playerEntity.setPosition(playerState.x, playerState.y, playerState.z);
-        console.log(`PlayerSync: Local player spawned at: (${playerState.x}, ${playerState.y}, ${playerState.z})`);
     } else {
         // For remote players, use rigidbody.teleport() if available to avoid physics conflicts
         const rigidbody = playerEntity.rigidbody;
         if (rigidbody) {
             rigidbody.teleport(playerState.x, playerState.y, playerState.z);
-            console.log(`PlayerSync: Remote player ${sessionId} spawned using rigidbody.teleport() at: (${playerState.x}, ${playerState.y}, ${playerState.z})`);
         } else {
             playerEntity.setPosition(playerState.x, playerState.y, playerState.z);
-            console.log(`PlayerSync: Remote player ${sessionId} spawned using setPosition() at: (${playerState.x}, ${playerState.y}, ${playerState.z})`);
         }
     }
-    
+
     playerEntity.setEulerAngles(0, playerState.rotation, 0);
-    console.log(`PlayerSync: Spawning player at position: (${playerState.x}, ${playerState.y}, ${playerState.z})`);
     this.app.root.addChild(playerEntity);
     this.playerEntities[sessionId] = playerEntity;
     this.updateNameplate(playerEntity, playerState.username);
     this.app.fire('player:spawned', { entity: playerEntity, isLocal: isLocalPlayer });
-    
-    // Additional debug logging for entity state
-    console.log(`PlayerSync: Player ${sessionId} entity enabled: ${playerEntity.enabled}, visible: ${playerEntity.enabled && playerEntity.model?.enabled}`);
 };
 
 PlayerSync.prototype.removePlayer = function(sessionId) {
@@ -159,21 +147,13 @@ PlayerSync.prototype.updateRemotePlayerVisuals = function(entity, playerState) {
         console.warn(`PlayerSync: Suspicious coordinates for ${entity.name}: (${x}, ${y}, ${z})`);
     }
     
-    // Check if player is entering spawn area (near zero coordinates)
-    const isNearSpawn = Math.abs(x) < 5 && Math.abs(z) < 5;
-    if (isNearSpawn) {
-        console.log(`PlayerSync: Player ${entity.name} is near spawn area: (${x}, ${y}, ${z})`);
-    }
-    
     const targetPos = new pc.Vec3(x, y, z);
-    
+
     // Use rigidbody teleport if available for better physics sync, otherwise use setPosition
     if (entity.rigidbody) {
         entity.rigidbody.teleport(targetPos);
-        console.log(`PlayerSync: Teleported ${entity.name} to (${x}, ${y}, ${z}) via rigidbody`);
     } else {
         entity.setPosition(targetPos);
-        console.log(`PlayerSync: Moved ${entity.name} to (${x}, ${y}, ${z}) via setPosition`);
     }
     
     // Improved rotation synchronization - use direct setting instead of slerp for better sync
@@ -187,10 +167,6 @@ PlayerSync.prototype.updateRemotePlayerVisuals = function(entity, playerState) {
         if (playerState.hasOwnProperty('xDirection')) entity.anim.setFloat('xDirection', playerState.xDirection);
         if (playerState.hasOwnProperty('zDirection')) entity.anim.setFloat('zDirection', playerState.zDirection);
     }
-    
-    // Log final position after update
-    const finalPos = entity.getPosition();
-    console.log(`PlayerSync: Final position for ${entity.name}: (${finalPos.x}, ${finalPos.y}, ${finalPos.z})`);
     
     // Check entity state after update
     const isEnabledAfter = entity.enabled;
