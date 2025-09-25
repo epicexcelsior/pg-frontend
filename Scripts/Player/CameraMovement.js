@@ -73,7 +73,23 @@ CameraMovement.attributes.add('zoomSpeed', {
     description: 'Mouse wheel zoom sensitivity'
 });
 
+CameraMovement.attributes.add('farClip', {
+    type: 'number',
+    default: 1000,
+    description: 'The far clipping plane of the camera.'
+});
+
+CameraMovement.attributes.add('nearClip', {
+    type: 'number',
+    default: 0.1,
+    description: 'The near clipping plane of the camera.'
+});
+
 CameraMovement.prototype.initialize = function () {
+    if (this.entity.camera) {
+        this.entity.camera.farClip = this.farClip;
+        this.entity.camera.nearClip = this.nearClip;
+    }
     this.yaw = 0;
     this.pitch = 0;
     this.rightMouseDown = false;
@@ -148,10 +164,11 @@ CameraMovement.prototype.update = function (dt) {
     if (!this.cameraControlsEnabled) return;
     const normalizedDt = Math.min(dt, 1/30); // Cap delta time to prevent large jumps
     
-    // Cache player reference
+    // Cache player reference with proper null check
     var localPlayer = this.app.root.findByName('LocalPlayer');
     
-    if (localPlayer && localPlayer.script.playerMovement) {
+    // Guard clause: Only proceed if LocalPlayer exists and has the required script
+    if (localPlayer && localPlayer.script && localPlayer.script.playerMovement) {
         const movement = localPlayer.script.playerMovement;
         const inputX = movement.currentInputX || 0;
         const inputZ = movement.currentInputZ || 0;
@@ -182,6 +199,13 @@ CameraMovement.prototype.update = function (dt) {
             
             // Apply acceleration with improved smoothing
             this.orbitVelocity += (targetVelocity - this.orbitVelocity) * this.movementAcceleration * normalizedDt;
+        }
+    } else {
+        // If LocalPlayer is not available, don't process movement-based orbiting
+        // This prevents errors during initialization or when LocalPlayer is not yet spawned
+        if (!localPlayer) {
+            // LocalPlayer not found - this is normal during initialization
+            return;
         }
     }
 
@@ -290,12 +314,14 @@ CameraMovement.prototype.update = function (dt) {
         // Apply spring physics
         const springStrength = 12.0;
         displacement.scale(springStrength * normalizedDt * followMultiplier);
-        this.worldPosVelocity.scale(0.9); // Damping
+        
+        // Apply damping and update velocity
+        this.worldPosVelocity.scale(0.85);
         this.worldPosVelocity.add(displacement);
         
-        // Apply velocity with smoothing
-        currentWorldPos.add(this.worldPosVelocity.clone().scale(normalizedDt));
-        this.entity.setPosition(currentWorldPos);
+        // Apply velocity to position
+        const newWorldPos = currentWorldPos.clone().add(this.worldPosVelocity.clone().scale(normalizedDt));
+        this.entity.setPosition(newWorldPos);
     }
 };
 

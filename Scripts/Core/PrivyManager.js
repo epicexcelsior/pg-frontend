@@ -18,8 +18,8 @@ PrivyManager.prototype.initialize = function () {
 
     // Internal State
     this.user = null;
-    this.authenticated = false;
-    this.transactionPromises = new Map();
+        this.authenticated = false;
+        this.transactionPromises = new Map(); // Store transaction promises by ID
 
     // Setup message listener
     this.handleAuthMessage = this.handleAuthMessage.bind(this);
@@ -48,7 +48,21 @@ PrivyManager.prototype.handleAuthMessage = function (event) {
         case 'PRIVY_AUTH_LOGOUT':
             this.handleAuthLogout();
             break;
-        // Transaction cases can be added here later
+        case 'PRIVY_TX_SUCCESS':
+        case 'PRIVY_TX_ERROR': {
+            const promise = this.transactionPromises.get(requestId);
+            if (promise) {
+                if (type === 'PRIVY_TX_SUCCESS') {
+                    console.log('PrivyManager: Transaction success', requestId, payload);
+                    promise.resolve(payload);
+                } else {
+                    console.error('PrivyManager: Transaction error', requestId, payload);
+                    promise.reject(payload);
+                }
+                this.transactionPromises.delete(requestId);
+            }
+            break;
+        }
     }
 };
 
@@ -86,6 +100,7 @@ PrivyManager.prototype.handleAuthLogout = function () {
         isAuthenticated: false
     });
 };
+
 
 PrivyManager.prototype.restoreUserSession = function () {
     try {
@@ -136,6 +151,17 @@ PrivyManager.prototype.isAuthenticated = function () {
 
 PrivyManager.prototype.getUser = function () {
     return this.user;
+};
+
+// Send transaction method
+PrivyManager.prototype.sendTransaction = function (serializedBase64Tx) {
+    return new Promise((resolve, reject) => {
+        const requestId = 'tx-' + Date.now();
+        this.transactionPromises.set(requestId, { resolve, reject });
+
+        const transactionUrl = `${this.privyHostOrigin}?action=sendTransaction&requestId=${requestId}&serializedBase64Tx=${encodeURIComponent(serializedBase64Tx)}`;
+        window.open(transactionUrl, 'privy-tx', 'width=400,height=650,scrollbars=yes,resizable=yes');
+    });
 };
 
 PrivyManager.prototype.getWalletAddress = function () {

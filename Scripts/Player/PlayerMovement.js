@@ -21,6 +21,7 @@ PlayerMovement.prototype.initialize = function () {
     this.cameraScript = camera.script.cameraMovement;
 
     this.lastReportedPos = this.entity.getPosition().clone();
+    this.lastReportedRotation = 0; // Track last reported rotation
     this.updateInterval = 0.2;
     this.timeSinceLastUpdate = 0;
 
@@ -108,15 +109,15 @@ PlayerMovement.prototype.update = function (dt) {
     move.add(forward.scale(this.currentInputZ));
     move.add(right.scale(this.currentInputX));
     
+    // Always update rotation to match camera yaw for proper synchronization
+    var targetRot = new pc.Quat().setFromEulerAngles(0, yaw, 0);
+    var currentRot = this.entity.getRotation();
+    currentRot.slerp(currentRot, targetRot, 0.15); // Smooth rotation
+    this.entity.setRotation(currentRot);
+    
     // Normalize movement vector if there's any input
     if (move.length() > 0) {
         move.normalize();
-        
-        // Only update rotation when actually moving
-        var targetRot = new pc.Quat().setFromEulerAngles(0, yaw, 0);
-        var currentRot = this.entity.getRotation();
-        currentRot.slerp(currentRot, targetRot, 0.15); // Smooth rotation
-        this.entity.setRotation(currentRot);
     }
 
     // Update position
@@ -140,18 +141,28 @@ PlayerMovement.prototype.update = function (dt) {
     this.timeSinceLastUpdate += dt;
     var currentPos = this.entity.getPosition();
     var dist = currentPos.distance(this.lastReportedPos);
+    
+    // Check if rotation has changed significantly
+    var rotation = yaw;
+    var normalizedRotation = normalizeAngle(rotation);
+    var rotationDiff = Math.abs(normalizedRotation - this.lastReportedRotation);
+    // Handle wrap-around case (e.g., 359 to 1 degrees)
+    if (rotationDiff > 180) {
+        rotationDiff = 360 - rotationDiff;
+    }
 
-    if (dist > 0.01 || this.timeSinceLastUpdate >= this.updateInterval) {
-        var rotation = yaw;
+    // Send update if position changed, rotation changed significantly, or time interval elapsed
+    if (dist > 0.01 || rotationDiff > 0.5 || this.timeSinceLastUpdate >= this.updateInterval) {
         this.app.fire("player:move", {
             x: currentPos.x,
             y: currentPos.y,
             z: currentPos.z,
-            rotation: normalizeAngle(rotation),
+            rotation: normalizedRotation,
             xDirection: this.currentInputX,
             zDirection: this.currentInputZ
         });
         this.lastReportedPos.copy(currentPos);
+        this.lastReportedRotation = normalizedRotation;
         this.timeSinceLastUpdate = 0;
     }
 

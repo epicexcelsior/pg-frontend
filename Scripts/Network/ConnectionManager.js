@@ -6,31 +6,23 @@ ConnectionManager.attributes.add('servicesEntity', {
     description: 'The entity holding core services like ConfigLoader.'
 });
 
-// initialize code called once per entity
 ConnectionManager.prototype.initialize = function() {
     console.log("ConnectionManager: Initializing...");
-    this.room = null; // Store the Colyseus room instance
+    this.room = null;
 
-    // Ensure ConfigLoader is available
-    if (!this.servicesEntity || !this.servicesEntity.script || !this.servicesEntity.script.configLoader) {
-        console.error("ConnectionManager: Services Entity or ConfigLoader script not found!");
+    if (!this.app.services) {
+        console.error("ConnectionManager: Services registry not found!");
         return;
     }
-    this.configLoader = this.servicesEntity.script.configLoader;
+    this.configLoader = this.app.services.get('configLoader');
 
-    // Wait for config to load before attempting connection
-    if (this.app.config) {
+    if (this.configLoader && this.configLoader.config) {
         this.connect();
     } else {
         console.log("ConnectionManager: Waiting for config:loaded event...");
         this.app.once('config:loaded', this.connect, this);
-        this.app.once('config:error', function(errorMsg) {
-            console.error("ConnectionManager: Failed to connect due to config error:", errorMsg);
-            this.app.fire('colyseus:connectionError', { message: `Config loading failed: ${errorMsg}` });
-        }, this);
     }
 
-    // Listen for explicit disconnect requests
     this.app.on('network:disconnect', this.disconnect, this);
 };
 
@@ -42,23 +34,17 @@ ConnectionManager.prototype.connect = async function() {
         return;
     }
 
-    // Use a default or previously stored username. Consider integrating with AuthService later.
     const initialUsername = localStorage.getItem('userName') || `Guest_${Math.random().toString(36).substring(2, 7)}`;
-    // TODO: Replace localStorage access with AuthService interaction if applicable
-
     console.log(`ConnectionManager: Attempting connection to ${colyseusEndpoint} as ${initialUsername}...`);
     this.app.fire('colyseus:connecting');
 
     try {
-        // Ensure Colyseus library is loaded (assuming global `Colyseus`)
         if (typeof Colyseus === 'undefined' || !Colyseus.Client) {
-             throw new Error("Colyseus client library not found.");
+            console.error("ConnectionManager: Colyseus client library (Colyseus) is not available on the window object. Make sure your bundle.js is loaded and has executed before this script.");
+            throw new Error("Colyseus client library not found.");
         }
 
         const client = new Colyseus.Client(colyseusEndpoint);
-        // TODO: Add error handling for client creation if needed
-
-        // Use username from localStorage for initial join. Server might update/confirm later.
         this.room = await client.joinOrCreate("my_room", { username: initialUsername });
 
         if (!this.room) {
@@ -67,14 +53,13 @@ ConnectionManager.prototype.connect = async function() {
 
         console.log("ConnectionManager: Successfully joined room. Session ID:", this.room.sessionId);
         this.app.room = this.room; // Expose room globally
-        this.setupRoomLifecycleListeners(); // Setup leave/error listeners immediately
+        this.setupRoomLifecycleListeners();
 
-        // Fire event with the room object for other network scripts to use
         this.app.fire("colyseus:connected", this.room);
 
     } catch (e) {
         console.error("ConnectionManager: Colyseus connection failed:", e);
-        this.room = null; // Ensure room is null on failure
+        this.room = null;
         this.app.fire("colyseus:connectionError", { message: e.message || 'Unknown connection error.', error: e });
     }
 };
@@ -82,8 +67,7 @@ ConnectionManager.prototype.connect = async function() {
 ConnectionManager.prototype.disconnect = function() {
     if (this.room) {
         console.log("ConnectionManager: Leaving room...");
-        this.room.leave(); // This will trigger the onLeave listener
-        // Do not nullify this.room here; let the onLeave handler do it.
+        this.room.leave();
     } else {
         console.log("ConnectionManager: Not connected, cannot disconnect.");
     }
@@ -95,25 +79,15 @@ ConnectionManager.prototype.setupRoomLifecycleListeners = function() {
     this.room.onLeave((code) => {
         console.log("ConnectionManager: Left room. Code:", code);
         const wasConnected = !!this.room;
-        this.room = null; // Clear room reference
-        this.app.room = null; // Clear global room reference
+        this.room = null;
+        this.app.room = null;
         if (wasConnected) {
             this.app.fire("colyseus:disconnected", { code: code });
         }
-        // Optionally attempt reconnect based on code?
-        // if (code !== 1000) { // 1000 is normal closure
-        //     console.log("ConnectionManager: Attempting reconnect...");
-        //     setTimeout(() => this.connect(), 5000); // Example reconnect delay
-        // }
     });
 
     this.room.onError((code, message) => {
         console.error("ConnectionManager: Room error. Code:", code, "Message:", message);
-        // Don't nullify room here, as the connection might still be partially active or attempting recovery.
-        // The onLeave event will handle full disconnection.
         this.app.fire("colyseus:roomError", { code: code, message: message });
     });
 };
-
-// swap method called for script hot-reloading
-// ConnectionManager.prototype.swap = function(old) { };

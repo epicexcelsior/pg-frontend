@@ -31,10 +31,15 @@ WalletWidget.prototype.setupEventListeners = function() {
     this.privyManager = this.app.services.get('privyManager');
     if (this.privyManager) {
         this.app.on('auth:stateChanged', this.onAuthStateChanged, this);
-        this.onAuthStateChanged({
-            isAuthenticated: this.privyManager.isAuthenticated(),
-            address: this.privyManager.getWalletAddress()
-        });
+        // Initial check on load
+        const user = this.privyManager.getUser();
+        if (user) {
+            this.onAuthStateChanged({
+                isAuthenticated: this.privyManager.isAuthenticated(),
+                address: this.privyManager.getWalletAddress(),
+                user: user
+            });
+        }
     }
 };
 
@@ -44,22 +49,29 @@ WalletWidget.prototype.onLogout = function() {
 
 WalletWidget.prototype.onAuthStateChanged = function(data) {
     if (data.isAuthenticated && data.address) {
-        this.walletWidgetEl.style.display = 'block';
+        this.walletWidgetEl.style.display = 'flex'; // Use flex for better alignment
         this.walletAddressEl.textContent = `${data.address.substring(0, 6)}...${data.address.substring(data.address.length - 4)}`;
         this.fetchBalance(data.address);
     } else {
         this.walletWidgetEl.style.display = 'none';
+        this.walletBalanceEl.textContent = '... SOL'; // Reset text
     }
 };
 
 WalletWidget.prototype.fetchBalance = async function(address) {
     try {
-        const rpc = window.SolanaSDK?.rpc;
-        if (!rpc || typeof rpc.getBalance !== 'function') {
-            throw new Error("Solana RPC client (Gill) is not available or invalid.");
+        // [!code ++]
+        // More robust check for the SDK and RPC client
+        if (!window.SolanaSDK || !window.SolanaSDK.rpc || typeof window.SolanaSDK.rpc.getBalance !== 'function') {
+            console.warn("WalletWidget: SolanaSDK or RPC client not ready yet. Will retry.");
+            setTimeout(() => this.fetchBalance(address), 1000); // Retry after 1 second
+            return;
         }
+        // [!code --]
+
+        const rpc = window.SolanaSDK.rpc;
         
-        // FIX: Use the .send() method required by the Gill library.
+        // Use the .send() method required by the Gill library.
         const balanceLamports = await rpc.getBalance(address, { commitment: 'confirmed' }).send();
         const balanceSol = balanceLamports / 1_000_000_000;
         this.walletBalanceEl.textContent = `${balanceSol.toFixed(4)} SOL`;

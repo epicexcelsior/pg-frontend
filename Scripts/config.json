@@ -1,7 +1,5 @@
 {
   "colyseusEndpoint": "ws://localhost:2567",
-  "cloudflareWorkerCreateTxEndpoint": "http://127.0.0.1:8787/create_donation_transaction",
-  "cloudflareWorkerDonationEndpoint": "http://127.0.0.1:8787/process_donation",
   "privyHostOrigin": "https://localhost:5173",
   "cloudflareWorkerAnnounceEndpoint": "http://127.0.0.1:8787/announceDonation",
   "donationFeeRecipientAddress": "r1eKs83sknjVn8cSx5u7afNx8ykjoi1GWULwZvcaAio",
