@@ -5,10 +5,14 @@ BoothController.prototype.initialize = function () {
     console.log("BoothController initializing as the orchestrator...");
     this.currentZoneScript = null;
     this.pendingClaimBoothId = null;
+    this.boothEntitiesById = new Map();
+    this.boothsByOwner = new Map();
 
     this.app.on("booth:entered", this.onEnterZone, this);
     this.app.on("booth:left", this.onLeaveZone, this);
+    this.app.on("booth:added", this.onBoothAdded, this);
     this.app.on("booth:updated", this.onBoothUpdated, this);
+    this.app.on("booth:removed", this.onBoothRemoved, this);
     this.app.on("auth:stateChanged", this.onAuthStateChanged, this);
     this.app.on("player:data:changed", this.onLocalPlayerDataChanged, this);
     this.app.on("booth:claim:request", this.handleClaimRequest, this);
@@ -23,6 +27,54 @@ BoothController.prototype.handleClaimRequest = function(boothId) {
     } else {
         this.pendingClaimBoothId = boothId;
         privyManager.login();
+    }
+};
+
+BoothController.prototype.onBoothAdded = function (boothData) {
+    if (!boothData || !boothData.boothId) {
+        return;
+    }
+    const boothEntity = this.app.root.findByName(boothData.boothId) || null;
+    if (boothEntity) {
+        this.boothEntitiesById.set(boothData.boothId, boothEntity);
+    }
+    this.refreshBoothOwnership(boothData, boothEntity);
+};
+
+BoothController.prototype.onBoothRemoved = function (boothData) {
+    if (!boothData || !boothData.boothId) {
+        return;
+    }
+    this.boothEntitiesById.delete(boothData.boothId);
+    const boothId = boothData.boothId;
+    for (const [wallet, info] of this.boothsByOwner.entries()) {
+        if (info.boothId === boothId) {
+            this.boothsByOwner.delete(wallet);
+        }
+    }
+};
+
+BoothController.prototype.refreshBoothOwnership = function (boothData, boothEntity) {
+    const boothId = boothData?.boothId || boothEntity?.name;
+    if (!boothId) {
+        return;
+    }
+
+    const resolvedEntity = boothEntity || this.boothEntitiesById.get(boothId) || this.app.root.findByName(boothId) || null;
+    if (resolvedEntity) {
+        this.boothEntitiesById.set(boothId, resolvedEntity);
+    }
+
+    const claimedBy = boothData?.claimedBy || resolvedEntity?.script?.boothClaimZone?.claimedBy || '';
+
+    for (const [wallet, info] of this.boothsByOwner.entries()) {
+        if (info.boothId === boothId) {
+            this.boothsByOwner.delete(wallet);
+        }
+    }
+
+    if (claimedBy) {
+        this.boothsByOwner.set(claimedBy, { boothId: boothId, entity: resolvedEntity });
     }
 };
 
@@ -68,6 +120,7 @@ BoothController.prototype.onBoothUpdated = function (boothData) {
     // This logic correctly updates the 3D text in the scene.
     const boothEntity = this.app.root.findByName(boothData.boothId);
     if (boothEntity) {
+        this.boothEntitiesById.set(boothData.boothId, boothEntity);
         boothEntity.script.boothClaimZone.claimedBy = boothData.claimedBy; // Ensure local script is in sync
         const screenEntity = boothEntity.findByName("3D Screen");
         if (screenEntity) {
@@ -78,9 +131,13 @@ BoothController.prototype.onBoothUpdated = function (boothData) {
                 usernameTxt.text = boothData.claimedBy ? (boothData.claimedByUsername || "") : "ME!";
             }
         }
+        this.refreshBoothOwnership(boothData, boothEntity);
         if (this.currentZoneScript?.boothId === boothData.boothId) {
             this.decideAndShowPrompt();
         }
+    } else {
+        this.boothEntitiesById.delete(boothData.boothId);
+        this.refreshBoothOwnership(boothData, null);
     }
 };
 
@@ -113,11 +170,38 @@ BoothController.prototype.onClaimSuccess = function (data) {
 };
 
 BoothController.prototype.onDonationEffect = function (data) {
-    if (!data.recipient) return;
+    if (!data || !data.recipient) {
+        return;
+    }
+
+    const ownerEntry = this.boothsByOwner.get(data.recipient);
+    if (ownerEntry && ownerEntry.entity) {
+        this.playDonationEffect(ownerEntry.entity);
+        return;
+    }
+
     this.app.root.findByTag("booth").forEach((boothEntity) => {
         if (boothEntity.script?.boothClaimZone?.claimedBy === data.recipient) {
-            boothEntity.findByName("BoothDonateEffect")?.particlesystem.play();
-            boothEntity.sound?.play("donationSound");
+            this.playDonationEffect(boothEntity);
         }
     });
+};
+
+BoothController.prototype.playDonationEffect = function (boothEntity) {
+    boothEntity?.findByName("BoothDonateEffect")?.particlesystem.play();
+    boothEntity?.sound?.play("donationSound");
+};
+BoothController.prototype.destroy = function () {
+    this.app.off("booth:entered", this.onEnterZone, this);
+    this.app.off("booth:left", this.onLeaveZone, this);
+    this.app.off("booth:added", this.onBoothAdded, this);
+    this.app.off("booth:updated", this.onBoothUpdated, this);
+    this.app.off("booth:removed", this.onBoothRemoved, this);
+    this.app.off("auth:stateChanged", this.onAuthStateChanged, this);
+    this.app.off("player:data:changed", this.onLocalPlayerDataChanged, this);
+    this.app.off("booth:claim:request", this.handleClaimRequest, this);
+    this.app.off("booth:claimSuccess", this.onClaimSuccess, this);
+    this.app.off("effects:donation", this.onDonationEffect, this);
+    this.boothEntitiesById.clear();
+    this.boothsByOwner.clear();
 };

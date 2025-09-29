@@ -1,4 +1,4 @@
-// C:\Users\Epic\Documents\GitHub\pg-frontend\Scripts\Player\PlayerData.js
+﻿// C:\Users\Epic\Documents\GitHub\pg-frontend\Scripts\Player\PlayerData.js
 var PlayerData = pc.createScript('playerData');
 
 PlayerData.prototype.initialize = function() {
@@ -8,25 +8,45 @@ PlayerData.prototype.initialize = function() {
 
     this.app.on('auth:stateChanged', this.handleAuthStateChange, this);
     this.app.on('booth:claimSuccess', this.handleBoothClaimSuccess, this);
+    this.app.on('booth:updated', this.handleBoothStateChange, this);
+    this.app.on('booth:added', this.handleBoothStateChange, this);
 };
 
 PlayerData.prototype.handleAuthStateChange = function(authStateData) {
-    const newAddress = authStateData.address || null;
+    const previousAddress = this.walletAddress;
+    const newAddress = authStateData && authStateData.address ? authStateData.address : null;
 
-    if (this.walletAddress !== newAddress) {
-        this.walletAddress = newAddress;
-        if (this.walletAddress) {
-            console.log(`PlayerData: Wallet address set to ${this.walletAddress}. Notifying server.`);
-            this.app.fire('network:send:updateAddress', this.walletAddress);
+    const hasTwitterHandleKey = authStateData && Object.prototype.hasOwnProperty.call(authStateData, 'twitterHandle');
+    const hasTwitterUserIdKey = authStateData && Object.prototype.hasOwnProperty.call(authStateData, 'twitterUserId');
+
+    const nextWalletAddress = newAddress || null;
+    const shouldSendTwitterUpdate = hasTwitterHandleKey || hasTwitterUserIdKey;
+
+    if (previousAddress !== nextWalletAddress || shouldSendTwitterUpdate) {
+        this.walletAddress = nextWalletAddress;
+
+        const updatePayload = {
+            walletAddress: nextWalletAddress || ''
+        };
+
+        if (hasTwitterHandleKey) {
+            updatePayload.twitterHandle = authStateData.twitterHandle || '';
         }
+        if (hasTwitterUserIdKey) {
+            updatePayload.twitterUserId = authStateData.twitterUserId || '';
+        }
+
+        this.app.fire('network:send:updateAddress', updatePayload);
+
+        if (!nextWalletAddress && previousAddress) {
+            this.clearClaimedBooth('auth:wallet_cleared');
+        }
+
         this.app.fire('player:data:changed', this);
     }
 
-    // FIX: When disconnecting, we must also clear the claimed booth ID from local state.
-    if (authStateData.state === 'disconnected' && this.claimedBoothId) {
-        console.log("PlayerData: Disconnected. Clearing local claimedBoothId.");
-        this.claimedBoothId = "";
-        this.app.fire('player:data:changed', this);
+    if (!authStateData?.isAuthenticated && this.claimedBoothId) {
+        this.clearClaimedBooth('auth:unauthenticated');
     }
 };
 
@@ -40,7 +60,41 @@ PlayerData.prototype.handleBoothClaimSuccess = function(data) {
     }
 };
 
+PlayerData.prototype.handleBoothStateChange = function(data) {
+    if (!data || !data.boothId) {
+        return;
+    }
+
+    if (data.claimedBy === this.walletAddress && this.claimedBoothId !== data.boothId) {
+        this.claimedBoothId = data.boothId;
+        this.app.fire('player:data:changed', this);
+        return;
+    }
+
+    if (this.claimedBoothId === data.boothId && data.claimedBy !== this.walletAddress) {
+        this.clearClaimedBooth('booth:state_sync');
+    }
+};
+
+PlayerData.prototype.clearClaimedBooth = function(reason) {
+    if (!this.claimedBoothId) {
+        return;
+    }
+
+    console.log(`PlayerData: Clearing claimed booth due to ${reason}.`);
+    this.claimedBoothId = "";
+    this.app.fire('player:data:changed', this);
+};
+
+PlayerData.prototype.destroy = function() {
+    this.app.off('auth:stateChanged', this.handleAuthStateChange, this);
+    this.app.off('booth:claimSuccess', this.handleBoothClaimSuccess, this);
+    this.app.off('booth:updated', this.handleBoothStateChange, this);
+    this.app.off('booth:added', this.handleBoothStateChange, this);
+};
+
 // --- GETTERS ---
 PlayerData.prototype.getWalletAddress = function() { return this.walletAddress; };
 PlayerData.prototype.getUsername = function() { return this.username; };
 PlayerData.prototype.getClaimedBoothId = function() { return this.claimedBoothId; };
+

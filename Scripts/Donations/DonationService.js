@@ -21,53 +21,111 @@ DonationService.prototype.initialize = function () {
     this.state = DonationState.IDLE;
     this.isDonationInProgress = false;
     this.pollingTimeout = null;
+    this.balanceRefreshTimeout = null;
 
-    // Get services from the global registry
     this.privyManager = this.app.services.get("privyManager");
     this.feedbackService = this.app.services.get("feedbackService");
     this.configLoader = this.app.services.get("configLoader");
-    this.messageBroker = this.app.services.get("messageBroker"); // For sending success message
+    this.messageBroker = this.app.services.get("messageBroker");
+
+    this.lastStateChangeAt = 0;
+    this.donationStartAt = 0;
+    this.awaitingSignatureStaleMs = 20000;
+
+    this.pendingAnnouncements = new Map();
+    this.announcementRetryHandles = new Map();
+    this.solanaConnection = null;
+
+    this.tweetRecords = new Map();
 
     this.feeRecipient = this.configLoader.get("donationFeeRecipientAddress");
-    this.feePercentage = this.configLoader.get("donationFeePercentage");
+    this.feePercentage = Number(this.configLoader.get("donationFeePercentage")) || 0;
     this.heliusRpcUrl = this.configLoader.get("heliusRpcUrl");
 
-    // Listen for UI events
     this.app.on("ui:donate:request", this.initiateDonation, this);
     this.app.on("solanapay:poll", this.pollForSolanaPayTransaction, this);
     this.app.on("solanapay:poll:stop", this.stopPolling, this);
+    this.app.on("donation:announcementFailed", this.onDonationAnnouncementFailed, this);
+    this.app.on("effects:donation", this.onDonationEffect, this);
+    this.app.on("donation:tweetPublished", this.onDonationTweetPublished, this);
 
     console.log("DonationService initialized.");
 };
 
 DonationService.prototype.setState = function (newState, data = {}) {
     this.state = newState;
+    this.lastStateChangeAt = Date.now();
     console.log(`DonationService: State changed to ${newState}`, data);
 
     const { error, signature } = data;
 
-    // Use FeedbackService to show toasts/modals to the user
     switch (newState) {
+        case DonationState.BUILDING_TRANSACTION:
+            if (data) {
+                const recipientAmount = typeof data.recipientAmount === 'number' ? data.recipientAmount : null;
+                if (recipientAmount !== null) {
+                    this.feedbackService?.showInfo(`Preparing transaction: sending ${recipientAmount.toFixed(4)} SOL.`, 6000);
+                }
+            }
+            break;
         case DonationState.AWAITING_SIGNATURE:
             this.feedbackService?.showInfo("Please approve the transaction in the Privy popup.", 10000);
             break;
-        case DonationState.SUCCESS:
+        case DonationState.SUCCESS: {
             this.feedbackService?.showSuccess(`Donation successful! Tx: ${signature.substring(0, 8)}...`);
             this.isDonationInProgress = false;
+            const successAddress = this.privyManager?.getWalletAddress();
+            if (successAddress) {
+                this.app.fire('wallet:refreshBalance', { address: successAddress, source: 'donation:success' });
+                this.scheduleBalanceRefresh(500);
+            }
             break;
+        }
         case DonationState.FAILED_SIGNING:
             this.feedbackService?.showError("Transaction Cancelled", error?.message || "The signing request was rejected.", false);
             this.isDonationInProgress = false;
             break;
-        case DonationState.FAILED:
-        case DonationState.FAILED_BUILD:
         case DonationState.FAILED_VALIDATION:
+        case DonationState.FAILED_BUILD:
+        case DonationState.FAILED:
             this.feedbackService?.showError("Donation Error", error?.message || "An unknown error occurred.", true);
+            this.isDonationInProgress = false;
+            break;
+        case DonationState.FAILED_CONFIRMATION:
+            this.feedbackService?.showWarning('Donation Pending Verification', error?.message || 'Waiting for network confirmation. We\'ll retry automatically.', false);
             this.isDonationInProgress = false;
             break;
     }
 
+    if (newState === DonationState.SUCCESS ||
+        newState === DonationState.FAILED_SIGNING ||
+        newState === DonationState.FAILED_VALIDATION ||
+        newState === DonationState.FAILED_BUILD ||
+        newState === DonationState.FAILED_CONFIRMATION ||
+        newState === DonationState.FAILED) {
+        this.isDonationInProgress = false;
+    }
+
     this.app.fire("donation:stateChanged", { state: newState, ...data });
+};
+
+DonationService.prototype.resolveSolanaWeb3Modules = function () {
+    const sdk = window.SolanaSDK || {};
+    const candidates = [sdk.web3, window.solanaWeb3, sdk].filter(Boolean);
+    const modules = {};
+    const keys = ['Transaction', 'SystemProgram', 'PublicKey', 'LAMPORTS_PER_SOL', 'Connection', 'Keypair'];
+
+    keys.forEach((key) => {
+        for (let i = 0; i < candidates.length; i += 1) {
+            const candidate = candidates[i];
+            if (candidate && candidate[key]) {
+                modules[key] = candidate[key];
+                break;
+            }
+        }
+    });
+
+    return modules;
 };
 
 DonationService.prototype.initiateDonation = async function (data) {
@@ -78,99 +136,188 @@ DonationService.prototype.initiateDonation = async function (data) {
         return;
     }
 
+    const now = Date.now();
     if (this.isDonationInProgress) {
-        this.feedbackService?.showWarning("A donation is already in progress.");
-        return;
+        if (this.state === DonationState.AWAITING_SIGNATURE && (now - this.lastStateChangeAt) > this.awaitingSignatureStaleMs) {
+            console.warn('DonationService: Detected stale signing state. Resetting donation flow.');
+            this.isDonationInProgress = false;
+            this.state = DonationState.IDLE;
+        } else {
+            this.feedbackService?.showWarning("A donation is already in progress.");
+            return;
+        }
     }
 
     this.isDonationInProgress = true;
+    this.donationStartAt = now;
     this.setState(DonationState.VALIDATING_INPUT);
 
+    if (typeof amount !== 'number' || !isFinite(amount) || amount <= 0) {
+        this.setState(DonationState.FAILED_VALIDATION, { error: new Error("Invalid donation amount."), amount });
+        this.isDonationInProgress = false;
+        return;
+    }
+    if (!recipient) {
+        this.setState(DonationState.FAILED_VALIDATION, { error: new Error("Recipient address is missing."), amount });
+        this.isDonationInProgress = false;
+        return;
+    }
+
     try {
-        if (typeof amount !== 'number' || amount <= 0) {
-            throw new Error("Invalid donation amount.");
-        }
-        if (!recipient) {
-            throw new Error("Recipient address is missing.");
-        }
-        
-        const senderAddress = this.privyManager.getWalletAddress();
+        const senderAddress = this.privyManager?.getWalletAddress();
         if (!senderAddress) {
-            this.privyManager.login(); // Prompt login if not authenticated
-            throw new Error("Please log in to make a donation.");
+            this.privyManager?.login();
+            throw { message: "Please log in to make a donation.", code: 'VALIDATION_ERROR' };
         }
 
-        // --- Client-Side Transaction Building ---
-        this.setState(DonationState.BUILDING_TRANSACTION);
+        const web3 = this.resolveSolanaWeb3Modules();
+        const missingKeys = ['Transaction', 'SystemProgram', 'PublicKey', 'LAMPORTS_PER_SOL', 'Connection']
+            .filter((key) => !web3[key]);
+        if (missingKeys.length > 0) {
+            throw {
+                message: `Solana SDK is not ready yet (missing: ${missingKeys.join(', ')}). Please ensure the PlayCanvas bundle is up to date.`,
+                code: 'BUILD_ERROR'
+            };
+        }
 
-        const { Transaction, SystemProgram, PublicKey, LAMPORTS_PER_SOL } = window.SolanaSDK.web3;
+        const Transaction = web3.Transaction;
+        const SystemProgram = web3.SystemProgram;
+        const PublicKey = web3.PublicKey;
+        const LAMPORTS_PER_SOL = web3.LAMPORTS_PER_SOL || 1_000_000_000;
+        const Connection = web3.Connection;
 
-        const feeAmount = amount * (this.feePercentage / 100);
-        const recipientAmount = amount - feeAmount;
+        if (typeof SystemProgram.transfer !== 'function') {
+            throw { message: 'Solana SystemProgram.transfer is unavailable.', code: 'BUILD_ERROR' };
+        }
+
+        const feeRecipientKey = new PublicKey(this.feeRecipient);
+        const senderPubkey = new PublicKey(senderAddress);
+        const recipientPubkey = new PublicKey(recipient);
+
+        const feeAmount = Math.max(amount * (this.feePercentage / 100), 0);
+        const recipientAmount = Math.max(amount - feeAmount, 0);
+        const recipientLamports = Math.round(recipientAmount * LAMPORTS_PER_SOL);
+        const feeLamports = Math.round(feeAmount * LAMPORTS_PER_SOL);
+        const totalLamports = recipientLamports + feeLamports;
+
+        if (recipientLamports <= 0) {
+            throw {
+                message: 'Donation amount is too small after fees are applied. Please increase the amount.',
+                code: 'VALIDATION_ERROR'
+            };
+        }
+
+        this.setState(DonationState.BUILDING_TRANSACTION, {
+            recipient: recipient,
+            recipientAmount: recipientAmount,
+            feeAmount: feeAmount,
+            totalAmount: amount
+        });
 
         const transaction = new Transaction();
-        const senderPubkey = new PublicKey(senderAddress);
-        
-        // Add instruction for the main recipient
         transaction.add(SystemProgram.transfer({
             fromPubkey: senderPubkey,
-            toPubkey: new PublicKey(recipient),
-            lamports: Math.floor(recipientAmount * LAMPORTS_PER_SOL),
-        }));
-        
-        // Add instruction for the fee recipient
-        transaction.add(SystemProgram.transfer({
-            fromPubkey: senderPubkey,
-            toPubkey: new PublicKey(this.feeRecipient),
-            lamports: Math.floor(feeAmount * LAMPORTS_PER_SOL),
+            toPubkey: recipientPubkey,
+            lamports: recipientLamports,
         }));
 
-        const connection = new Connection(this.heliusRpcUrl, 'confirmed');
-        const { blockhash } = await connection.getLatestBlockhash();
-        transaction.recentBlockhash = blockhash;
+        if (feeLamports > 0) {
+            transaction.add(SystemProgram.transfer({
+                fromPubkey: senderPubkey,
+                toPubkey: feeRecipientKey,
+                lamports: feeLamports,
+            }));
+        }
+
+        if (!this.heliusRpcUrl) {
+            throw { message: 'Solana RPC endpoint is not configured.', code: 'BUILD_ERROR' };
+        }
+
+        const connection = this.ensureSolanaConnection(Connection);
+        if (!connection) {
+            throw { message: 'Unable to initialize Solana connection.', code: 'BUILD_ERROR' };
+        }
+
+        const latestBlockhash = await connection.getLatestBlockhash('confirmed');
+        transaction.recentBlockhash = latestBlockhash.blockhash;
+        transaction.lastValidBlockHeight = latestBlockhash.lastValidBlockHeight;
         transaction.feePayer = senderPubkey;
-        
-        // Serialize and encode the transaction for the popup
-        const serializedTx = transaction.serialize({ requireAllSignatures: false });
-        const base64Tx = Buffer.from(serializedTx).toString('base64');
 
-        // --- Hand off to Privy for Signing ---
+        const serializedTx = transaction.serialize({ requireAllSignatures: false, verifySignatures: false });
+        const base64Tx = this.uint8ArrayToBase64(serializedTx);
+
         this.setState(DonationState.AWAITING_SIGNATURE);
         const result = await this.privyManager.sendTransaction(base64Tx);
 
-        if (!result || !result.signature) {
-             throw new Error("Transaction failed or signature was not returned.");
+        const finalSignature = typeof result === 'string' ? result : result?.signature;
+        if (!finalSignature) {
+            throw { message: "Transaction failed or signature was not returned.", code: 'SIGNATURE_ERROR' };
         }
-        
-        const finalSignature = result.signature; // This should already be a base58 string from Privy, but if it's base64, decode it
-        
-        // --- Success ---
+
+        let confirmationSucceeded = false;
+        let confirmationError = null;
+        try {
+            this.feedbackService?.showInfo('Waiting for Solana network confirmation...', 6000);
+            await this.waitForSignatureConfirmation(finalSignature);
+            confirmationSucceeded = true;
+        } catch (error) {
+            confirmationError = error instanceof Error ? error : new Error(String(error));
+            console.warn('DonationService: Signature confirmation pending.', confirmationError);
+        }
+
+        if (confirmationError && confirmationError.message === 'Transaction failed during confirmation.') {
+            throw { message: confirmationError.message, code: 'CONFIRMATION_ERROR' };
+        }
+
         this.setState(DonationState.SUCCESS, { signature: finalSignature });
 
-        // Announce the donation to the server for in-game effects
-        this.app.fire('network:send:announceDonation', { 
+        const announcePayload = {
             signature: finalSignature,
             recipient: recipient,
-            amountSOL: amount
-        });
+            amountSOL: amount,
+            recipientLamports: recipientLamports,
+            feeLamports: feeLamports,
+            totalLamports: totalLamports,
+            donor: senderAddress,
+        };
+        this.registerPendingAnnouncement(finalSignature, announcePayload);
+        this.sendPendingAnnouncement(finalSignature);
 
+        if (!confirmationSucceeded) {
+            this.feedbackService?.showInfo('Transaction submitted. Verification may take a moment while the network finalizes it.', 6000);
+        }
     } catch (error) {
         console.error("DonationService Error:", error);
-        const state = this.state === DonationState.AWAITING_SIGNATURE ? DonationState.FAILED_SIGNING : DonationState.FAILED_BUILD;
-        this.setState(state, { error });
+        const failureCode = error?.code;
+        if (failureCode === 'VALIDATION_ERROR') {
+            this.setState(DonationState.FAILED_VALIDATION, { error });
+        } else if (failureCode === 'SIGNATURE_ERROR' || this.state === DonationState.AWAITING_SIGNATURE) {
+            this.setState(DonationState.FAILED_SIGNING, { error });
+        } else if (failureCode === 'CONFIRMATION_ERROR') {
+            this.setState(DonationState.FAILED_CONFIRMATION, { error });
+        } else {
+            this.setState(DonationState.FAILED_BUILD, { error });
+        }
     } finally {
-        this.isDonationInProgress = false;
+        if (this.state !== DonationState.SUCCESS && this.state !== DonationState.AWAITING_SIGNATURE) {
+            this.isDonationInProgress = false;
+        }
     }
 };
-
-// --- Solana Pay and Polling Logic (Largely Unchanged) ---
 
 DonationService.prototype.handleSolanaPayDonation = function (amount, recipient) {
     this.isDonationInProgress = true;
     this.setState(DonationState.VALIDATING_INPUT);
 
-    const { Keypair } = window.SolanaSDK.web3;
-    const reference = new Keypair();
+    const web3 = this.resolveSolanaWeb3Modules();
+    const Keypair = web3.Keypair;
+    if (!Keypair || typeof Keypair.generate !== 'function') {
+        this.setState(DonationState.FAILED_BUILD, { error: new Error('Solana Keypair generator is unavailable. Please ensure the bundle is rebuilt.') });
+        this.isDonationInProgress = false;
+        return;
+    }
+
+    const reference = Keypair.generate();
     const referencePublicKey = reference.publicKey.toBase58();
 
     const label = "Donation to Booth Owner";
@@ -182,7 +329,7 @@ DonationService.prototype.handleSolanaPayDonation = function (amount, recipient)
             this.setState(DonationState.FAILED_BUILD, { error: new Error("Failed to generate QR code.") });
             return;
         }
-        this.app.fire("donation:showQR", { qrDataUrl: dataUrl, solanaPayUrl: url, reference: reference.publicKey.toBase58() });
+        this.app.fire("donation:showQR", { qrDataUrl: dataUrl, solanaPayUrl: url, reference: referencePublicKey, amount, recipient });
         this.setState(DonationState.AWAITING_MOBILE_PAYMENT);
     });
 };
@@ -191,9 +338,20 @@ DonationService.prototype.pollForSolanaPayTransaction = async function (data) {
     if (this.state === DonationState.POLLING_SOLANAPAY_TX) return;
     this.setState(DonationState.POLLING_SOLANAPAY_TX);
 
+    const web3 = this.resolveSolanaWeb3Modules();
+    const Connection = web3.Connection;
+    const PublicKey = web3.PublicKey;
+    const LAMPORTS_PER_SOL = web3.LAMPORTS_PER_SOL || 1_000_000_000;
+    if (!Connection || !PublicKey) {
+        console.warn('DonationService: Solana web3 modules not ready for polling.');
+        this.setState(DonationState.FAILED_BUILD, { error: new Error('Solana SDK is not ready for polling yet.') });
+        this.isDonationInProgress = false;
+        return;
+    }
+
     const connection = new Connection(this.heliusRpcUrl, 'confirmed');
-    const referencePublicKey = new window.SolanaSDK.web3.PublicKey(data.reference);
-    const maxPolls = 60; // 3 minutes
+    const referencePublicKey = new PublicKey(data.reference);
+    const maxPolls = 60;
     let pollCount = 0;
 
     const executePoll = async () => {
@@ -207,17 +365,46 @@ DonationService.prototype.pollForSolanaPayTransaction = async function (data) {
             if (signatures && signatures.length > 0 && signatures[0].signature) {
                 const signature = signatures[0].signature;
                 this.setState(DonationState.SUCCESS, { signature });
-                this.app.fire('network:send:announceDonation', { signature, recipient: data.recipient, amountSOL: data.amount });
+                const amountLamports = Math.round((Number(data.amount) || 0) * LAMPORTS_PER_SOL);
+                const announcePayload = {
+                    signature,
+                    recipient: data.recipient,
+                    amountSOL: data.amount,
+                    recipientLamports: amountLamports,
+                    feeLamports: 0,
+                    totalLamports: amountLamports,
+                    donor: null,
+                };
+                this.app.fire('network:send:announceDonation', announcePayload);
                 this.stopPolling();
                 return;
             }
         } catch (error) {
             console.error("Polling error:", error);
         }
-        pollCount++;
+        pollCount += 1;
         this.pollingTimeout = setTimeout(executePoll, 3000);
     };
     executePoll();
+};
+DonationService.prototype.scheduleBalanceRefresh = function (delayMs) {
+    if (this.balanceRefreshTimeout) {
+        window.clearTimeout(this.balanceRefreshTimeout);
+        this.balanceRefreshTimeout = null;
+    }
+
+    const address = this.privyManager?.getWalletAddress();
+    if (!address) {
+        return;
+    }
+
+    const delay = typeof delayMs === 'number' && delayMs >= 0 ? delayMs : 0;
+    const targetAddress = address;
+
+    this.balanceRefreshTimeout = window.setTimeout(() => {
+        this.balanceRefreshTimeout = null;
+        this.app.fire('wallet:refreshBalance', { address: targetAddress, source: 'donation:balance:schedule' });
+    }, delay);
 };
 
 DonationService.prototype.stopPolling = function () {
@@ -225,8 +412,202 @@ DonationService.prototype.stopPolling = function () {
         clearTimeout(this.pollingTimeout);
         this.pollingTimeout = null;
     }
+    if (this.balanceRefreshTimeout) {
+        window.clearTimeout(this.balanceRefreshTimeout);
+        this.balanceRefreshTimeout = null;
+    }
     if (this.state === DonationState.POLLING_SOLANAPAY_TX || this.state === DonationState.AWAITING_MOBILE_PAYMENT) {
         this.setState(DonationState.IDLE);
         this.isDonationInProgress = false;
     }
 };
+
+DonationService.prototype.onDonationAnnouncementFailed = function (data) {
+    const signature = data?.signature || null;
+    const reason = data?.reason || 'The donation could not be verified yet. The backend will retry automatically.';
+
+    this.feedbackService?.showWarning('Donation Pending Verification', reason, false);
+    this.isDonationInProgress = false;
+
+    if (signature && this.pendingAnnouncements.has(signature)) {
+        this.scheduleAnnouncementRetry(signature);
+    }
+
+    const address = this.privyManager?.getWalletAddress();
+    if (address) {
+        this.app.fire('wallet:refreshBalance', { address: address, source: 'donation:announcementFailed' });
+        this.scheduleBalanceRefresh(2500);
+    }
+};
+
+DonationService.prototype.onDonationEffect = function (data) {
+    if (!data || !data.signature) {
+        return;
+    }
+    this.clearPendingAnnouncement(data.signature);
+};
+
+DonationService.prototype.onDonationTweetPublished = function (data) {
+    if (!data || !data.signature) {
+        return;
+    }
+
+    this.tweetRecords.set(data.signature, data);
+    this.clearPendingAnnouncement(data.signature);
+    this.app.fire('donation:tweetReady', data);
+};
+
+DonationService.prototype.ensureSolanaConnection = function (ConnectionCtor) {
+    if (this.solanaConnection) {
+        return this.solanaConnection;
+    }
+    if (!ConnectionCtor || !this.heliusRpcUrl) {
+        return null;
+    }
+    try {
+        this.solanaConnection = new ConnectionCtor(this.heliusRpcUrl, 'confirmed');
+    } catch (error) {
+        console.error('DonationService: Failed to create Solana connection.', error);
+        this.solanaConnection = null;
+    }
+    return this.solanaConnection;
+};
+
+DonationService.prototype.waitForSignatureConfirmation = async function (signature, timeoutMs) {
+    const connection = this.solanaConnection;
+    if (!connection) {
+        throw new Error('Solana connection unavailable for confirmation.');
+    }
+
+    const effectiveTimeout = typeof timeoutMs === 'number' && timeoutMs > 0 ? timeoutMs : 20000;
+    const pollInterval = 1500;
+    const start = Date.now();
+
+    while (Date.now() - start < effectiveTimeout) {
+        try {
+            const statusResponse = await connection.getSignatureStatuses([signature]);
+            const status = statusResponse?.value?.[0] || null;
+            if (status) {
+                if (status.err) {
+                    throw new Error('Transaction failed during confirmation.');
+                }
+                const confirmation = status.confirmationStatus || null;
+                if (confirmation === 'confirmed' || confirmation === 'finalized') {
+                    return status;
+                }
+                if (typeof status.confirmations === 'number' && status.confirmations > 0) {
+                    return status;
+                }
+            }
+        } catch (error) {
+            console.warn('DonationService: Error while polling signature status.', error);
+        }
+        await this.delay(pollInterval);
+    }
+
+    throw new Error('Timed out waiting for Solana confirmation.');
+};
+
+DonationService.prototype.registerPendingAnnouncement = function (signature, payload) {
+    if (!signature) {
+        return;
+    }
+    this.clearPendingAnnouncement(signature);
+    this.pendingAnnouncements.set(signature, {
+        payload: payload,
+        attempts: 0,
+        maxAttempts: 5
+    });
+};
+
+DonationService.prototype.sendPendingAnnouncement = function (signature) {
+    const entry = this.pendingAnnouncements.get(signature);
+    if (!entry) {
+        return;
+    }
+    if (entry.attempts >= entry.maxAttempts) {
+        this.clearPendingAnnouncement(signature);
+        return;
+    }
+    entry.attempts += 1;
+    this.app.fire('network:send:announceDonation', entry.payload);
+};
+
+DonationService.prototype.scheduleAnnouncementRetry = function (signature) {
+    const entry = this.pendingAnnouncements.get(signature);
+    if (!entry) {
+        return;
+    }
+    if (entry.attempts >= entry.maxAttempts) {
+        this.clearPendingAnnouncement(signature);
+        return;
+    }
+
+    const existingHandle = this.announcementRetryHandles.get(signature);
+    if (existingHandle) {
+        window.clearTimeout(existingHandle);
+    }
+
+    const handle = window.setTimeout(() => {
+        this.announcementRetryHandles.delete(signature);
+        this.sendPendingAnnouncement(signature);
+    }, 2000);
+    this.announcementRetryHandles.set(signature, handle);
+};
+
+DonationService.prototype.clearPendingAnnouncement = function (signature) {
+    if (!signature) {
+        return;
+    }
+    const handle = this.announcementRetryHandles.get(signature);
+    if (handle) {
+        window.clearTimeout(handle);
+        this.announcementRetryHandles.delete(signature);
+    }
+    this.pendingAnnouncements.delete(signature);
+};
+
+DonationService.prototype.delay = function (ms) {
+    return new Promise((resolve) => window.setTimeout(resolve, ms));
+};
+
+DonationService.prototype.uint8ArrayToBase64 = function (bytes) {
+    let binary = '';
+    for (let i = 0; i < bytes.length; i += 1) {
+        binary += String.fromCharCode(bytes[i]);
+    }
+    return window.btoa(binary);
+};
+DonationService.prototype.destroy = function () {
+    this.stopPolling();
+    if (this.balanceRefreshTimeout) {
+        window.clearTimeout(this.balanceRefreshTimeout);
+        this.balanceRefreshTimeout = null;
+    }
+    if (this.announcementRetryHandles) {
+        this.announcementRetryHandles.forEach((handle) => window.clearTimeout(handle));
+        this.announcementRetryHandles.clear();
+    }
+    if (this.pendingAnnouncements) {
+        this.pendingAnnouncements.clear();
+    }
+    this.solanaConnection = null;
+
+    if (this.tweetRecords) {
+        this.tweetRecords.clear();
+        this.tweetRecords = null;
+    }
+    this.app.off('ui:donate:request', this.initiateDonation, this);
+    this.app.off('solanapay:poll', this.pollForSolanaPayTransaction, this);
+    this.app.off('solanapay:poll:stop', this.stopPolling, this);
+    this.app.off('donation:announcementFailed', this.onDonationAnnouncementFailed, this);
+    this.app.off('effects:donation', this.onDonationEffect, this);
+    this.app.off('donation:tweetPublished', this.onDonationTweetPublished, this);
+};
+
+
+
+
+
+
+

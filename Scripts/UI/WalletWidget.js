@@ -4,8 +4,9 @@ var WalletWidget = pc.createScript('walletWidget');
 WalletWidget.attributes.add('css', { type: 'asset', assetType: 'css', title: 'Widget CSS' });
 WalletWidget.attributes.add('html', { type: 'asset', assetType: 'html', title: 'Widget HTML' });
 
-WalletWidget.prototype.initialize = function() {
-    console.log("WalletWidget: Initializing.");
+WalletWidget.prototype.initialize = function () {
+    console.log('WalletWidget: Initializing.');
+
     const style = document.createElement('style');
     style.innerHTML = this.css.resource;
     document.head.appendChild(style);
@@ -14,24 +15,67 @@ WalletWidget.prototype.initialize = function() {
     container.innerHTML = this.html.resource;
     document.body.appendChild(container);
 
+    this.container = container;
     this.walletWidgetEl = container.querySelector('#wallet-widget');
     this.walletAddressEl = container.querySelector('#wallet-address');
     this.walletBalanceEl = container.querySelector('#wallet-balance');
     this.logoutButtonEl = container.querySelector('#logout-btn');
-    this.container = container; // Store container for destroy
 
-    this.logoutButtonEl.addEventListener('click', this.onLogout.bind(this));
+    this.walletWidgetEl.style.display = 'none';
+    this.walletBalanceEl.textContent = '... SOL';
+
+    this.currentAddress = null;
+    this.balanceRetryTimeout = null;
+    this.maxBalanceRetries = 8;
+    this.feedbackService = null;
+    this.heliusRpcUrl = null;
+    this.heliusConnection = null;
+
+    this.boundOnAddressClick = this.onAddressClick.bind(this);
+    this.boundOnAddressKeyDown = this.onAddressKeyDown.bind(this);
+    this.boundOnLogoutClick = this.onLogout.bind(this);
+
+    if (this.walletAddressEl) {
+        this.walletAddressEl.addEventListener('click', this.boundOnAddressClick);
+        this.walletAddressEl.addEventListener('keydown', this.boundOnAddressKeyDown);
+        this.walletAddressEl.setAttribute('role', 'button');
+        this.walletAddressEl.setAttribute('tabindex', '0');
+    }
+
+    if (this.logoutButtonEl) {
+        this.logoutButtonEl.addEventListener('click', this.boundOnLogoutClick);
+    }
 
     this.app.on('services:initialized', this.setupEventListeners, this);
-    if (this.app.services) this.setupEventListeners();
+    if (this.app.services) {
+        this.setupEventListeners();
+    }
+
+    this.app.on('donation:stateChanged', this.onDonationStateChanged, this);
+    this.app.on('wallet:refreshBalance', this.onWalletRefreshRequest, this);
+    this.app.on('effects:donation', this.onIncomingDonation, this);
 };
 
-WalletWidget.prototype.setupEventListeners = function() {
-    if (this.privyManager) return;
-    this.privyManager = this.app.services.get('privyManager');
+WalletWidget.prototype.setupEventListeners = function () {
+    if (this.privyManager) {
+        return;
+    }
+
+    const services = this.app.services;
+    if (!services) {
+        return;
+    }
+
+    this.configLoader = services.get('configLoader') || this.configLoader;
+    if (this.configLoader && !this.heliusRpcUrl) {
+        this.heliusRpcUrl = this.configLoader.get('heliusRpcUrl');
+    }
+
+    this.privyManager = services.get('privyManager');
+    this.feedbackService = services.get('feedbackService') || this.feedbackService;
+
     if (this.privyManager) {
         this.app.on('auth:stateChanged', this.onAuthStateChanged, this);
-        // Initial check on load
         const user = this.privyManager.getUser();
         if (user) {
             this.onAuthStateChanged({
@@ -43,48 +87,243 @@ WalletWidget.prototype.setupEventListeners = function() {
     }
 };
 
-WalletWidget.prototype.onLogout = function() {
-    if (this.privyManager) this.privyManager.logout();
-};
-
-WalletWidget.prototype.onAuthStateChanged = function(data) {
-    if (data.isAuthenticated && data.address) {
-        this.walletWidgetEl.style.display = 'flex'; // Use flex for better alignment
-        this.walletAddressEl.textContent = `${data.address.substring(0, 6)}...${data.address.substring(data.address.length - 4)}`;
-        this.fetchBalance(data.address);
-    } else {
-        this.walletWidgetEl.style.display = 'none';
-        this.walletBalanceEl.textContent = '... SOL'; // Reset text
+WalletWidget.prototype.onLogout = function () {
+    if (this.privyManager) {
+        this.privyManager.logout();
     }
 };
 
-WalletWidget.prototype.fetchBalance = async function(address) {
-    try {
-        // [!code ++]
-        // More robust check for the SDK and RPC client
-        if (!window.SolanaSDK || !window.SolanaSDK.rpc || typeof window.SolanaSDK.rpc.getBalance !== 'function') {
-            console.warn("WalletWidget: SolanaSDK or RPC client not ready yet. Will retry.");
-            setTimeout(() => this.fetchBalance(address), 1000); // Retry after 1 second
+WalletWidget.prototype.onAuthStateChanged = function (data) {
+    if (data.isAuthenticated && data.address) {
+        this.currentAddress = data.address;
+        this.walletWidgetEl.style.display = 'flex';
+        this.walletAddressEl.textContent = this.formatAddress(data.address);
+        this.walletAddressEl.title = data.address;
+        this.walletBalanceEl.textContent = 'Fetching...';
+
+        this.stopBalancePolling();
+        this.startBalancePolling();
+    } else {
+        this.currentAddress = null;
+        this.walletWidgetEl.style.display = 'none';
+        this.walletBalanceEl.textContent = '... SOL';
+        this.stopBalancePolling();
+    }
+};
+
+WalletWidget.prototype.onDonationStateChanged = function (data) {
+    if (!data || data.state !== 'success') {
+        return;
+    }
+    this.scheduleBalanceRefresh(500);
+};
+
+WalletWidget.prototype.onWalletRefreshRequest = function (data) {
+    if (!this.currentAddress) {
+        return;
+    }
+    if (data && data.address && data.address !== this.currentAddress) {
+        return;
+    }
+    const delay = data && typeof data.delayMs === 'number' ? Math.max(0, data.delayMs) : 0;
+    this.scheduleBalanceRefresh(delay);
+};
+
+WalletWidget.prototype.onIncomingDonation = function (data) {
+    if (!this.currentAddress || !data) {
+        return;
+    }
+    if (data.recipient === this.currentAddress || data.sender === this.currentAddress) {
+        this.scheduleBalanceRefresh(500);
+    }
+};
+
+WalletWidget.prototype.startBalancePolling = function () {
+    if (!this.currentAddress) {
+        return;
+    }
+
+    this.clearBalanceRetryTimeout();
+    this.fetchBalance(this.currentAddress);
+};
+
+WalletWidget.prototype.stopBalancePolling = function () {
+    this.clearBalanceRetryTimeout();
+};
+
+WalletWidget.prototype.clearBalanceRetryTimeout = function () {
+    if (this.balanceRetryTimeout) {
+        clearTimeout(this.balanceRetryTimeout);
+        this.balanceRetryTimeout = null;
+    }
+};
+
+WalletWidget.prototype.scheduleBalanceRefresh = function (delayMs) {
+    if (!this.currentAddress) {
+        return;
+    }
+    const delay = typeof delayMs === 'number' && delayMs >= 0 ? delayMs : 0;
+    this.clearBalanceRetryTimeout();
+    if (delay === 0) {
+        this.fetchBalance(this.currentAddress);
+        return;
+    }
+    this.balanceRetryTimeout = window.setTimeout(() => {
+        this.balanceRetryTimeout = null;
+        if (this.currentAddress) {
+            this.fetchBalance(this.currentAddress);
+        }
+    }, delay);
+};
+
+WalletWidget.prototype.fetchBalance = async function (address, attempt = 0) {
+    if (!this.currentAddress || address !== this.currentAddress) {
+        return;
+    }
+
+    this.clearBalanceRetryTimeout();
+
+    let balanceLamports = null;
+    let lastError = null;
+
+    const sdkRpc = window.SolanaSDK && window.SolanaSDK.rpc;
+    if (sdkRpc && typeof sdkRpc.getBalance === 'function') {
+        try {
+            const request = sdkRpc.getBalance(address, { commitment: 'confirmed' });
+            balanceLamports = typeof request.send === 'function' ? await request.send() : await request;
+        } catch (error) {
+            lastError = error;
+            console.warn('WalletWidget: SolanaSDK RPC balance fetch failed, attempting fallback.', error);
+        }
+    }
+
+    if (balanceLamports === null) {
+        const solanaWeb3 = window.solanaWeb3 || (window.SolanaSDK && window.SolanaSDK.web3);
+        if (solanaWeb3 && solanaWeb3.Connection && solanaWeb3.PublicKey && this.heliusRpcUrl) {
+            try {
+                if (!this.heliusConnection) {
+                    this.heliusConnection = new solanaWeb3.Connection(this.heliusRpcUrl, 'confirmed');
+                }
+                const publicKey = new solanaWeb3.PublicKey(address);
+                balanceLamports = await this.heliusConnection.getBalance(publicKey, 'confirmed');
+            } catch (fallbackError) {
+                lastError = fallbackError;
+            }
+        }
+    }
+
+    if (balanceLamports === null) {
+        if (attempt >= this.maxBalanceRetries) {
+            if (lastError) {
+                console.error('WalletWidget: Failed to fetch balance after retries.', lastError);
+            }
+            this.walletBalanceEl.textContent = 'Error';
             return;
         }
-        // [!code --]
+        const retryDelay = Math.min(4000, 1000 * (attempt + 1));
+        this.balanceRetryTimeout = window.setTimeout(() => {
+            this.balanceRetryTimeout = null;
+            this.fetchBalance(address, attempt + 1);
+        }, retryDelay);
+        return;
+    }
 
-        const rpc = window.SolanaSDK.rpc;
-        
-        // Use the .send() method required by the Gill library.
-        const balanceLamports = await rpc.getBalance(address, { commitment: 'confirmed' }).send();
-        const balanceSol = balanceLamports / 1_000_000_000;
-        this.walletBalanceEl.textContent = `${balanceSol.toFixed(4)} SOL`;
-    } catch (error) {
-        console.error("WalletWidget: Failed to fetch balance:", error);
-        this.walletBalanceEl.textContent = 'Error';
+    if (address !== this.currentAddress) {
+        return;
+    }
+
+    const balanceSol = balanceLamports / 1_000_000_000;
+    this.walletBalanceEl.textContent = `${balanceSol.toFixed(4)} SOL`;
+};
+
+WalletWidget.prototype.formatAddress = function (address) {
+    if (!address || address.length <= 10) {
+        return address || '';
+    }
+    return `${address.substring(0, 6)}...${address.substring(address.length - 4)}`;
+};
+
+WalletWidget.prototype.onAddressClick = function () {
+    this.copyCurrentAddress();
+};
+
+WalletWidget.prototype.onAddressKeyDown = function (event) {
+    if (event.key === 'Enter' || event.key === ' ') {
+        event.preventDefault();
+        this.copyCurrentAddress();
     }
 };
 
-WalletWidget.prototype.destroy = function() {
+WalletWidget.prototype.copyCurrentAddress = async function () {
+    if (!this.currentAddress) {
+        return;
+    }
+
+    const address = this.currentAddress;
+
+    try {
+        if (navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
+            await navigator.clipboard.writeText(address);
+        } else {
+            const textarea = document.createElement('textarea');
+            textarea.value = address;
+            textarea.setAttribute('readonly', '');
+            textarea.style.position = 'absolute';
+            textarea.style.opacity = '0';
+            document.body.appendChild(textarea);
+            textarea.select();
+            const successful = document.execCommand('copy');
+            document.body.removeChild(textarea);
+            if (!successful) {
+                throw new Error('Clipboard copy command failed.');
+            }
+        }
+        this.showCopyFeedback(true);
+    } catch (error) {
+        console.error('WalletWidget: Failed to copy wallet address:', error);
+        this.showCopyFeedback(false);
+    }
+};
+
+WalletWidget.prototype.showCopyFeedback = function (success) {
+    if (!this.feedbackService) {
+        if (success) {
+            console.log('WalletWidget: Wallet address copied to clipboard.');
+        }
+        return;
+    }
+
+    if (success) {
+        this.feedbackService.showSuccess('Wallet address copied to clipboard.', 2000);
+    } else {
+        this.feedbackService.showError('Copy Failed', 'Unable to copy wallet address.', false);
+    }
+};
+
+WalletWidget.prototype.destroy = function () {
+    this.stopBalancePolling();
+
     this.app.off('services:initialized', this.setupEventListeners, this);
     this.app.off('auth:stateChanged', this.onAuthStateChanged, this);
+    this.app.off('donation:stateChanged', this.onDonationStateChanged, this);
+    this.app.off('wallet:refreshBalance', this.onWalletRefreshRequest, this);
+    this.app.off('effects:donation', this.onIncomingDonation, this);
+
+    if (this.walletAddressEl) {
+        this.walletAddressEl.removeEventListener('click', this.boundOnAddressClick);
+        this.walletAddressEl.removeEventListener('keydown', this.boundOnAddressKeyDown);
+    }
+
+    if (this.logoutButtonEl && this.boundOnLogoutClick) {
+        this.logoutButtonEl.removeEventListener('click', this.boundOnLogoutClick);
+    }
+
     if (this.container?.parentNode) {
         this.container.parentNode.removeChild(this.container);
     }
 };
+
+
+
+
+
