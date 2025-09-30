@@ -455,6 +455,8 @@ PrivyManager.prototype.restoreUserSession = function () {
             this.authenticated = false;
             console.log('PrivyManager: Restored user data from localStorage. Session is not active.', this.user);
 
+            var twitterIdentity = this.refreshTwitterIdentity(this.user);
+
             this.app.fire('auth:stateChanged', {
                 state: 'connected',
                 address: this.getWalletAddress(),
