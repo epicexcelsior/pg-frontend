@@ -16,6 +16,13 @@ HtmlClaimPrompt.prototype.initialize = function () {
     this.claimPromptEl = this.container.querySelector('#claimPrompt');
     this.claimButton = this.container.querySelector('#claimButton');
     
+    // Initial off-screen position for slide-up animation
+    if (this.claimPromptEl) {
+        this.claimPromptEl.style.transform = 'translate(-50%, 16px)';
+        this.claimPromptEl.style.opacity = '0';
+        this.claimPromptEl.style.transition = 'opacity 0.35s ease, transform 0.35s ease';
+    }
+    
     this.claimButton.addEventListener('click', this.onClaimClick.bind(this));
     this.app.keyboard.on(pc.EVENT_KEYDOWN, this.onKeyDown.bind(this));
     
@@ -29,11 +36,24 @@ HtmlClaimPrompt.prototype.initialize = function () {
 HtmlClaimPrompt.prototype.show = function (boothZoneScript) {
     this.currentBoothId = boothZoneScript.boothId;
     this.claimPromptEl.style.display = 'block';
+    // Slide up from bottom
+    requestAnimationFrame(() => {
+        this.claimPromptEl.style.opacity = '1';
+        this.claimPromptEl.style.transform = 'translate(-50%, 0)';
+    });
 };
 
 HtmlClaimPrompt.prototype.hide = function () {
     this.currentBoothId = null;
-    this.claimPromptEl.style.display = 'none';
+    if (this.claimPromptEl) {
+        this.claimPromptEl.style.opacity = '0';
+        this.claimPromptEl.style.transform = 'translate(-50%, 16px)';
+        window.setTimeout(() => {
+            if (this.claimPromptEl) {
+                this.claimPromptEl.style.display = 'none';
+            }
+        }, 200);
+    }
 };
 
 // This function is now very simple: it just announces the user's intent.

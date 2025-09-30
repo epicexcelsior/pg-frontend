@@ -31,34 +31,102 @@ TwitterSharePrompt.prototype.injectStyles = function () {
   }
   var style = document.createElement("style");
   style.id = "tweet-share-prompt-styles";
-  style.innerHTML =
-    "" +
-    "#tweet-share-prompt{position:fixed;left:50%;bottom:28px;transform:translateX(-50%) translateY(32px);" +
-    "background:rgba(17,17,17,0.92);color:#fff;z-index:2000;padding:18px 20px;border-radius:14px;" +
-    "box-shadow:0 18px 36px rgba(0,0,0,0.35);display:flex;flex-direction:column;gap:12px;" +
-    "width:clamp(260px,48vw,420px);font-family:'Segoe UI',Tahoma,sans-serif;opacity:0;pointer-events:none;" +
-    "transition:opacity 0.25s ease,transform 0.25s ease;backdrop-filter:blur(10px);overflow:hidden;}" +
-    "#tweet-share-prompt.tweet-share-visible{opacity:1;pointer-events:auto;transform:translateX(-50%) translateY(0);}" +
-    "#tweet-share-prompt .tweet-share-title{font-size:16px;font-weight:600;line-height:1.4;}" +
-    "#tweet-share-prompt .tweet-share-body{font-size:14px;line-height:1.5;color:rgba(255,255,255,0.85);}" +
-    "#tweet-share-prompt .tweet-share-actions{display:flex;gap:10px;}" +
-    "#tweet-share-prompt button{flex:1;border:none;border-radius:10px;padding:10px 14px;font-size:14px;font-weight:600;" +
-    "cursor:pointer;transition:transform 0.15s ease,box-shadow 0.15s ease;}" +
-    "#tweet-share-prompt button.share-primary{background:linear-gradient(135deg,#1d9bf0,#1d77f2);color:#fff;box-shadow:0 8px 16px rgba(23,140,255,0.35);}" +
-    "#tweet-share-prompt button.share-primary:hover{transform:translateY(-1px);box-shadow:0 10px 20px rgba(23,140,255,0.45);}" +
-    "#tweet-share-prompt button.share-secondary{background:rgba(255,255,255,0.12);color:#f1f1f1;}" +
-    "#tweet-share-prompt button.share-secondary:hover{background:rgba(255,255,255,0.18);}" +
-    "#tweet-share-prompt a{color:#9ad0ff;font-size:13px;text-decoration:none;}" +
-    "#tweet-share-prompt a:hover{text-decoration:underline;}" +
-    "#tweet-share-progress-bar{position:absolute;bottom:0;left:0;height:3px;background:linear-gradient(90deg,#1d9bf0,#1d77f2);" +
-    "width:100%;transform-origin:left;transition:transform 0.1s linear;}" +
-    "#tweet-share-prompt.paused #tweet-share-progress-bar{opacity:0.5;}";
+  style.innerHTML = `
+    #tweet-share-prompt {
+      position: fixed;
+      left: 50%;
+      bottom: 8%;
+      transform: translate(-50%, 100%);
+      background: var(--surface-color);
+      color: var(--text-color);
+      z-index: 2100;
+      padding: 24px;
+      border-radius: var(--border-radius);
+      box-shadow: 0 18px 36px rgba(0,0,0,0.35);
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      width: 420px;
+      font-family: var(--font-family);
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.25s ease, transform 0.25s ease;
+    }
+    #tweet-share-prompt.tweet-share-visible {
+      opacity: 1;
+      pointer-events: auto;
+      transform: translate(-50%, 0) scale(1);
+    }
+    #tweet-share-prompt .tweet-share-title {
+      font-size: 20px;
+      font-weight: 600;
+      line-height: 1.4;
+      color: var(--text-color);
+    }
+    #tweet-share-prompt .tweet-share-body {
+      font-size: 16px;
+      line-height: 1.5;
+      color: var(--text-muted-color);
+    }
+    #tweet-share-prompt .tweet-share-actions {
+      display: flex;
+      gap: 12px;
+    }
+    #tweet-share-prompt button {
+      flex: 1;
+      border: none;
+      border-radius: 10px;
+      padding: 12px 16px;
+      font-size: 16px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: transform 0.15s ease, box-shadow 0.15s ease;
+    }
+    #tweet-share-prompt button.share-primary {
+      background: linear-gradient(135deg, var(--primary-color), var(--accent-color));
+      color: var(--text-color);
+    }
+    #tweet-share-prompt button.share-primary:hover {
+      transform: translateY(-1px);
+    }
+    #tweet-share-prompt button.share-secondary {
+      background: rgba(255,255,255,0.12);
+      color: var(--text-color);
+    }
+    #tweet-share-prompt button.share-secondary:hover {
+      background: rgba(255,255,255,0.18);
+    }
+    #tweet-share-prompt a {
+      color: var(--accent-color);
+      font-size: 14px;
+      text-decoration: none;
+    }
+    #tweet-share-prompt a:hover {
+      text-decoration: underline;
+    }
+    #tweet-share-progress-bar {
+      position: absolute;
+      bottom: 0;
+      left: 0;
+      height: 4px;
+      background: var(--primary-color);
+      width: 100%;
+      transform-origin: left;
+      transition: transform 0.1s linear;
+      border-bottom-left-radius: var(--border-radius);
+      border-bottom-right-radius: var(--border-radius);
+    }
+    #tweet-share-prompt.paused #tweet-share-progress-bar {
+      opacity: 0.5;
+    }
+  `;
   document.head.appendChild(style);
 };
 
 TwitterSharePrompt.prototype.buildDom = function () {
   this.rootEl = document.createElement("div");
   this.rootEl.id = "tweet-share-prompt";
+
 
   var title = document.createElement("div");
   title.className = "tweet-share-title";
@@ -185,6 +253,11 @@ TwitterSharePrompt.prototype.showPrompt = function () {
     return;
   }
   this.rootEl.classList.add("tweet-share-visible");
+  // Hide donation UI while active
+  var donationUi = document.getElementById('donationUI');
+  if (donationUi) {
+    donationUi.style.display = 'none';
+  }
   this.remainingTime = this.autoHideDuration;
   this.startAutoHide();
 };
@@ -233,13 +306,14 @@ TwitterSharePrompt.prototype.updateProgressBar = function () {
   }
   
   var progress = this.remainingTime / this.autoHideDuration;
-  this.progressBar.style.transform = "scaleX(" + progress + ")";
-  this.progressBar.style.transition = "transform " + (this.remainingTime / 1000) + "s linear";
+  this.progressBar.style.transition = 'none';
+  this.progressBar.style.transform = `scaleX(${progress})`;
   
-  var self = this;
-  requestAnimationFrame(function () {
-    self.progressBar.style.transform = "scaleX(0)";
-  });
+  // Force a reflow to apply the new state before animating
+  this.progressBar.getBoundingClientRect();
+  
+  this.progressBar.style.transition = `transform ${this.remainingTime / 1000}s linear`;
+  this.progressBar.style.transform = "scaleX(0)";
 };
 
 TwitterSharePrompt.prototype.handleMouseEnter = function () {
@@ -267,6 +341,11 @@ TwitterSharePrompt.prototype.hidePrompt = function () {
   if (this.progressBar) {
     this.progressBar.style.transition = "none";
     this.progressBar.style.transform = "scaleX(1)";
+  }
+  // Re-show donation UI after hiding
+  var donationUi = document.getElementById('donationUI');
+  if (donationUi) {
+    donationUi.style.display = 'block';
   }
 };
 

@@ -89,16 +89,19 @@ DonationPromptHtml.prototype.setupEventListeners = function (goButton) {
         this.qrCancelBtn.addEventListener('click', () => this.hideQRView());
     }
 
-    var formatAmount = function (value) {
+    var formatAmount = function (value, isManual) {
         if (!isFinite(value) || value <= 0) {
-            return '0.01';
+            return '0.005';
+        }
+        if (isManual) {
+            return Number(value).toFixed(3);
         }
         return value >= 1 ? (value % 1 === 0 ? value.toFixed(0) : value.toFixed(2)) : value.toFixed(2);
     };
 
     var clampAmount = function (value) {
         var num = parseFloat(value) || 0.01;
-        if (num < 0.01) num = 0.01;
+        if (num < 0.005) num = 0.005;
         if (num > 69) num = 69;
         return num;
     };
@@ -106,10 +109,10 @@ DonationPromptHtml.prototype.setupEventListeners = function (goButton) {
     var linearToLog = (value) => Math.log10(value);
     var logToLinear = (value) => Math.pow(10, value);
 
-    var syncControls = (rawAmount) => {
+    var syncControls = (rawAmount, isManual) => {
         if (!this.donationSlider || !this.donationNumber) return;
         var amount = clampAmount(rawAmount);
-        this.donationNumber.value = formatAmount(amount);
+        this.donationNumber.value = formatAmount(amount, isManual === true);
         this.donationSlider.value = linearToLog(amount);
     };
 
@@ -150,7 +153,7 @@ DonationPromptHtml.prototype.setupEventListeners = function (goButton) {
         goButton.addEventListener('click', () => {
             var amount = this.donationNumber ? parseFloat(this.donationNumber.value) : NaN;
             if (!isNaN(amount)) {
-                syncControls(amount);
+                syncControls(amount, true);
                 handleDonationRequest(amount, goButton);
             }
         });
@@ -167,7 +170,7 @@ DonationPromptHtml.prototype.setupEventListeners = function (goButton) {
         });
         this.donationNumber.addEventListener('input', () => {
             var num = clampAmount(this.donationNumber.value);
-            this.donationNumber.value = formatAmount(num);
+            this.donationNumber.value = formatAmount(num, true);
             this.donationSlider.value = linearToLog(num);
         });
     }

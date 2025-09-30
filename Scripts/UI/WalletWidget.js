@@ -40,6 +40,8 @@ WalletWidget.prototype.initialize = function () {
         this.walletAddressEl.addEventListener('keydown', this.boundOnAddressKeyDown);
         this.walletAddressEl.setAttribute('role', 'button');
         this.walletAddressEl.setAttribute('tabindex', '0');
+        this.walletAddressEl.setAttribute('title', 'Copy address');
+        this.walletAddressEl.setAttribute('data-tooltip', 'Copy address');
     }
 
     if (this.logoutButtonEl) {
