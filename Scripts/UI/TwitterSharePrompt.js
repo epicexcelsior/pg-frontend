@@ -5,6 +5,10 @@ TwitterSharePrompt.prototype.initialize = function () {
   this.currentAddress = null;
   this.activeData = null;
   this.autoHideHandle = null;
+  this.isHovering = false;
+  this.autoHideDuration = 22000;
+  this.remainingTime = this.autoHideDuration;
+  this.startTime = null;
   this.privyManager = this.app.services?.get("privyManager") || null;
 
   this.injectStyles();
@@ -33,7 +37,7 @@ TwitterSharePrompt.prototype.injectStyles = function () {
     "background:rgba(17,17,17,0.92);color:#fff;z-index:2000;padding:18px 20px;border-radius:14px;" +
     "box-shadow:0 18px 36px rgba(0,0,0,0.35);display:flex;flex-direction:column;gap:12px;" +
     "width:clamp(260px,48vw,420px);font-family:'Segoe UI',Tahoma,sans-serif;opacity:0;pointer-events:none;" +
-    "transition:opacity 0.25s ease,transform 0.25s ease;backdrop-filter:blur(10px);}" +
+    "transition:opacity 0.25s ease,transform 0.25s ease;backdrop-filter:blur(10px);overflow:hidden;}" +
     "#tweet-share-prompt.tweet-share-visible{opacity:1;pointer-events:auto;transform:translateX(-50%) translateY(0);}" +
     "#tweet-share-prompt .tweet-share-title{font-size:16px;font-weight:600;line-height:1.4;}" +
     "#tweet-share-prompt .tweet-share-body{font-size:14px;line-height:1.5;color:rgba(255,255,255,0.85);}" +
@@ -45,7 +49,10 @@ TwitterSharePrompt.prototype.injectStyles = function () {
     "#tweet-share-prompt button.share-secondary{background:rgba(255,255,255,0.12);color:#f1f1f1;}" +
     "#tweet-share-prompt button.share-secondary:hover{background:rgba(255,255,255,0.18);}" +
     "#tweet-share-prompt a{color:#9ad0ff;font-size:13px;text-decoration:none;}" +
-    "#tweet-share-prompt a:hover{text-decoration:underline;}";
+    "#tweet-share-prompt a:hover{text-decoration:underline;}" +
+    "#tweet-share-progress-bar{position:absolute;bottom:0;left:0;height:3px;background:linear-gradient(90deg,#1d9bf0,#1d77f2);" +
+    "width:100%;transform-origin:left;transition:transform 0.1s linear;}" +
+    "#tweet-share-prompt.paused #tweet-share-progress-bar{opacity:0.5;}";
   document.head.appendChild(style);
 };
 
@@ -87,10 +94,19 @@ TwitterSharePrompt.prototype.buildDom = function () {
   this.viewLink.rel = "noopener";
   this.viewLink.textContent = "Open tweet in X";
 
+  this.progressBar = document.createElement("div");
+  this.progressBar.id = "tweet-share-progress-bar";
+
   this.rootEl.appendChild(title);
   this.rootEl.appendChild(body);
   this.rootEl.appendChild(actions);
   this.rootEl.appendChild(this.viewLink);
+  this.rootEl.appendChild(this.progressBar);
+
+  this.handleMouseEnterBound = this.handleMouseEnter.bind(this);
+  this.handleMouseLeaveBound = this.handleMouseLeave.bind(this);
+  this.rootEl.addEventListener("mouseenter", this.handleMouseEnterBound);
+  this.rootEl.addEventListener("mouseleave", this.handleMouseLeaveBound);
 
   document.body.appendChild(this.rootEl);
 };
@@ -169,14 +185,71 @@ TwitterSharePrompt.prototype.showPrompt = function () {
     return;
   }
   this.rootEl.classList.add("tweet-share-visible");
+  this.remainingTime = this.autoHideDuration;
+  this.startAutoHide();
+};
 
+TwitterSharePrompt.prototype.startAutoHide = function () {
   if (this.autoHideHandle) {
     window.clearTimeout(this.autoHideHandle);
   }
+  
+  this.startTime = Date.now();
+  this.updateProgressBar();
+  
   var self = this;
   this.autoHideHandle = window.setTimeout(function () {
     self.hidePrompt();
-  }, 22000);
+  }, this.remainingTime);
+};
+
+TwitterSharePrompt.prototype.pauseAutoHide = function () {
+  if (this.autoHideHandle) {
+    window.clearTimeout(this.autoHideHandle);
+    this.autoHideHandle = null;
+  }
+  
+  if (this.startTime !== null) {
+    var elapsed = Date.now() - this.startTime;
+    this.remainingTime = Math.max(0, this.remainingTime - elapsed);
+    this.startTime = null;
+  }
+  
+  this.rootEl.classList.add("paused");
+};
+
+TwitterSharePrompt.prototype.resumeAutoHide = function () {
+  this.rootEl.classList.remove("paused");
+  if (this.remainingTime > 0) {
+    this.startAutoHide();
+  } else {
+    this.hidePrompt();
+  }
+};
+
+TwitterSharePrompt.prototype.updateProgressBar = function () {
+  if (!this.progressBar) {
+    return;
+  }
+  
+  var progress = this.remainingTime / this.autoHideDuration;
+  this.progressBar.style.transform = "scaleX(" + progress + ")";
+  this.progressBar.style.transition = "transform " + (this.remainingTime / 1000) + "s linear";
+  
+  var self = this;
+  requestAnimationFrame(function () {
+    self.progressBar.style.transform = "scaleX(0)";
+  });
+};
+
+TwitterSharePrompt.prototype.handleMouseEnter = function () {
+  this.isHovering = true;
+  this.pauseAutoHide();
+};
+
+TwitterSharePrompt.prototype.handleMouseLeave = function () {
+  this.isHovering = false;
+  this.resumeAutoHide();
 };
 
 TwitterSharePrompt.prototype.hidePrompt = function () {
@@ -184,9 +257,16 @@ TwitterSharePrompt.prototype.hidePrompt = function () {
     return;
   }
   this.rootEl.classList.remove("tweet-share-visible");
+  this.rootEl.classList.remove("paused");
   if (this.autoHideHandle) {
     window.clearTimeout(this.autoHideHandle);
     this.autoHideHandle = null;
+  }
+  this.remainingTime = this.autoHideDuration;
+  this.startTime = null;
+  if (this.progressBar) {
+    this.progressBar.style.transition = "none";
+    this.progressBar.style.transform = "scaleX(1)";
   }
 };
 
@@ -263,18 +343,23 @@ TwitterSharePrompt.prototype.destroy = function () {
   this.app.off("donation:tweetReady", this.onDonationTweetReady, this);
 
   if (this.shareButton) {
-    this.shareButton.removeEventListener("click", this.handleShareClick);
+    this.shareButton.removeEventListener("click", this.handleShareClickBound);
   }
   if (this.dismissButton) {
-    this.dismissButton.removeEventListener("click", this.hidePrompt);
+    this.dismissButton.removeEventListener("click", this.hidePromptBound);
   }
-  if (this.rootEl && this.rootEl.parentNode) {
-    this.rootEl.parentNode.removeChild(this.rootEl);
+  if (this.rootEl) {
+    this.rootEl.removeEventListener("mouseenter", this.handleMouseEnterBound);
+    this.rootEl.removeEventListener("mouseleave", this.handleMouseLeaveBound);
+    if (this.rootEl.parentNode) {
+      this.rootEl.parentNode.removeChild(this.rootEl);
+    }
   }
   this.rootEl = null;
   this.shareButton = null;
   this.dismissButton = null;
   this.viewLink = null;
+  this.progressBar = null;
   if (this.autoHideHandle) {
     window.clearTimeout(this.autoHideHandle);
     this.autoHideHandle = null;
