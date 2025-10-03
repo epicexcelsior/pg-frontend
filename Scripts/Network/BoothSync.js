@@ -71,8 +71,7 @@ BoothSync.prototype.handleBoothUpdate = function(boothState, boothId, isInitialA
         boothId: boothId,
         claimedBy: boothState.claimedBy,
         claimedByUsername: boothState.claimedByUsername, // Include username
-        // Add any other relevant booth properties from the state here
-        // e.g., boothName: boothState.boothName,
+        claimedByTwitterHandle: boothState.claimedByTwitterHandle,
     };
 
     // Fire specific event for initial add, generic update otherwise

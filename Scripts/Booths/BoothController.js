@@ -128,7 +128,17 @@ BoothController.prototype.onBoothUpdated = function (boothData) {
             const usernameTxt = screenEntity.findByName("UsernameTxt")?.element;
             if (upperTxt && usernameTxt) {
                 upperTxt.text = boothData.claimedBy ? "Give to" : "CLAIM";
-                usernameTxt.text = boothData.claimedBy ? (boothData.claimedByUsername || "") : "ME!";
+                if (boothData.claimedBy) {
+                    const twitterHandle = boothData.claimedByTwitterHandle;
+                    const username = boothData.claimedByUsername;
+                    if (twitterHandle) {
+                        usernameTxt.text = `@${twitterHandle}`;
+                    } else {
+                        usernameTxt.text = username || "";
+                    }
+                } else {
+                    usernameTxt.text = "ME!";
+                }
             }
         }
         this.refreshBoothOwnership(boothData, boothEntity);
