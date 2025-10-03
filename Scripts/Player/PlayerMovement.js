@@ -63,6 +63,12 @@ PlayerMovement.prototype.initialize = function () {
     this.entity.findByName("Wolf3D_Avatar") ||
     this.entity;
   this.baseLocalRot = this.visualRoot.getLocalRotation().clone();
+  this.lastMoveDir = new pc.Vec3();
+  this._tmpTargetVelocity = new pc.Vec3();
+  var initialEuler = this.visualRoot.getEulerAngles
+    ? this.visualRoot.getEulerAngles()
+    : null;
+  this._currentYaw = initialEuler ? initialEuler.y : 0;
 
   if (this.entity.rigidbody) this.entity.rigidbody.angularFactor = pc.Vec3.ZERO;
 
@@ -176,19 +182,32 @@ PlayerMovement.prototype.update = function (dt) {
 
   // physics vel
   var rb = this.entity.rigidbody;
-  var v = rb.linearVelocity.clone();
-  var target = moveDir.scale(this.maxSpeed);
-  var a = clamp01(this.acceleration * dt);
-  var next = new pc.Vec3().lerp(v, new pc.Vec3(target.x, v.y, target.z), a);
+  var currentVelocity = rb.linearVelocity.clone();
+  var targetVelocity = this._tmpTargetVelocity;
+  targetVelocity.set(
+    moveDir.x * this.maxSpeed,
+    currentVelocity.y,
+    moveDir.z * this.maxSpeed
+  );
+
+  var blend = clamp01(this.acceleration * dt);
+  var next = new pc.Vec3().lerp(currentVelocity, targetVelocity, blend);
 
   var speedXZ = Math.hypot(next.x, next.z);
   if (speedXZ < this.stopSpeed && this._inputMag === 0) {
     next.x = 0;
     next.z = 0;
+    speedXZ = 0;
   }
   rb.linearVelocity = next;
 
-  // face move dir (visual only)
+  if (speedXZ > 1e-4) {
+    this.lastMoveDir.set(next.x, 0, next.z);
+    this.lastMoveDir.normalize();
+  } else {
+    this.lastMoveDir.set(0, 0, 0);
+  }
+
   if (next.x * next.x + next.z * next.z > 1e-6) {
     var yawDeg = yawFromDirXZ(next.x, next.z) + this.modelForwardOffsetY;
     var q = new pc.Quat().setFromEulerAngles(0, yawDeg, 0);
@@ -196,10 +215,24 @@ PlayerMovement.prototype.update = function (dt) {
     var cur = this.visualRoot.getLocalRotation().clone();
     var s = clamp01(this.turnSpeed * dt);
     this.visualRoot.setLocalRotation(new pc.Quat().slerp(cur, tgt, s));
+    this._currentYaw = yawDeg;
   }
 
-  // --- Set Animation Parameter ---
-  var speedNormalized = Math.min(1, speedXZ / Math.max(0.0001, this.maxSpeed));
-  if (this.animEnt && this.animEnt.anim)
+  var speedNormalized = Math.min(
+    1,
+    speedXZ / Math.max(0.0001, this.maxSpeed)
+  );
+  if (this.animEnt && this.animEnt.anim) {
     this.animEnt.anim.setFloat("speed", speedNormalized);
+  }
+
+  var pos = this.entity.getPosition();
+
+  this.app.fire("player:move", {
+    x: pos.x,
+    y: pos.y,
+    z: pos.z,
+    rotation: this._currentYaw,
+    speed: speedNormalized,
+  });
 };

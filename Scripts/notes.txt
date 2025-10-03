@@ -9,7 +9,7 @@
 }
 
 {
-  "colyseusEndpoint": "ws://localhost:2567",
+  "colyseusEndpoint": "ws://localhost:3001",
   "cloudflareWorkerAuthEndpoint": "http://localhost:8787",
   "cloudflareWorkerCreateTxEndpoint": "http://localhost:8787/create_donation_transaction",
   "cloudflareWorkerDonationEndpoint": "http://localhost:8787/process_donation",

@@ -276,6 +276,17 @@ PrivyManager.prototype.handleAuthMessage = function (event) {
                 handlers.reject(this.normalizeError(payload, 'Transaction was rejected.'));
             });
             break;
+        case 'PRIVY_LINK_SUCCESS':
+            if (payload && typeof payload.user === 'object') {
+                this.handleAuthSuccess(payload);
+            } else {
+                console.warn('PrivyManager: Link success payload missing user data.');
+            }
+            break;
+        case 'PRIVY_LINK_ERROR':
+            console.error('PrivyManager: Failed to link account.', payload);
+            this.app.fire('auth:linkFailed', { error: payload.error });
+            break;
         default:
             console.warn('PrivyManager: Unhandled message type from privy host:', type);
             break;
@@ -526,6 +537,21 @@ PrivyManager.prototype.logout = function () {
     }
 
     return performLogout();
+};
+
+PrivyManager.prototype.linkTwitter = function () {
+    const performLink = () => {
+        console.log('PrivyManager: Starting Twitter link process...');
+        const linkUrl = this.buildPrivyUrl({ action: 'linkTwitter' });
+        return this.openPrivyWindow(linkUrl, 'privy-link-twitter');
+    };
+
+    if (!this.ready) {
+        this.queueWhenReady(performLink, 'linkTwitter');
+        return null;
+    }
+
+    return performLink();
 };
 
 PrivyManager.prototype.isAuthenticated = function () {
