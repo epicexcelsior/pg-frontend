@@ -225,7 +225,7 @@ TwitterSharePrompt.prototype.updatePromptContent = function (data, role) {
   if (role === "sender") {
     titleEl.textContent = "Nice! Your donation tweet just posted.";
     bodyEl.textContent =
-      "Let everyone know you backed " +
+      "Let everyone know you gave to " +
       counterpartLabel +
       " with " +
       amountLabel +

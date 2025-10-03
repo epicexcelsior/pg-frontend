@@ -20,6 +20,8 @@ WalletWidget.prototype.initialize = function () {
     this.walletAddressEl = container.querySelector('#wallet-address');
     this.walletBalanceEl = container.querySelector('#wallet-balance');
     this.logoutButtonEl = container.querySelector('#logout-btn');
+    this.twitterLinkEl = container.querySelector('#twitter-link');
+    this.twitterHandleEl = container.querySelector('#twitter-handle');
 
     this.walletWidgetEl.style.display = 'none';
     this.walletBalanceEl.textContent = '... SOL';
@@ -34,6 +36,7 @@ WalletWidget.prototype.initialize = function () {
     this.boundOnAddressClick = this.onAddressClick.bind(this);
     this.boundOnAddressKeyDown = this.onAddressKeyDown.bind(this);
     this.boundOnLogoutClick = this.onLogout.bind(this);
+    this.boundOnLinkTwitterClick = this.onLinkTwitter.bind(this);
 
     if (this.walletAddressEl) {
         this.walletAddressEl.addEventListener('click', this.boundOnAddressClick);
@@ -46,6 +49,10 @@ WalletWidget.prototype.initialize = function () {
 
     if (this.logoutButtonEl) {
         this.logoutButtonEl.addEventListener('click', this.boundOnLogoutClick);
+    }
+
+    if (this.twitterLinkEl) {
+        this.twitterLinkEl.addEventListener('click', this.boundOnLinkTwitterClick);
     }
 
     this.app.on('services:initialized', this.setupEventListeners, this);
@@ -95,6 +102,12 @@ WalletWidget.prototype.onLogout = function () {
     }
 };
 
+WalletWidget.prototype.onLinkTwitter = function () {
+    if (this.privyManager) {
+        this.privyManager.linkTwitter();
+    }
+};
+
 WalletWidget.prototype.onAuthStateChanged = function (data) {
     if (data.isAuthenticated && data.address) {
         this.currentAddress = data.address;
@@ -103,12 +116,15 @@ WalletWidget.prototype.onAuthStateChanged = function (data) {
         this.walletAddressEl.title = data.address;
         this.walletBalanceEl.textContent = 'Fetching...';
 
+        this.updateTwitterDisplay(data.twitterHandle);
+
         this.stopBalancePolling();
         this.startBalancePolling();
     } else {
         this.currentAddress = null;
         this.walletWidgetEl.style.display = 'none';
         this.walletBalanceEl.textContent = '... SOL';
+        this.updateTwitterDisplay(null);
         this.stopBalancePolling();
     }
 };
@@ -320,8 +336,25 @@ WalletWidget.prototype.destroy = function () {
         this.logoutButtonEl.removeEventListener('click', this.boundOnLogoutClick);
     }
 
+    if (this.twitterLinkEl && this.boundOnLinkTwitterClick) {
+        this.twitterLinkEl.removeEventListener('click', this.boundOnLinkTwitterClick);
+    }
+
     if (this.container?.parentNode) {
         this.container.parentNode.removeChild(this.container);
+    }
+};
+
+WalletWidget.prototype.updateTwitterDisplay = function (twitterHandle) {
+    if (this.twitterLinkEl && this.twitterHandleEl) {
+        if (twitterHandle) {
+            this.twitterHandleEl.textContent = `@${twitterHandle}`;
+            this.twitterLinkEl.style.display = 'none';
+            this.twitterHandleEl.style.display = 'flex';
+        } else {
+            this.twitterLinkEl.style.display = 'block';
+            this.twitterHandleEl.style.display = 'none';
+        }
     }
 };
 

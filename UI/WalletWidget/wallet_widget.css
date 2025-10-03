@@ -100,6 +100,43 @@
     transform: translateY(0);
 }
 
+.twitter-section {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.twitter-link-btn {
+    background: #1DA1F2;
+    border: none;
+    border-radius: 8px;
+    color: white;
+    padding: 0 12px;
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background 0.2s ease;
+    display: flex;
+    align-items: center;
+    height: 34px;
+    box-sizing: border-box;
+}
+
+.twitter-link-btn:hover {
+    background: #0c85d0;
+}
+
+.twitter-handle {
+    color: #1DA1F2;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    height: 34px;
+    line-height: 34px; /* ensure text is vertically centered within the fixed height */
+    padding: 0 12px;
+    box-sizing: border-box;
+}
+
 /* Disconnected State */
 .wallet-disconnected {
     background: var(--surface-color);
