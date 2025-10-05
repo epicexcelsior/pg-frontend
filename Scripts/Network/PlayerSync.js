@@ -166,10 +166,13 @@ PlayerSync.prototype.spawnPlayer = function (playerState, sessionId) {
     playerEntity.setRotation(initialRot);
     if (!isLocalPlayer) applyRemoteYaw(playerEntity, playerEntity.syncCurrentYaw);
 
+    playerEntity.sessionId = sessionId;
+    playerEntity.isLocalPlayer = isLocalPlayer;
     this.app.root.addChild(playerEntity);
     this.playerEntities[sessionId] = playerEntity;
+    this._syncAvatarRecipe(playerEntity, playerState, sessionId);
     this.updateNameplate(playerEntity, playerState.username);
-    this.app.fire('player:spawned', { entity: playerEntity, isLocal: isLocalPlayer });
+    this.app.fire('player:spawned', { entity: playerEntity, isLocal: isLocalPlayer, sessionId: sessionId, state: playerState });
 };
 
 PlayerSync.prototype.removePlayer = function (sessionId) {
@@ -178,7 +181,7 @@ PlayerSync.prototype.removePlayer = function (sessionId) {
         entity.destroy();
         delete this.playerEntities[sessionId];
         if (this.app.localPlayer === entity) this.app.localPlayer = null;
-        this.app.fire('player:removed', { sessionId: sessionId });
+        this.app.fire('player:removed', { sessionId: sessionId, entity: entity });
     }
 };
 
@@ -193,6 +196,7 @@ PlayerSync.prototype.handlePlayerChange = function (playerState, sessionId) {
         }
     } else {
         this.updateRemotePlayerVisuals(entity, playerState);
+        this._syncAvatarRecipe(entity, playerState, sessionId);
         if (playerState.username && entity.username !== playerState.username) {
             entity.username = playerState.username;
             this.updateNameplate(entity, playerState.username);
@@ -211,6 +215,30 @@ PlayerSync.prototype.updateRemotePlayerVisuals = function (entity, playerState) 
     }
     if (typeof playerState.speed === 'number') {
         entity.syncTargetSpeed = playerState.speed;
+    }
+};
+
+
+PlayerSync.prototype._syncAvatarRecipe = function (entity, playerState, sessionId) {
+    if (!playerState || sessionId === this.localSessionId) return;
+    const raw = typeof playerState.avatarRecipe === "string" ? playerState.avatarRecipe : "";
+    const updatedAt = typeof playerState.avatarRecipeUpdatedAt === "number" ? playerState.avatarRecipeUpdatedAt : 0;
+    const hasContent = raw && raw.length > 0;
+    if (!hasContent) {
+        entity.avatarRecipeString = "";
+        entity.avatarRecipeUpdatedAt = updatedAt;
+        return;
+    }
+    if (entity.avatarRecipeString === raw && entity.avatarRecipeUpdatedAt === updatedAt) {
+        return;
+    }
+    entity.avatarRecipeString = raw;
+    entity.avatarRecipeUpdatedAt = updatedAt;
+    try {
+        const parsed = JSON.parse(raw);
+        this.app.fire("avatar:recipe", { playerId: sessionId, recipe: parsed, source: "state" });
+    } catch (err) {
+        console.warn("PlayerSync: failed to parse avatar recipe for", sessionId, err);
     }
 };
 

@@ -1,4 +1,4 @@
-﻿// C:\Users\Epic\Documents\GitHub\pg-frontend\Scripts\Network\MessageBroker.js
+// C:\Users\Epic\Documents\GitHub\pg-frontend\Scripts\Network\MessageBroker.js
 var MessageBroker = pc.createScript('messageBroker');
 
 MessageBroker.prototype.initialize = function () {
@@ -54,6 +54,7 @@ MessageBroker.prototype.setupRoomMessageListeners = function (room) {
         const senderName = data?.sender?.username || 'Unknown';
         this.app.fire('chat:newMessage', { type: 'user', sender: senderName, content: data.content });
     });
+    room.onMessage("avatar:recipe", (data) => this.app.fire('avatar:recipe', data));
 };
 
 MessageBroker.prototype.setupAppEventListeners = function () {
@@ -65,6 +66,7 @@ MessageBroker.prototype.setupAppEventListeners = function () {
     // Renamed to match server-side refactor
     this.app.on('network:send:announceDonation', (data) => this.sendMessage("announceDonation", data)); 
     // [!code --]
+    this.app.on('network:send:avatarRecipe', (data) => this.sendMessage('avatar:recipe', data));
     this.app.on('network:send:updateAddress', (data) => {
         var payload = { walletAddress: '' };
 
@@ -123,6 +125,5 @@ MessageBroker.prototype.sendMessage = function(type, payload) {
         console.warn(`MessageBroker: Cannot send '${type}', room not available or connection closed.`);
     }
 };
-
 
 
