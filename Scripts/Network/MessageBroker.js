@@ -55,6 +55,7 @@ MessageBroker.prototype.setupRoomMessageListeners = function (room) {
         this.app.fire('chat:newMessage', { type: 'user', sender: senderName, content: data.content });
     });
     room.onMessage("avatar:recipe", (data) => this.app.fire('avatar:recipe', data));
+    room.onMessage("animation:play", (data) => this.app.fire('animation:play:network', data));
 };
 
 MessageBroker.prototype.setupAppEventListeners = function () {
@@ -90,6 +91,7 @@ MessageBroker.prototype.setupAppEventListeners = function () {
     // [!code ++]
     // FIX: Add the missing listener to handle the unclaim request on logout.
     this.app.on('network:send:unclaimBooth', () => this.sendMessage('unclaimBooth'));
+    this.app.on('network:send:animation', (data) => this.sendMessage('animation:play', data));
     // [!code --]
 };
 

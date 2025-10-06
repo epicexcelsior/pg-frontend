@@ -45,14 +45,17 @@ WalletWidget.prototype.initialize = function () {
         this.walletAddressEl.setAttribute('tabindex', '0');
         this.walletAddressEl.setAttribute('title', 'Copy address');
         this.walletAddressEl.setAttribute('data-tooltip', 'Copy address');
+        this.walletAddressEl.setAttribute('data-sound', 'ui_click_default');
     }
 
     if (this.logoutButtonEl) {
         this.logoutButtonEl.addEventListener('click', this.boundOnLogoutClick);
+        this.logoutButtonEl.setAttribute('data-sound', 'ui_click_default');
     }
 
     if (this.twitterLinkEl) {
         this.twitterLinkEl.addEventListener('click', this.boundOnLinkTwitterClick);
+        this.twitterLinkEl.setAttribute('data-sound', 'ui_click_default');
     }
 
     this.app.on('services:initialized', this.setupEventListeners, this);

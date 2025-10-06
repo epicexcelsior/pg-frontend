@@ -207,6 +207,8 @@ FeedbackService.prototype.removeToast = function(toastElement) {
 FeedbackService.prototype.showSuccess = function(message, duration = 5000) {
     console.log(`[SUCCESS] ${message}`);
     this._showToast(message, 'success', duration);
+    // Play success sound
+    this.app.fire('ui:playSound', 'feedback_success');
 };
 
 /**
@@ -219,6 +221,8 @@ FeedbackService.prototype.showError = function(message, details, isCritical = fa
     console.error(`[ERROR] ${message}${details ? ` | Details: ${details}` : ''} (Critical: ${isCritical})`);
     // For now, always show errors as toasts. Could add logic for critical modals later.
     this._showToast(`${message}${details ? ` (${details.substring(0, 50)}...)` : ''}`, 'error', isCritical ? 15000 : 7000); // Longer duration for errors
+    // Play error sound
+    this.app.fire('ui:playSound', 'feedback_error');
 };
 
 /**

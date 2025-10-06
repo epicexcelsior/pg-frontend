@@ -141,6 +141,7 @@ DonationPromptHtml.prototype.setupEventListeners = function (goButton) {
             if (!isNaN(amount)) {
                 syncControls(amount);
                 handleDonationRequest(amount, btn);
+                this.app.fire('ui:playSound', 'ui_click_default');
             }
         });
     });
@@ -155,6 +156,7 @@ DonationPromptHtml.prototype.setupEventListeners = function (goButton) {
             if (!isNaN(amount)) {
                 syncControls(amount, true);
                 handleDonationRequest(amount, goButton);
+                this.app.fire('ui:playSound', 'donation_give_success');
             }
         });
     }
@@ -167,6 +169,7 @@ DonationPromptHtml.prototype.setupEventListeners = function (goButton) {
         this.donationSlider.addEventListener('input', () => {
             var sliderAmount = logToLinear(parseFloat(this.donationSlider.value));
             this.donationNumber.value = formatAmount(sliderAmount);
+            this.app.fire('ui:playSound', 'donation_slider_tick');
         });
         this.donationNumber.addEventListener('input', () => {
             var num = clampAmount(this.donationNumber.value);

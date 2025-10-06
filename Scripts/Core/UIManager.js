@@ -11,6 +11,38 @@ UIManager.prototype.initialize = function () {
     console.log("UIManager initialized. Theme:", this.theme);
 
     this.injectGlobalStyles();
+    this.setupSoundEventListeners();
+};
+
+UIManager.prototype.setupSoundEventListeners = function() {
+    // This function sets up global listeners for common UI sounds.
+    // We listen on the document body to catch events from dynamically added HTML elements.
+    this.lastHoveredElement = null;
+
+    // --- Click Sound ---
+    document.body.addEventListener('click', (event) => {
+        // Play a click sound if the user clicks on an interactive element.
+        const interactiveElement = event.target.closest('button, [role="button"], .sound-click');
+        if (interactiveElement) {
+            this.app.fire('ui:playSound', 'ui_click_default');
+        }
+    }, true); // Use capture phase to catch events early.
+
+    // --- Hover Sound ---
+    document.body.addEventListener('mouseover', (event) => {
+        const interactiveElement = event.target.closest('button, a, [role="button"], .sound-hover');
+        
+        // Only play the sound if we've moved to a new interactive element.
+        if (interactiveElement && interactiveElement !== this.lastHoveredElement) {
+            this.app.fire('ui:playSound', 'ui_hover_default');
+            this.lastHoveredElement = interactiveElement;
+        }
+    }, true);
+
+    // Reset last hovered element when the mouse leaves the window
+    document.body.addEventListener('mouseleave', () => {
+        this.lastHoveredElement = null;
+    }, true);
 };
 
 UIManager.prototype.registerComponent = function (component) {

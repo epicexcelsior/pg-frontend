@@ -146,6 +146,7 @@ TwitterSharePrompt.prototype.buildDom = function () {
   this.shareButton.textContent = "Share on X";
   this.handleShareClickBound = this.handleShareClick.bind(this);
   this.shareButton.addEventListener("click", this.handleShareClickBound);
+  this.shareButton.setAttribute('data-sound', 'ui_click_default');
 
   this.dismissButton = document.createElement("button");
   this.dismissButton.className = "share-secondary";
@@ -153,6 +154,7 @@ TwitterSharePrompt.prototype.buildDom = function () {
   this.dismissButton.textContent = "Not now";
   this.hidePromptBound = this.hidePrompt.bind(this);
   this.dismissButton.addEventListener("click", this.hidePromptBound);
+  this.dismissButton.setAttribute('data-sound', 'ui_click_default');
 
   actions.appendChild(this.shareButton);
   actions.appendChild(this.dismissButton);
