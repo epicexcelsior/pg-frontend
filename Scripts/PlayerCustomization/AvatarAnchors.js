@@ -5,28 +5,25 @@
               {};
 
   function ensureRootBone(armature) {
-    if (!armature) return armature;
+    if (!armature) return null;
     var existing = armature.findByName('Root');
-    if (existing) return existing;
+    if (existing) {
+      // A root bone exists, but we should still return the main armature
+      // for retargeting, to avoid breaking animations.
+      return armature;
+    }
 
+    // Create a placeholder Root bone if one doesn't exist, as the render
+    // components of the avatar parts expect to find it by name.
+    // Do NOT reparent any other bones into it.
     var root = new pc.Entity('Root');
     root.setLocalPosition(0, 0, 0);
     root.setLocalRotation(pc.Quat.IDENTITY);
     root.setLocalScale(1, 1, 1);
-
-    var reparent = [];
-    for (var i = 0; i < armature.children.length; i++) {
-      var child = armature.children[i];
-      if (!child || !child.name) continue;
-      if (child.name.indexOf('Slot') === 0) continue;
-      reparent.push(child);
-    }
-    for (var j = 0; j < reparent.length; j++) {
-      root.addChild(reparent[j]);
-    }
-
     armature.addChild(root);
-    return root;
+
+    // Return the main armature for retargeting.
+    return armature;
   }
 
   function ensureSlot(armature, name, boneParents) {
