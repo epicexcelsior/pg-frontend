@@ -1,3 +1,4 @@
+/* --- Avatar Customizer Panel --- */
 #avatar-customizer {
   position: absolute;
   bottom: 24px;
@@ -10,7 +11,7 @@
   border-radius: 16px;
   background: rgba(15, 19, 28, 0.94);
   color: #f5f5f5;
-  font-family: var(--font-family, 'Inter', sans-serif);
+  font-family: var(--font-family, "Inter", sans-serif);
   box-shadow: 0 16px 32px rgba(0, 0, 0, 0.35);
   backdrop-filter: blur(10px);
   z-index: 5000;
@@ -31,14 +32,13 @@
   transform: translateX(0);
 }
 
+/* --- Unified button look (used by both Wave & Avatar buttons) --- */
 .avatar-toggle-button {
-  position: absolute;
-  left: 24px;
-  top: 50%;
+  position: relative; /* Overridden to be relative (container controls placement) */
   width: 48px;
   height: 48px;
   padding: 0;
-  display: flex;
+  display: inline-flex;
   align-items: center;
   justify-content: center;
   border-radius: 12px;
@@ -47,8 +47,8 @@
   box-shadow: 0 10px 24px rgba(0, 0, 0, 0.25);
   cursor: pointer;
   z-index: 5001;
-  transform: translateY(-50%);
-  transition: transform 0.22s cubic-bezier(0.23, 1, 0.32, 1), background 0.2s ease, box-shadow 0.2s ease;
+  transition: transform 0.22s cubic-bezier(0.23, 1, 0.32, 1),
+    background 0.2s ease, box-shadow 0.2s ease;
 }
 
 .avatar-toggle-button .icon {
@@ -57,28 +57,58 @@
   background-size: contain;
   background-repeat: no-repeat;
   background-position: center;
+  display: inline-flex;
 }
 
+/* Hide label on compact icon buttons */
 .avatar-toggle-button .label {
   display: none;
 }
 
+/* Gentle hover (no translateY(-50%)!) */
 .avatar-toggle-button:hover {
-  transform: translateY(-50%) scale(1.05);
+  transform: scale(1.06);
   background: rgba(26, 32, 46, 0.96);
   box-shadow: 0 14px 32px rgba(0, 0, 0, 0.32);
 }
 
+/* Active/open state color only; no y-translation */
 .avatar-toggle-button.is-open {
   background: var(--accent-color, #ff8a65);
-  transform: translateY(-50%);
 }
 
-.avatar-toggle-button.is-open:hover {
-  transform: translateY(-50%) scale(1.02);
-  box-shadow: 0 14px 32px rgba(0, 0, 0, 0.32);
+/* --- Bottom-right button container that holds BOTH buttons --- */
+#ui-button-container {
+  position: fixed;
+  bottom: 24px;
+  right: 24px;
+  display: flex;
+  flex-direction: row; /* Left-to-right: Wave (first), then Avatar */
+  gap: 12px;
+  z-index: 5002;
 }
 
+/* Buttons inside the container should not use absolute positioning */
+#ui-button-container .avatar-toggle-button {
+  position: relative;
+  right: auto;
+  bottom: auto;
+  transform: none;
+}
+
+#ui-button-container .avatar-toggle-button:hover {
+  transform: scale(1.06);
+}
+
+/* --- Mobile Responsive --- */
+@media (max-width: 768px) {
+  #ui-button-container {
+    bottom: max(16px, env(safe-area-inset-bottom));
+    right: max(16px, env(safe-area-inset-right));
+  }
+}
+
+/* --- Remaining existing styles (slots, footer, etc.) --- */
 #avatar-customizer .avatar-header .title {
   margin: 0;
   font-size: 20px;
@@ -99,36 +129,30 @@
   padding: 12px;
   border-radius: 8px;
 }
-
 #avatar-customizer .slot-info {
   flex: 1;
 }
-
 #avatar-customizer .slot-label {
   font-size: 14px;
   font-weight: 500;
   margin-bottom: 8px;
 }
-
 #avatar-customizer .slot-progress {
   display: flex;
   align-items: center;
   gap: 8px;
 }
-
 #avatar-customizer .slot-progress .progress-bar {
   flex: 1;
   height: 4px;
   background: rgba(255, 255, 255, 0.1);
   border-radius: 2px;
 }
-
 #avatar-customizer .slot-progress .progress-fill {
   height: 100%;
   background: var(--accent-color, #ff8a65);
   border-radius: 2px;
 }
-
 #avatar-customizer .slot-btn {
   width: 32px;
   height: 32px;
@@ -143,7 +167,6 @@
   display: flex;
   gap: 12px;
 }
-
 #avatar-customizer .footer-actions .btn {
   flex: 1;
   padding: 14px 0;
@@ -152,15 +175,11 @@
   border: none;
   cursor: pointer;
 }
-
 #avatar-customizer .footer-actions .btn.primary {
   background: var(--accent-color, #ff8a65);
   color: #121620;
 }
-
 #avatar-customizer .footer-actions .btn.ghost {
   background: rgba(255, 255, 255, 0.1);
   color: #f5f5f5;
 }
-
-

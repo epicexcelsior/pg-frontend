@@ -23,13 +23,15 @@
   function pruneSlot(slot, limit) {
     var arr = slotHistory.get(slot);
     if (!arr || arr.length <= limit) return;
-    while (arr.length > limit) {
-      var candidate = arr[0];
+    var i = 0;
+    while (arr.length > limit && i < arr.length) {
+      var candidate = arr[i];
       var entry = assetCache.get(candidate);
       if (entry && entry.refCount > 0) {
-        break;
+        i++;
+        continue;
       }
-      arr.shift();
+      arr.splice(i, 1);
       if (entry && entry.asset && entry.asset.resource) {
         entry.asset.unload();
       }
@@ -142,9 +144,14 @@
     }
     try {
       var loaded = await loadAsset(this.app, asset);
-      if (!assetCache.has(name)) {
+      entry = assetCache.get(name);
+      if (entry) {
+        entry.asset = loaded;
+        entry.lastUsed = Date.now();
+      } else {
         assetCache.set(name, { asset: loaded, refCount: 0, lastUsed: Date.now() });
       }
+      touchSlot(slot, name);
     } catch (err) {
       console.warn('AvatarLoader: prefetch failed', slot, name, err);
     }
@@ -225,14 +232,20 @@
 
   AvatarLoader.prototype._acquireAsset = async function (slot, name) {
     var entry = assetCache.get(name);
-    if (!entry) {
+    if (!entry || !entry.asset || !entry.asset.resource) {
       var asset = findTemplateAsset(this.app, name);
       if (!asset) {
         throw new Error('Template not found: ' + name);
       }
       var loaded = await loadAsset(this.app, asset);
-      entry = { asset: loaded, refCount: 0, lastUsed: Date.now() };
-      assetCache.set(name, entry);
+      var currentEntry = assetCache.get(name);
+      if (currentEntry) {
+        currentEntry.asset = loaded;
+        entry = currentEntry;
+      } else {
+        entry = { asset: loaded, refCount: 0, lastUsed: Date.now() };
+        assetCache.set(name, entry);
+      }
     }
     entry.refCount += 1;
     entry.lastUsed = Date.now();
