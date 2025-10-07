@@ -375,7 +375,7 @@ DonationService.prototype.pollForSolanaPayTransaction = async function (data) {
                     totalLamports: amountLamports,
                     donor: null,
                 };
-                this.app.fire('network:send:announceDonation', announcePayload);
+                this.app.fire('network:send', 'announceDonation', announcePayload);
                 this.stopPolling();
                 return;
             }
@@ -530,7 +530,7 @@ DonationService.prototype.sendPendingAnnouncement = function (signature) {
         return;
     }
     entry.attempts += 1;
-    this.app.fire('network:send:announceDonation', entry.payload);
+    this.app.fire('network:send', 'announceDonation', entry.payload);
 };
 
 DonationService.prototype.scheduleAnnouncementRetry = function (signature) {

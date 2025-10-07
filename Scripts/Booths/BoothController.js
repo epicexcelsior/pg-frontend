@@ -5,9 +5,11 @@ BoothController.prototype.initialize = function () {
     console.log("BoothController initializing as the orchestrator...");
     this.currentZoneScript = null;
     this.pendingClaimBoothId = null;
+    this.isNetworkConnected = false;
     this.boothEntitiesById = new Map();
     this.boothsByOwner = new Map();
 
+    this.app.on('colyseus:connected', this.onNetworkConnected, this);
     this.app.on("booth:entered", this.onEnterZone, this);
     this.app.on("booth:left", this.onLeaveZone, this);
     this.app.on("booth:added", this.onBoothAdded, this);
@@ -91,11 +93,9 @@ BoothController.prototype.onAuthStateChanged = function (authStateData) {
 
 // FIX: This is the new final step in the claim flow.
 BoothController.prototype.onLocalPlayerDataChanged = function() {
-    // If a claim was pending AND our local data now has a wallet address...
-    if (this.pendingClaimBoothId && this.app.localPlayer.script.playerData.getWalletAddress()) {
-        console.log("BoothController: PlayerData updated. Firing pending claim now.");
-        this.app.fire('booth:claimRequest', { boothId: this.pendingClaimBoothId });
-        this.pendingClaimBoothId = null; // Clear the pending action
+    if (this.pendingClaimBoothId && this.isNetworkConnected && this.app.localPlayer.script.playerData.getWalletAddress()) {
+        this.app.fire('booth:claimRequest', this.pendingClaimBoothId);
+        this.pendingClaimBoothId = null;
     }
 
     if (this.currentZoneScript) {
@@ -201,7 +201,17 @@ BoothController.prototype.playDonationEffect = function (boothEntity) {
     boothEntity?.findByName("BoothDonateEffect")?.particlesystem.play();
     boothEntity?.sound?.play("donationSound");
 };
+
+BoothController.prototype.onNetworkConnected = function () {
+    this.isNetworkConnected = true;
+    if (this.pendingClaimBoothId && this.app.services.playerData.getWalletAddress()) {
+        this.app.fire('booth:claimRequest', this.pendingClaimBoothId);
+        this.pendingClaimBoothId = null;
+    }
+};
+
 BoothController.prototype.destroy = function () {
+    this.app.off('colyseus:connected', this.onNetworkConnected, this);
     this.app.off("booth:entered", this.onEnterZone, this);
     this.app.off("booth:left", this.onLeaveZone, this);
     this.app.off("booth:added", this.onBoothAdded, this);

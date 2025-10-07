@@ -621,10 +621,13 @@ PrivyManager.prototype.sendTransaction = function (serializedBase64Tx, options) 
 
         this.transactionPromises.set(requestId, handlers);
 
+        this._pendingNonce = generateNonce();
+
         const params = {
             action: 'sendTransaction',
             requestId: requestId,
-            serializedBase64Tx: serializedBase64Tx
+            serializedBase64Tx: serializedBase64Tx,
+            nonce: this._pendingNonce
         };
 
         if (chainOption) {

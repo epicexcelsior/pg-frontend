@@ -59,40 +59,49 @@ MessageBroker.prototype.setupRoomMessageListeners = function (room) {
 };
 
 MessageBroker.prototype.setupAppEventListeners = function () {
-    this.app.on("player:move", (data) => this.sendMessage("updatePosition", data));
-    this.app.on('user:setname', (username) => this.sendMessage("setUsername", { username }));
-    this.app.on('booth:claimRequest', (data) => this.sendMessage('claimBooth', data));
-    this.app.on('network:send:chatMessage', (data) => this.sendMessage("chatMessage", data));
-    // [!code ++]
-    // Renamed to match server-side refactor
-    this.app.on('network:send:announceDonation', (data) => this.sendMessage("announceDonation", data)); 
-    // [!code --]
-    this.app.on('network:send:avatarRecipe', (data) => this.sendMessage('avatar:recipe', data));
-    this.app.on('network:send:updateAddress', (data) => {
-        var payload = { walletAddress: '' };
-
-        if (typeof data === 'string') {
-            payload.walletAddress = data || '';
-        } else if (data && typeof data === 'object') {
-            if (typeof data.walletAddress === 'string') {
-                payload.walletAddress = data.walletAddress || '';
-            }
-            if (Object.prototype.hasOwnProperty.call(data, 'twitterHandle')) {
-                payload.twitterHandle = data.twitterHandle || '';
-            }
-            if (Object.prototype.hasOwnProperty.call(data, 'twitterUserId')) {
-                payload.twitterUserId = data.twitterUserId || '';
-            }
+    // Restore listeners for specific, direct messages
+    this.app.on('player:move', (posData) => {
+        if (this.app.room) {
+            this.app.room.send('updatePosition', posData);
         }
+    }, this);
+    this.app.on('booth:claimRequest', (boothId) => {
+        if (this.app.room) {
+            this.app.room.send('claimBooth', { boothId });
+        }
+    }, this);
+    this.app.on('booth:unclaimRequest', () => {
+        if (this.app.room) {
+            this.app.room.send('unclaimBooth');
+        }
+    }, this);
+    this.app.on('player:setUsername', (username) => {
+        if (this.app.room) {
+            this.app.room.send('setUsername', { username });
+        }
+    }, this);
+    this.app.on('player:chat', (message) => {
+        if (this.app.room) {
+            this.app.room.send('chatMessage', { message });
+        }
+    }, this);
+    this.app.on('player:avatar:recipe', (recipe) => {
+        if (this.app.room) {
+            this.app.room.send('avatar:recipe', recipe);
+        }
+    }, this);
+    this.app.on('player:animation:play', (name) => {
+        if (this.app.room) {
+            this.app.room.send('animation:play', { name });
+        }
+    }, this);
 
-        this.sendMessage('updateAddress', payload);
-    });
-    
-    // [!code ++]
-    // FIX: Add the missing listener to handle the unclaim request on logout.
-    this.app.on('network:send:unclaimBooth', () => this.sendMessage('unclaimBooth'));
-    this.app.on('network:send:animation', (data) => this.sendMessage('animation:play', data));
-    // [!code --]
+    // Add the generic listener that handles the donation flow correctly
+    this.app.on('network:send', (type, payload) => {
+        if (this.app.room) {
+            this.app.room.send(type, payload);
+        }
+    }, this);
 };
 
 MessageBroker.prototype.formatIdentity = function (username, address) {
@@ -119,13 +128,6 @@ MessageBroker.prototype.formatSolAmount = function (value) {
     const fixed = numeric.toFixed(4);
     const trimmed = fixed.replace(/0+$/, '').replace(/\.$/, '');
     return trimmed.length ? trimmed : '0';
-};
-MessageBroker.prototype.sendMessage = function(type, payload) {
-    if (this.app.room && this.app.room.connection.isOpen) {
-        this.app.room.send(type, payload);
-    } else {
-        console.warn(`MessageBroker: Cannot send '${type}', room not available or connection closed.`);
-    }
 };
 
 

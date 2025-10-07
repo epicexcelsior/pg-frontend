@@ -6,47 +6,36 @@ PlayerData.prototype.initialize = function() {
     this.username = localStorage.getItem('userName') || "";
     this.claimedBoothId = "";
 
-    this.app.on('auth:stateChanged', this.handleAuthStateChange, this);
+    this.app.on('auth:stateChanged', this.onAuthStateChanged, this);
     this.app.on('booth:claimSuccess', this.handleBoothClaimSuccess, this);
     this.app.on('booth:updated', this.handleBoothStateChange, this);
     this.app.on('booth:added', this.handleBoothStateChange, this);
 };
 
-PlayerData.prototype.handleAuthStateChange = function(authStateData) {
-    const previousAddress = this.walletAddress;
-    const newAddress = authStateData && authStateData.address ? authStateData.address : null;
+PlayerData.prototype.onAuthStateChanged = function (event) {
+    const { state, address, user } = event;
+    const isConnected = state === 'connected';
 
-    const hasTwitterHandleKey = authStateData && Object.prototype.hasOwnProperty.call(authStateData, 'twitterHandle');
-    const hasTwitterUserIdKey = authStateData && Object.prototype.hasOwnProperty.call(authStateData, 'twitterUserId');
+    console.log('PlayerData: onAuthStateChanged event received.', { isConnected, walletAddress: address, user });
 
-    const nextWalletAddress = newAddress || null;
-    const shouldSendTwitterUpdate = hasTwitterHandleKey || hasTwitterUserIdKey;
+    const newAddress = (isConnected && address) ? address : '';
 
-    if (previousAddress !== nextWalletAddress || shouldSendTwitterUpdate) {
-        this.walletAddress = nextWalletAddress;
+    // Check if the address has actually changed
+    if (this.walletAddress !== newAddress) {
+        this.walletAddress = newAddress;
+        console.log(`PlayerData: Wallet address set to: ${this.walletAddress}`);
 
-        const updatePayload = {
-            walletAddress: nextWalletAddress || ''
-        };
+        // Inform the server of the new address
+        this.app.fire('network:send', 'updateAddress', { walletAddress: this.walletAddress });
 
-        if (hasTwitterHandleKey) {
-            updatePayload.twitterHandle = authStateData.twitterHandle || '';
-        }
-        if (hasTwitterUserIdKey) {
-            updatePayload.twitterUserId = authStateData.twitterUserId || '';
-        }
-
-        this.app.fire('network:send:updateAddress', updatePayload);
-
-        if (!nextWalletAddress && previousAddress) {
-            this.clearClaimedBooth('auth:wallet_cleared');
-        }
-
+        // Inform the rest of the client app that data has changed
+        console.log('PlayerData: Firing player:data:changed event.');
         this.app.fire('player:data:changed', this);
     }
 
-    if (!authStateData?.isAuthenticated && this.claimedBoothId) {
-        this.clearClaimedBooth('auth:unauthenticated');
+    // If logging out, ensure claimed booth is cleared
+    if (!isConnected) {
+        this.claimedBoothId = '';
     }
 };
 
@@ -87,7 +76,7 @@ PlayerData.prototype.clearClaimedBooth = function(reason) {
 };
 
 PlayerData.prototype.destroy = function() {
-    this.app.off('auth:stateChanged', this.handleAuthStateChange, this);
+    this.app.off('auth:stateChanged', this.onAuthStateChanged, this);
     this.app.off('booth:claimSuccess', this.handleBoothClaimSuccess, this);
     this.app.off('booth:updated', this.handleBoothStateChange, this);
     this.app.off('booth:added', this.handleBoothStateChange, this);
