@@ -1,10 +1,20 @@
 // C:\Users\Epic\Documents\GitHub\pg-frontend\Scripts\Core\PrivyManager.js
 var PrivyManager = pc.createScript('privyManager');
 
+function generateNonce(length = 32) {
+    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+    let result = '';
+    for (let i = 0; i < length; i++) {
+        result += chars.charAt(Math.floor(Math.random() * chars.length));
+    }
+    return result;
+}
+
 PrivyManager.prototype.initialize = function () {
     this.user = null;
     this.authenticated = false;
     this.ready = false;
+    this._pendingNonce = null;
 
     this.twitterHandle = null;
     this.twitterUserId = null;
@@ -243,6 +253,13 @@ PrivyManager.prototype.handleAuthMessage = function (event) {
     if (!data || typeof data !== 'object') {
         return;
     }
+
+    if (!this._pendingNonce || data.nonce !== this._pendingNonce) {
+        console.warn('PrivyManager: Received message with invalid nonce. Ignoring.');
+        return;
+    }
+    // Clear the nonce after it's been used
+    this._pendingNonce = null;
 
     const type = data.type;
     const payload = data.payload || {};
@@ -511,7 +528,8 @@ PrivyManager.prototype.openPrivyWindow = function (url, name) {
 PrivyManager.prototype.login = function () {
     const performLogin = () => {
         console.log('PrivyManager: Starting login process...');
-        const loginUrl = this.buildPrivyUrl({ action: 'login' });
+        this._pendingNonce = generateNonce();
+        const loginUrl = this.buildPrivyUrl({ action: 'login', nonce: this._pendingNonce });
         return this.openPrivyWindow(loginUrl, 'privy-auth');
     };
 
@@ -527,7 +545,8 @@ PrivyManager.prototype.logout = function () {
     const performLogout = () => {
         console.log('PrivyManager: Starting logout process...');
 
-        const logoutUrl = this.buildPrivyUrl({ action: 'logout' });
+        this._pendingNonce = generateNonce();
+        const logoutUrl = this.buildPrivyUrl({ action: 'logout', nonce: this._pendingNonce });
         return this.openPrivyWindow(logoutUrl, 'privy-logout');
     };
 
@@ -542,7 +561,8 @@ PrivyManager.prototype.logout = function () {
 PrivyManager.prototype.linkTwitter = function () {
     const performLink = () => {
         console.log('PrivyManager: Starting Twitter link process...');
-        const linkUrl = this.buildPrivyUrl({ action: 'linkTwitter' });
+        this._pendingNonce = generateNonce();
+        const linkUrl = this.buildPrivyUrl({ action: 'linkTwitter', nonce: this._pendingNonce });
         return this.openPrivyWindow(linkUrl, 'privy-link-twitter');
     };
 
