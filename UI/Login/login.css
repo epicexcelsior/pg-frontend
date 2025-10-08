@@ -1,10 +1,27 @@
-@keyframes gradientBackground {
+/* Use CSS custom properties for theming */
+:root {
+    --login-primary: #1d9bf0;
+    --login-primary-2: #1d77f2;
+    --login-accent: #1df2a4;
+    --login-accent-2: #1de8f2;
+    --login-surface: rgba(17, 17, 17, 0.92);
+    --login-surface-2: rgba(34, 34, 34, 0.95);
+    --login-text: #ffffff;
+    --login-text-muted: rgba(255, 255, 255, 0.85);
+    --login-text-dark: #111111;
+    --login-font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    --login-font-size-small: 12px;
+    --login-font-size-medium: 14px;
+    --login-font-size-large: 16px;
+    --login-font-size-xlarge: 20px;
+    --login-border-radius: 14px;
+    --login-box-shadow: 0 18px 36px rgba(0, 0, 0, 0.35);
+}
 
-    0%,
-    100% {
+@keyframes gradientBackground {
+    0%, 100% {
         background-position: 0% 50%;
     }
-
     50% {
         background-position: 100% 50%;
     }
@@ -19,26 +36,28 @@
     display: flex;
     justify-content: center;
     align-items: center;
-    background: linear-gradient(-45deg, #9945FF, #14F195, #9945FF, #14F195);
+    background: linear-gradient(-45deg, var(--login-primary), var(--login-accent), var(--login-primary), var(--login-accent));
     background-size: 400% 400%;
     animation: gradientBackground 30s ease infinite;
     z-index: 1000;
     padding: 20px;
     box-sizing: border-box;
+    font-family: var(--login-font-family);
 }
 
 #login-form {
-    background-color: rgba(255, 255, 255, 0.6);
+    background-color: var(--login-surface);
     border: 3px solid rgba(255, 255, 255, 0.7);
-    /*backdrop-filter: blur(10px);*/
-    box-shadow: 0 8px 20px rgba(0, 0, 0, 0.25);
-    border-radius: 12px;
+    backdrop-filter: blur(10px);
+    box-shadow: var(--login-box-shadow);
+    border-radius: var(--login-border-radius);
     padding: 40px;
     text-align: center;
     position: relative;
     overflow: hidden;
     max-width: 420px;
     width: 100%;
+    color: var(--login-text);
 }
 
 #logo-container {
@@ -62,8 +81,9 @@
     border-radius: 8px;
     border: 2px solid rgba(255, 255, 255, 0.8);
     background-color: rgba(255, 255, 255, 0.9);
-    color: #222;
-    font-size: 16px;
+    color: var(--login-text-dark);
+    font-size: var(--login-font-size-large);
+    font-family: var(--login-font-family);
     transition: box-shadow 0.3s;
     text-align: center;
 }
@@ -81,10 +101,11 @@
     padding: 12px 25px;
     border: none;
     border-radius: 8px;
-    background: linear-gradient(135deg, #43e97b, #38f9d7);
+    background: linear-gradient(135deg, var(--login-accent), var(--login-accent-2));
     color: white;
     font-weight: 700;
-    font-size: 18px;
+    font-size: var(--login-font-size-xlarge);
+    font-family: var(--login-font-family);
     cursor: pointer;
     transition: transform 0.2s, box-shadow 0.3s;
 }
@@ -101,8 +122,9 @@
 
 #login-info {
     margin-top: 25px;
-    font-size: 14px;
-    color: #fff;
+    font-size: var(--login-font-size-medium);
+    color: var(--login-text);
+    font-family: var(--login-font-family);
     text-shadow: 0 1px 3px rgba(0, 0, 0, 0.6);
     line-height: 1.6;
 }
@@ -113,7 +135,7 @@
 }
 
 #login-info .warning {
-    color: #000000;
+    color: #ffffff;
     font-weight: bold;
     margin: 15px 0;
     padding: 10px;
@@ -130,22 +152,24 @@
 }
 
 .social-links p {
-    color: #fff;
-    font-size: 1.125em;
+    color: var(--login-text);
+    font-size: var(--login-font-size-large);
+    font-family: var(--login-font-family);
     margin: 0;
     line-height: 1.5;
     text-shadow: 0 1px 3px rgba(0, 0, 0, 0.6);
 }
 
 #login-form a {
-    color: #9945FF;
+    color: var(--login-primary);
     text-decoration: none;
     font-weight: bold;
+    font-family: var(--login-font-family);
     padding: 5px 10px;
     transition: color 0.2s ease;
 }
 
 #login-form a:hover {
-    color: #14F195;
+    color: var(--login-accent);
     text-decoration: underline;
 }

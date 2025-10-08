@@ -1,3 +1,23 @@
+/* Use CSS custom properties for theming */
+:root {
+    --tutorial-primary: #1d9bf0;
+    --tutorial-primary-2: #1d77f2;
+    --tutorial-accent: #1df2a4;
+    --tutorial-accent-2: #1de8f2;
+    --tutorial-surface: rgba(17, 17, 17, 0.92);
+    --tutorial-surface-2: rgba(34, 34, 34, 0.95);
+    --tutorial-text: #ffffff;
+    --tutorial-text-muted: rgba(255, 255, 255, 0.85);
+    --tutorial-text-dark: #111111;
+    --tutorial-font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    --tutorial-font-size-small: 12px;
+    --tutorial-font-size-medium: 14px;
+    --tutorial-font-size-large: 16px;
+    --tutorial-font-size-xlarge: 20px;
+    --tutorial-border-radius: 14px;
+    --tutorial-box-shadow: 0 18px 36px rgba(0, 0, 0, 0.35);
+}
+
 /* Reset any inherited styles */
 #tutorial-container,
 #tutorial-container * {
@@ -33,14 +53,15 @@ body > #tutorial-container.hidden {
 /* Content wrapper with guaranteed visibility */
 body > #tutorial-container > #tutorial-content-wrapper {
     position: relative !important;
-    background-color: #ffffff !important;
-    color: #222 !important;
+    background-color: var(--tutorial-surface) !important;
+    color: var(--tutorial-text) !important;
+    font-family: var(--tutorial-font-family) !important;
     padding: 30px !important;
-    border-radius: 12px !important;
+    border-radius: var(--tutorial-border-radius) !important;
     width: 90% !important;
     max-width: 600px !important;
     border: 3px solid rgba(255, 255, 255, 0.7) !important;
-    box-shadow: 0 8px 20px rgba(0, 0, 0, 0.25) !important;
+    box-shadow: var(--tutorial-box-shadow) !important;
     margin: 0 auto !important;
     transform: translateY(100%) !important;
     opacity: 0 !important;
@@ -61,15 +82,17 @@ body > #tutorial-container > #tutorial-content-wrapper.tutorial-visible {
     margin: 0 0 20px 0 !important;
     font-size: 2em !important;
     text-align: center !important;
-    color: #222 !important;
+    color: var(--tutorial-text) !important;
+    font-family: var(--tutorial-font-family) !important;
     font-weight: bold !important;
 }
 
 #tutorial-content-wrapper p {
     margin: 0 0 20px 0 !important;
-    font-size: 1.2em !important;
+    font-size: var(--tutorial-font-size-large) !important;
+    font-family: var(--tutorial-font-family) !important;
     line-height: 1.6 !important;
-    color: #333 !important;
+    color: var(--tutorial-text-muted) !important;
 }
 
 #tutorial-content-wrapper ul {
@@ -80,13 +103,14 @@ body > #tutorial-container > #tutorial-content-wrapper.tutorial-visible {
 
 #tutorial-content-wrapper ul li {
     margin-bottom: 10px !important;
-    color: #222 !important;
-    font-size: 1.1em !important;
+    color: var(--tutorial-text) !important;
+    font-size: var(--tutorial-font-size-large) !important;
+    font-family: var(--tutorial-font-family) !important;
     line-height: 1.8 !important;
 }
 
 #tutorial-content-wrapper ul li.warning {
-    color: #000000 !important;
+    color: #ffffff !important;
     font-weight: bold !important;
     margin: 15px 0 !important;
     padding: 10px !important;
@@ -96,8 +120,89 @@ body > #tutorial-container > #tutorial-content-wrapper.tutorial-visible {
 }
 
 #tutorial-content-wrapper ul li strong {
-    color: #2193b0 !important;
+    color: var(--tutorial-primary) !important;
     font-weight: bold !important;
+}
+
+/* Warning section */
+.warning-section {
+    margin: 20px 0 !important;
+}
+
+.warning-section .warning {
+    color: #ffffff !important;
+    font-weight: bold !important;
+    margin: 15px 0 !important;
+    padding: 15px !important;
+    border: 2px solid #ff4d4d !important;
+    border-radius: 8px !important;
+    background-color: rgba(255, 77, 77, 0.1) !important;
+    font-size: var(--tutorial-font-size-large) !important;
+    font-family: var(--tutorial-font-family) !important;
+    line-height: 1.6 !important;
+}
+
+/* Controls section */
+.controls-section {
+    margin: 20px 0 !important;
+    text-align: center !important;
+}
+
+.controls-section p {
+    font-size: var(--tutorial-font-size-large) !important;
+    font-family: var(--tutorial-font-family) !important;
+    color: var(--tutorial-text) !important;
+    margin: 0 !important;
+}
+
+/* Instructions container - horizontal layout */
+.instructions-container {
+    display: flex !important;
+    gap: 20px !important;
+    margin: 30px 0 !important;
+    justify-content: center !important;
+    flex-wrap: wrap !important;
+}
+
+.instruction-card {
+    flex: 1 !important;
+    min-width: 200px !important;
+    max-width: 300px !important;
+    background: var(--tutorial-surface-2) !important;
+    border: 2px solid var(--tutorial-primary) !important;
+    border-radius: var(--tutorial-border-radius) !important;
+    padding: 25px !important;
+    text-align: center !important;
+    box-shadow: var(--tutorial-box-shadow) !important;
+}
+
+.instruction-card h3 {
+    color: var(--tutorial-primary) !important;
+    font-size: 1.5em !important;
+    font-family: var(--tutorial-font-family) !important;
+    font-weight: bold !important;
+    margin: 0 0 15px 0 !important;
+}
+
+.instruction-card p {
+    color: var(--tutorial-text-muted) !important;
+    font-size: var(--tutorial-font-size-large) !important;
+    font-family: var(--tutorial-font-family) !important;
+    margin: 0 !important;
+    line-height: 1.5 !important;
+}
+
+/* Twitter integration section */
+.twitter-integration {
+    margin: 20px 0 !important;
+    text-align: center !important;
+}
+
+.twitter-integration p {
+    font-size: var(--tutorial-font-size-large) !important;
+    font-family: var(--tutorial-font-family) !important;
+    color: var(--tutorial-text-muted) !important;
+    margin: 0 !important;
 }
 
 /* Social links section */
@@ -109,21 +214,23 @@ body > #tutorial-container > #tutorial-content-wrapper.tutorial-visible {
 }
 
 .social-links p {
-    color: #666 !important;
-    font-size: 0.9em !important;
+    color: var(--tutorial-text-muted) !important;
+    font-size: var(--tutorial-font-size-medium) !important;
+    font-family: var(--tutorial-font-family) !important;
     margin: 0 !important;
 }
 
 /* Link styles */
 #tutorial-content-wrapper a {
-    color: #2193b0 !important;
+    color: var(--tutorial-primary) !important;
     text-decoration: none !important;
     font-weight: bold !important;
+    font-family: var(--tutorial-font-family) !important;
     transition: color 0.2s ease !important;
 }
 
 #tutorial-content-wrapper a:hover {
-    color: #38f9d7 !important;
+    color: var(--tutorial-accent) !important;
     text-decoration: underline !important;
 }
 
@@ -137,11 +244,12 @@ body > #tutorial-container > #tutorial-content-wrapper.tutorial-visible {
 
 #tutorial-content-wrapper .tutorial-button {
     padding: 12px 35px !important;
-    background: linear-gradient(135deg, #43e97b, #38f9d7) !important;
+    background: linear-gradient(135deg, var(--tutorial-accent), var(--tutorial-accent-2)) !important;
     color: white !important;
     border: none !important;
     border-radius: 8px !important;
-    font-size: 1.2em !important;
+    font-size: var(--tutorial-font-size-xlarge) !important;
+    font-family: var(--tutorial-font-family) !important;
     font-weight: 700 !important;
     cursor: pointer !important;
     transition: transform 0.2s, box-shadow 0.3s !important;
