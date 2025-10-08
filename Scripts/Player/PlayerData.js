@@ -1,107 +1,117 @@
-// Scripts/Player/PlayerData.js
+﻿// C:\Users\Epic\Documents\GitHub\pg-frontend\Scripts\Player\PlayerData.js
 var PlayerData = pc.createScript('playerData');
 
 PlayerData.prototype.initialize = function() {
-    console.log("PlayerData initializing for entity:", this.entity.name);
-
-    // Initialize player-specific data
-    this.walletAddress = "";
-    this.username = "";
+    this.walletAddress = null;
+    this.username = localStorage.getItem('userName') || "";
     this.claimedBoothId = "";
-    // Add other relevant player data fields as needed
+    this.twitterHandle = "";
+    this.twitterUserId = "";
 
-    // Listen for updates from AuthService or Network sync events
-    this.app.on('player:data:update', this.updateData, this);
-    this.app.on('auth:stateChanged', this.handleAuthStateChange, this); // Listen for auth changes too
-    this.app.on('booth:claimSuccess', this.handleBoothClaimSuccess, this); // Listen for successful claims
-
-    // Initial population if auth service is already connected when this initializes
-    const authService = this.app.services?.get('authService');
-    if (authService && authService.isAuthenticated()) {
-        this.walletAddress = authService.getWalletAddress();
-        console.log("PlayerData: Initial wallet address set from AuthService:", this.walletAddress);
-    }
-     // Initial username (might come from localStorage or network later)
-     this.username = window.userName || ""; // Use global temporarily, replace with event/service later
-     console.log("PlayerData: Initial username set:", this.username);
-
+    this.app.on('auth:stateChanged', this.onAuthStateChanged, this);
+    this.app.on('booth:claimSuccess', this.handleBoothClaimSuccess, this);
+    this.app.on('booth:updated', this.handleBoothStateChange, this);
+    this.app.on('booth:added', this.handleBoothStateChange, this);
 };
 
-PlayerData.prototype.updateData = function(data) {
-    console.log("PlayerData: Received data update:", data);
-    let changed = false;
-    if (data.hasOwnProperty('walletAddress') && this.walletAddress !== data.walletAddress) {
-        this.walletAddress = data.walletAddress;
-        console.log("PlayerData: Wallet address updated to:", this.walletAddress);
-        changed = true;
-    }
-    if (data.hasOwnProperty('username') && this.username !== data.username) {
-        this.username = data.username;
-        console.log("PlayerData: Username updated to:", this.username);
-        changed = true;
-    }
-    if (data.hasOwnProperty('claimedBoothId') && this.claimedBoothId !== data.claimedBoothId) {
-        this.claimedBoothId = data.claimedBoothId;
-        console.log("PlayerData: Claimed Booth ID updated to:", this.claimedBoothId);
-        changed = true;
-    }
-    // Add checks for other data fields
+PlayerData.prototype.onAuthStateChanged = function (event) {
+    const { state, address, user } = event;
+    const isConnected = state === 'connected';
 
-    if (changed) {
-        // Fire an event if data actually changed, so other components can react
+    console.log('PlayerData: onAuthStateChanged event received.', { isConnected, walletAddress: address, user });
+
+    const newAddress = (isConnected && address) ? address : '';
+    const normalizedTwitterHandle = typeof event.twitterHandle === 'string'
+        ? event.twitterHandle
+        : (event.twitterIdentity && typeof event.twitterIdentity.handle === 'string' ? event.twitterIdentity.handle : '');
+    const normalizedTwitterUserId = typeof event.twitterUserId === 'string'
+        ? event.twitterUserId
+        : (event.twitterIdentity && event.twitterIdentity.userId != null ? String(event.twitterIdentity.userId) : '');
+
+    const walletChanged = this.walletAddress !== newAddress;
+    const twitterHandleChanged = this.twitterHandle !== normalizedTwitterHandle;
+    const twitterUserIdChanged = this.twitterUserId !== normalizedTwitterUserId;
+
+    if (walletChanged) {
+        this.walletAddress = newAddress;
+        console.log(`PlayerData: Wallet address set to: ${this.walletAddress}`);
+    }
+
+    if (twitterHandleChanged) {
+        this.twitterHandle = normalizedTwitterHandle;
+        console.log(`PlayerData: Twitter handle set to: ${this.twitterHandle || '(none)'}`);
+    }
+
+    if (twitterUserIdChanged) {
+        this.twitterUserId = normalizedTwitterUserId;
+    }
+
+    if (walletChanged || twitterHandleChanged || twitterUserIdChanged) {
+        // Inform the server of the new address / social state
+        this.app.fire('network:send', 'updateAddress', {
+            walletAddress: this.walletAddress || '',
+            twitterHandle: this.twitterHandle || '',
+            twitterUserId: this.twitterUserId || ''
+        });
+
+        // Inform the rest of the client app that data has changed
+        console.log('PlayerData: Firing player:data:changed event.');
         this.app.fire('player:data:changed', this);
+    }
+
+    // If logging out, ensure claimed booth is cleared
+    if (!isConnected) {
+        this.claimedBoothId = '';
+        this.twitterHandle = '';
+        this.twitterUserId = '';
     }
 };
 
 PlayerData.prototype.handleBoothClaimSuccess = function(data) {
-    // data likely contains { boothId: string, claimedBy: string } from the server via MessageBroker
-    console.log("PlayerData: Received booth:claimSuccess event:", data);
-    // Use 'claimedBy' to match the property name sent by the server/MessageBroker
-    if (data && data.claimedBy && data.boothId) {
-        // Check if the claimer is the local player using the correct property name
-        if (this.walletAddress && data.claimedBy === this.walletAddress) {
-            console.log(`PlayerData: Local player (${this.walletAddress}) claimed booth ${data.boothId}. Updating claimedBoothId via claimSuccess event.`);
-            this.updateData({ claimedBoothId: data.boothId });
-        } else if (this.walletAddress) {
-             console.log(`PlayerData: Booth ${data.boothId} claimed by another player (${data.claimedBy}), not local player (${this.walletAddress}). No local update needed from claimSuccess event.`);
-        } else {
-             console.log(`PlayerData: Booth ${data.boothId} claimed by ${data.claimedBy}, but local player address is not set yet. No local update needed from claimSuccess event.`);
+    if (data && data.claimedBy && data.boothId && data.claimedBy === this.walletAddress) {
+        if (this.claimedBoothId !== data.boothId) {
+            this.claimedBoothId = data.boothId;
+            console.log(`PlayerData: Confirmed claim of booth ${this.claimedBoothId}.`);
+            this.app.fire('player:data:changed', this);
         }
-    } else {
-        console.warn("PlayerData: Received booth:claimSuccess event with missing data:", data);
     }
 };
 
-PlayerData.prototype.handleAuthStateChange = function(authStateData) {
-    // Update wallet address based on auth state
-    if (authStateData.state === 'connected') {
-        if (this.walletAddress !== authStateData.address) {
-            this.updateData({ walletAddress: authStateData.address });
-        }
-    } else if (authStateData.state === 'disconnected') {
-         if (this.walletAddress !== null) {
-            this.updateData({ walletAddress: null }); // Clear address on disconnect
-         }
+PlayerData.prototype.handleBoothStateChange = function(data) {
+    if (!data || !data.boothId) {
+        return;
+    }
+
+    if (this.walletAddress && data.claimedBy === this.walletAddress && this.claimedBoothId !== data.boothId) {
+        this.claimedBoothId = data.boothId;
+        this.app.fire('player:data:changed', this);
+        return;
+    }
+
+    if (this.claimedBoothId === data.boothId && data.claimedBy !== this.walletAddress) {
+        this.clearClaimedBooth('booth:state_sync');
     }
 };
 
-// --- Getters for convenience ---
-PlayerData.prototype.getWalletAddress = function() {
-    return this.walletAddress;
+PlayerData.prototype.clearClaimedBooth = function(reason) {
+    if (!this.claimedBoothId) {
+        return;
+    }
+
+    console.log(`PlayerData: Clearing claimed booth due to ${reason}.`);
+    this.claimedBoothId = "";
+    this.app.fire('player:data:changed', this);
 };
 
-PlayerData.prototype.getUsername = function() {
-    return this.username;
+PlayerData.prototype.destroy = function() {
+    this.app.off('auth:stateChanged', this.onAuthStateChanged, this);
+    this.app.off('booth:claimSuccess', this.handleBoothClaimSuccess, this);
+    this.app.off('booth:updated', this.handleBoothStateChange, this);
+    this.app.off('booth:added', this.handleBoothStateChange, this);
 };
 
-PlayerData.prototype.getClaimedBoothId = function() {
-    return this.claimedBoothId;
-};
+// --- GETTERS ---
+PlayerData.prototype.getWalletAddress = function() { return this.walletAddress; };
+PlayerData.prototype.getUsername = function() { return this.username; };
+PlayerData.prototype.getClaimedBoothId = function() { return this.claimedBoothId; };
 
-
-// swap method called for script hot-reloading
-// inherit your script state here
-// PlayerData.prototype.swap = function(old) { };
-
-// to learn more about script anatomy, please read:
-// https://developer.playcanvas.com/en/user-manual/scripting/

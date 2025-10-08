@@ -82,6 +82,7 @@ TouchJoystick.prototype.initialize = function() {
     this._setAxisValues(0, 0);
     this._inputDown = false;
     this._pointerId = -1;
+    this._chatFocused = false; // Track chat focus state
 
     this._canVibrate = !!navigator.vibrate;
 
@@ -95,7 +96,14 @@ TouchJoystick.prototype.initialize = function() {
         if (window.touchJoypad) {
             window.touchJoypad.sticks[this.identifier] = undefined;
         }
+        // Clean up chat focus listeners
+        this.app.off('ui:chat:focus', this.onChatFocus, this);
+        this.app.off('ui:chat:blur', this.onChatBlur, this);
     });
+
+    // Listen for chat focus/blur events
+    this.app.on('ui:chat:focus', this.onChatFocus, this);
+    this.app.on('ui:chat:blur', this.onChatBlur, this);
 
     this._setEvents('on');
 };
@@ -199,6 +207,9 @@ TouchJoystick.prototype._onTouchUp = function (e) {
 };
 
 TouchJoystick.prototype._onPointerDown = function (pointer) {
+    // Don't respond to input if chat is focused
+    if (this._chatFocused) return;
+    
     const uiPos = this.screenToUi(pointer);
     switch (this.type) {
         case 'drag':
@@ -316,6 +327,22 @@ TouchJoystick.prototype._setButtonState = function (state) {
     }
 
     this._state = state;
+};
+
+TouchJoystick.prototype.onChatFocus = function() {
+    this._chatFocused = true;
+    // Reset joystick state when chat is focused
+    this._setAxisValues(0, 0);
+    this._setButtonState(false);
+    this._pointerDown = false;
+    this._pointerId = -1;
+    this.nubEntity.setLocalPosition(0, 0, 0);
+    console.log("TouchJoystick: Chat focused - input disabled");
+};
+
+TouchJoystick.prototype.onChatBlur = function() {
+    this._chatFocused = false;
+    console.log("TouchJoystick: Chat blurred - input enabled");
 };
 
 // swap method called for script hot-reloading

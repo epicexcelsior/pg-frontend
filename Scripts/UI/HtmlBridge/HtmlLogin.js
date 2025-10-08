@@ -68,12 +68,59 @@ HtmlLoginManager.prototype._createHtml = function(htmlResource) {
     // Add click handler with bound method
     if (this.playButtonEl) {
         this.playButtonEl.addEventListener('click', this._boundOnSubmitClick);
+        // Add hover sound effect
+        this.playButtonEl.addEventListener('mouseenter', () => {
+            this.app.fire('ui:playSound', 'ui_hover_default');
+        });
     }
+
+    // Add sound effects to input field
+    if (this.usernameInputEl) {
+        this.usernameInputEl.addEventListener('focus', () => {
+            this.app.fire('ui:playSound', 'ui_click_default');
+        });
+    }
+
+    // Apply theme if available
+    this._applyTheme();
 };
 
 HtmlLoginManager.prototype.setLoginLogoSource = function() {
     if (this.loginLogoEl && this.loginLogoTexture?.resource) {
         this.loginLogoEl.src = this.loginLogoTexture.getFileUrl();
+    }
+};
+
+HtmlLoginManager.prototype._applyTheme = function() {
+    // Apply theme variables to CSS custom properties if theme is available
+    if (this.app.uiManager && this.app.uiManager.getTheme) {
+        const theme = this.app.uiManager.getTheme();
+        const root = document.documentElement;
+        
+        if (theme.colors) {
+            root.style.setProperty('--login-primary', theme.colors.primary);
+            root.style.setProperty('--login-primary-2', theme.colors.primary2);
+            root.style.setProperty('--login-accent', theme.colors.accent);
+            root.style.setProperty('--login-accent-2', theme.colors.accent2);
+            root.style.setProperty('--login-surface', theme.colors.surface);
+            root.style.setProperty('--login-surface-2', theme.colors.surface2);
+            root.style.setProperty('--login-text', theme.colors.text);
+            root.style.setProperty('--login-text-muted', theme.colors.textMuted);
+            root.style.setProperty('--login-text-dark', theme.colors.textDark);
+        }
+        
+        if (theme.fonts) {
+            root.style.setProperty('--login-font-family', theme.fonts.family);
+            root.style.setProperty('--login-font-size-small', theme.fonts.size.small);
+            root.style.setProperty('--login-font-size-medium', theme.fonts.size.medium);
+            root.style.setProperty('--login-font-size-large', theme.fonts.size.large);
+            root.style.setProperty('--login-font-size-xlarge', theme.fonts.size.xlarge);
+        }
+        
+        if (theme.styles) {
+            root.style.setProperty('--login-border-radius', theme.styles.borderRadius);
+            root.style.setProperty('--login-box-shadow', theme.styles.boxShadow);
+        }
     }
 };
 
@@ -83,14 +130,18 @@ HtmlLoginManager.prototype.onSubmitClick = function() {
     const username = this.usernameInputEl.value.trim();
     if (!username) return;
 
-    window.userName = username;
+    // Play click sound
+    this.app.fire('ui:playSound', 'ui_click_default');
+
+    // Store username in localStorage
     localStorage.setItem('userName', username);
+    this.app.fire('user:setname', username);
 
-    if (this.playButtonEl) {
-        this.playButtonEl.disabled = true;
-        this.playButtonEl.innerText = "Loading...";
-    }
+    // Instead of directly connecting to a wallet, we just show the main UI
+    // The user will be prompted to log in when they try to perform an action (like claiming a booth).
+    // Or, we can have a dedicated login button. For now, we proceed to the game.
 
+    // Start scene preload if it hasn't started already
     if (!this.scenePreloader) {
         console.error("HtmlLoginManager: Preloader not found during submit.");
         if (this.playButtonEl) this.playButtonEl.innerText = "Error!";

@@ -93,6 +93,9 @@ HtmlChat.prototype.injectHtml = function(htmlResource) {
 
     this.messageInput.addEventListener('focus', this.onInputFocus.bind(this));
     this.messageInput.addEventListener('blur', this.onInputBlur.bind(this));
+    
+    // Set maximum character limit
+    this.messageInput.setAttribute('maxlength', '128');
 
     console.log("HtmlChat: HTML injected and elements found.");
 };
@@ -129,6 +132,7 @@ HtmlChat.prototype.sendMessage = function() {
         // Fire event for ChatController to handle sending
         this.app.fire('ui:chat:send', messageText);
         this.messageInput.value = ''; // Clear input field
+        this.messageInput.blur(); // Remove focus to return control to game
     }
 };
 

@@ -1,171 +1,275 @@
-///<reference path="c:\Users\Epic\.vscode-insiders\extensions\playcanvas.playcanvas-0.2.1\node_modules\playcanvas\build\playcanvas.d.ts"
-var PlayerMovement = pc.createScript('playerMovement');
+var PlayerMovement = pc.createScript("playerMovement");
 
-PlayerMovement.attributes.add('speed', { type: 'number', default: 0.09 });
-PlayerMovement.attributes.add('joystickId', { type: 'string', default: 'joystick0' }); // Joystick ID for movement
-PlayerMovement.attributes.add('interactButtonId', { type: 'string', default: 'interactButton' }); // Button ID for interact (E key)
+// --- movement tuning ---
+PlayerMovement.attributes.add("maxSpeed", { type: "number", default: 5.0 });
+PlayerMovement.attributes.add("acceleration", {
+  type: "number",
+  default: 22.0,
+});
+PlayerMovement.attributes.add("turnSpeed", { type: "number", default: 12.0 });
+PlayerMovement.attributes.add("stopSpeed", { type: "number", default: 0.05 });
 
-function normalizeAngle(angle) {
-    let newAngle = angle % 360;
-    if (newAngle < 0) newAngle += 360;
-    return newAngle;
+PlayerMovement.attributes.add("modelForwardOffsetY", {
+  type: "number",
+  default: 0,
+});
+
+// hysteresis
+PlayerMovement.attributes.add("moveOn", { type: "number", default: 0.18 });
+PlayerMovement.attributes.add("moveOff", { type: "number", default: 0.12 });
+
+// NEW: input gating + forward hold
+PlayerMovement.attributes.add("inputOn", {
+  type: "number",
+  default: 0.1,
+  title: "Input Threshold On",
+});
+PlayerMovement.attributes.add("inputOff", {
+  type: "number",
+  default: 0.06,
+  title: "Input Threshold Off",
+});
+PlayerMovement.attributes.add("forwardMinHold", {
+  type: "number",
+  default: 0.3,
+  title: "Forward Hold (s)",
+});
+
+// mobile ids
+PlayerMovement.attributes.add("joystickId", {
+  type: "string",
+  default: "joystick0",
+});
+PlayerMovement.attributes.add("interactButtonId", {
+  type: "string",
+  default: "interactButton",
+});
+
+function clamp01(v) {
+  return Math.min(1, Math.max(0, v));
+}
+function yawFromDirXZ(vx, vz) {
+  return Math.atan2(-vx, -vz) * pc.math.RAD_TO_DEG;
 }
 
 PlayerMovement.prototype.initialize = function () {
-    if (this.entity.name !== "LocalPlayer") {
-        this.enabled = false;
-        return;
+  this.isMobile = pc.platform.touch;
+  this.chatFocused = false; // Track if chat input is focused
+
+  var axis = this.entity.findByName("Camera Axis");
+  this.cameraScript = axis && axis.script ? axis.script.cameraMovement : null;
+
+  this.visualRoot =
+    this.entity.findByName("Armature") ||
+    this.entity.findByName("Wolf3D_Avatar") ||
+    this.entity;
+  this.baseLocalRot = this.visualRoot.getLocalRotation().clone();
+  this.lastMoveDir = new pc.Vec3();
+  this._tmpTargetVelocity = new pc.Vec3();
+  var initialEuler = this.visualRoot.getEulerAngles
+    ? this.visualRoot.getEulerAngles()
+    : null;
+  this._currentYaw = initialEuler ? initialEuler.y : 0;
+
+  if (this.entity.rigidbody) this.entity.rigidbody.angularFactor = pc.Vec3.ZERO;
+
+  // anim
+  this.animEnt = (function dfs(e) {
+    if (e.anim) return e;
+    for (var i = 0; i < e.children.length; i++) {
+      var r = dfs(e.children[i]);
+      if (r) return r;
     }
+    return null;
+  })(this.entity);
+  this.layer =
+    this.animEnt && this.animEnt.anim ? this.animEnt.anim.baseLayer : null;
 
-    var camera = this.entity.findByName("Camera Axis");
-    this.cameraScript = camera.script.cameraMovement;
-
-    this.lastReportedPos = this.entity.getPosition().clone();
-    this.updateInterval = 0.2;
-    this.timeSinceLastUpdate = 0;
-
-    this.isMobile = pc.platform.touch;
-    this.movementJoystickEntity = pc.app.root.findByName('MovementJoystick');
-    this.touchJoypadScreenEntity = pc.app.root.findByName('TouchJoypadScreen');
-
-    if (this.isMobile && this.touchJoypadScreenEntity) {
-        this.touchJoypadScreenEntity.enabled = true;
-    } else if (!this.isMobile && this.touchJoypadScreenEntity) {
-        this.touchJoypadScreenEntity.enabled = false;
+  if (this.animEnt && this.animEnt.anim) {
+    this.animEnt.anim.playing = true; // ensure component plays
+    this.animEnt.anim.speed = 1;
+  }
+  if (this.layer) {
+    this.layer.weight = 1;
+    if (!this.layer.activeState || this.layer.activeState === "START") {
+      if (this.layer.transition) this.layer.transition("Idle", 0);
+      else if (this.layer.play) this.layer.play("Idle");
     }
+  }
 
-    if (this.isMobile && this.movementJoystickEntity) {
-        this.movementJoystickEntity.enabled = true;
-    } else if (!this.isMobile && this.movementJoystickEntity) {
-        this.movementJoystickEntity.enabled = false;
-    }
+  // state & timers
+  this._state =
+    this.layer && this.layer.activeState ? this.layer.activeState : "Idle";
+  this._speedN = 0;
+  this._inputMag = 0;
+  this._lockUntil = 0; // while locked, we won't return to Idle
 
-    // --- ADDED: Initialize movement state and listeners ---
-    this.playerMovementEnabled = true;
-    this.app.on('ui:chat:focus', this.disableMovement, this);
-    this.app.on('ui:chat:blur', this.enableMovement, this);
-    this.app.on('tutorial:active', this.onTutorialActive, this);
-    // --- END ADDED ---
+  // input
+  this.inX = 0;
+  this.inZ = 0;
+
+  // hide mobile UI on desktop
+  if (!this.isMobile) {
+    (function hideDFS(e) {
+      var n = (e.name || "").toLowerCase();
+      if (
+        n.indexOf("joystick") !== -1 ||
+        n.indexOf("joypad") !== -1 ||
+        n.indexOf("touch") !== -1
+      )
+        e.enabled = false;
+      for (var i = 0; i < e.children.length; i++) hideDFS(e.children[i]);
+    })(this.app.root);
+  } else {
+    // Ensure mobile UI is visible on mobile
+    (function showDFS(e) {
+      var n = (e.name || "").toLowerCase();
+      if (
+        n.indexOf("joystick") !== -1 ||
+        n.indexOf("joypad") !== -1 ||
+        n.indexOf("touch") !== -1
+      )
+        e.enabled = true;
+      for (var i = 0; i < e.children.length; i++) showDFS(e.children[i]);
+    })(this.app.root);
+  }
+
+  console.log("[AnimInit]", {
+    playing: !!(this.animEnt && this.animEnt.anim && this.animEnt.anim.playing),
+    weight: this.layer ? this.layer.weight : "n/a",
+    active: this._state,
+  });
+
+  // Listen for chat focus/blur events to disable movement
+  this.app.on('ui:chat:focus', this.onChatFocus, this);
+  this.app.on('ui:chat:blur', this.onChatBlur, this);
 };
 
-PlayerMovement.prototype.disableMovement = function() {
-    this.playerMovementEnabled = false;
+PlayerMovement.prototype._cameraBasisXZ = function () {
+  var yaw =
+    this.cameraScript && typeof this.cameraScript.yaw === "number"
+      ? this.cameraScript.yaw
+      : 0;
+  var y = yaw * pc.math.DEG_TO_RAD;
+  var f = new pc.Vec3(-Math.sin(y), 0, -Math.cos(y)).normalize();
+  var r = new pc.Vec3(Math.cos(y), 0, -Math.sin(y)).normalize();
+  return { forward: f, right: r };
 };
 
-PlayerMovement.prototype.enableMovement = function() {
-    this.playerMovementEnabled = true;
-};
-
-PlayerMovement.prototype.onTutorialActive = function(isActive) {
-    if (isActive) {
-        this.disableMovement();
-    } else {
-        this.enableMovement();
+PlayerMovement.prototype._gatherInput = function () {
+  this.inX = 0;
+  this.inZ = 0;
+  
+  // Don't gather input if chat is focused
+  if (this.chatFocused) return;
+  
+  if (this.isMobile) {
+    var s =
+      window.touchJoypad && window.touchJoypad.sticks
+        ? window.touchJoypad.sticks[this.joystickId]
+        : null;
+    if (s) {
+      this.inX = pc.math.clamp(s.x, -1, 1);
+      this.inZ = pc.math.clamp(s.y, -1, 1);
     }
+  } else {
+    var kb = this.app.keyboard;
+    if (kb.isPressed(pc.KEY_A) || kb.isPressed(pc.KEY_LEFT)) this.inX -= 1;
+    if (kb.isPressed(pc.KEY_D) || kb.isPressed(pc.KEY_RIGHT)) this.inX += 1;
+    if (kb.isPressed(pc.KEY_W) || kb.isPressed(pc.KEY_UP)) this.inZ += 1;
+    if (kb.isPressed(pc.KEY_S) || kb.isPressed(pc.KEY_DOWN)) this.inZ -= 1;
+  }
 };
-
-PlayerMovement.worldDirection = new pc.Vec3();
-PlayerMovement.tempDirection = new pc.Vec3();
-
-// Add tracking for current input values
-PlayerMovement.prototype.currentInputX = 0;
-PlayerMovement.prototype.currentInputZ = 0;
 
 PlayerMovement.prototype.update = function (dt) {
-    if (window.isChatActive || !this.playerMovementEnabled) return;
+  if (!this.entity.rigidbody) return;
 
-    if (this.entity.name !== "LocalPlayer") return;
+  // keep component & layer alive
+  if (this.animEnt && this.animEnt.anim && !this.animEnt.anim.playing)
+    this.animEnt.anim.playing = true;
+  if (this.layer && this.layer.weight < 1) this.layer.weight = 1;
 
-    var app = this.app;
+  // input
+  this._gatherInput();
+  this._inputMag = Math.hypot(this.inX, this.inZ);
 
-    this.currentInputX = 0;
-    this.currentInputZ = 0;
-    
-    if (this.isMobile) {
-        if (window.touchJoypad && window.touchJoypad.sticks && window.touchJoypad.sticks[this.joystickId]) {
-            const joystick = window.touchJoypad.sticks[this.joystickId];
-            this.currentInputX = joystick.x;
-            this.currentInputZ = joystick.y;
-        }
-    } else {
-        if (app.keyboard.isPressed(pc.KEY_A)) this.currentInputX -= 1;
-        if (app.keyboard.isPressed(pc.KEY_D)) this.currentInputX += 1;
-        if (app.keyboard.isPressed(pc.KEY_W)) this.currentInputZ += 1;
-        if (app.keyboard.isPressed(pc.KEY_S)) this.currentInputZ -= 1;
-    }
+  var basis = this._cameraBasisXZ();
+  var moveDir = new pc.Vec3(0, 0, 0);
+  if (this._inputMag > 0) {
+    moveDir.add(basis.forward.clone().scale(this.inZ));
+    moveDir.add(basis.right.clone().scale(this.inX));
+    moveDir.normalize();
+  }
 
-    // Get camera yaw and normalize it
-    var yaw = this.cameraScript.yaw;
-    yaw = normalizeAngle(yaw);
-    var yawRad = yaw * pc.math.DEG_TO_RAD;
+  // physics vel
+  var rb = this.entity.rigidbody;
+  var currentVelocity = rb.linearVelocity.clone();
+  var targetVelocity = this._tmpTargetVelocity;
+  targetVelocity.set(
+    moveDir.x * this.maxSpeed,
+    currentVelocity.y,
+    moveDir.z * this.maxSpeed
+  );
 
-    // Calculate movement directions based on camera orientation
-    var forward = new pc.Vec3(-Math.sin(yawRad), 0, -Math.cos(yawRad));
-    var right = new pc.Vec3(Math.cos(yawRad), 0, -Math.sin(yawRad));
+  var blend = clamp01(this.acceleration * dt);
+  var next = new pc.Vec3().lerp(currentVelocity, targetVelocity, blend);
 
-    // Combine movement input
-    var move = new pc.Vec3();
-    move.add(forward.scale(this.currentInputZ));
-    move.add(right.scale(this.currentInputX));
-    
-    // Normalize movement vector if there's any input
-    if (move.length() > 0) {
-        move.normalize();
-        
-        // Only update rotation when actually moving
-        var targetRot = new pc.Quat().setFromEulerAngles(0, yaw, 0);
-        var currentRot = this.entity.getRotation();
-        currentRot.slerp(currentRot, targetRot, 0.15); // Smooth rotation
-        this.entity.setRotation(currentRot);
-    }
+  var speedXZ = Math.hypot(next.x, next.z);
+  if (speedXZ < this.stopSpeed && this._inputMag === 0) {
+    next.x = 0;
+    next.z = 0;
+    speedXZ = 0;
+  }
+  rb.linearVelocity = next;
 
-    // Update position
-    var newPos = this.entity.getPosition().clone();
-    newPos.add(move.scale(this.speed * dt));
+  if (speedXZ > 1e-4) {
+    this.lastMoveDir.set(next.x, 0, next.z);
+    this.lastMoveDir.normalize();
+  } else {
+    this.lastMoveDir.set(0, 0, 0);
+  }
 
-    this.entity.rigidbody.teleport(newPos);
+  if (next.x * next.x + next.z * next.z > 1e-6) {
+    var yawDeg = yawFromDirXZ(next.x, next.z) + this.modelForwardOffsetY;
+    var q = new pc.Quat().setFromEulerAngles(0, yawDeg, 0);
+    var tgt = this.baseLocalRot.clone().mul(q);
+    var cur = this.visualRoot.getLocalRotation().clone();
+    var s = clamp01(this.turnSpeed * dt);
+    this.visualRoot.setLocalRotation(new pc.Quat().slerp(cur, tgt, s));
+    this._currentYaw = yawDeg;
+  }
 
-    if (this.currentInputX !== 0 || this.currentInputZ !== 0) {
-        if (this.entity.anim) {
-            this.entity.anim.setFloat('xDirection', this.currentInputX);
-            this.entity.anim.setFloat('zDirection', this.currentInputZ);
-        }
-    } else {
-        if (this.entity.anim) {
-            this.entity.anim.setFloat('xDirection', 0);
-            this.entity.anim.setFloat('zDirection', 0);
-        }
-    }
+  var speedNormalized = Math.min(
+    1,
+    speedXZ / Math.max(0.0001, this.maxSpeed)
+  );
+  if (this.animEnt && this.animEnt.anim) {
+    this.animEnt.anim.setFloat("speed", speedNormalized);
+  }
 
-    this.timeSinceLastUpdate += dt;
-    var currentPos = this.entity.getPosition();
-    var dist = currentPos.distance(this.lastReportedPos);
+  var pos = this.entity.getPosition();
 
-    if (dist > 0.01 || this.timeSinceLastUpdate >= this.updateInterval) {
-        var rotation = yaw;
-        this.app.fire("player:move", {
-            x: currentPos.x,
-            y: currentPos.y,
-            z: currentPos.z,
-            rotation: normalizeAngle(rotation),
-            xDirection: this.currentInputX,
-            zDirection: this.currentInputZ
-        });
-        this.lastReportedPos.copy(currentPos);
-        this.timeSinceLastUpdate = 0;
-    }
-
-    if (this.isMobile) {
-        if (window.touchJoypad && window.touchJoypad.buttons && window.touchJoypad.buttons.wasPressed(this.interactButtonId)) {
-            this.simulateEKeyPress();
-        }
-    } else {
-        if (app.keyboard.wasPressed(pc.KEY_E)) {
-            this.simulateEKeyPress();
-        }
-    }
+  this.app.fire("player:move", {
+    x: pos.x,
+    y: pos.y,
+    z: pos.z,
+    rotation: this._currentYaw,
+    speed: speedNormalized,
+  });
 };
 
-PlayerMovement.prototype.simulateEKeyPress = function () {
-    this.app.fire('interact:keypress');
+PlayerMovement.prototype.onChatFocus = function() {
+  this.chatFocused = true;
+  console.log("PlayerMovement: Chat focused - movement disabled");
+};
+
+PlayerMovement.prototype.onChatBlur = function() {
+  this.chatFocused = false;
+  console.log("PlayerMovement: Chat blurred - movement enabled");
+};
+
+PlayerMovement.prototype.destroy = function() {
+  // Clean up event listeners
+  this.app.off('ui:chat:focus', this.onChatFocus, this);
+  this.app.off('ui:chat:blur', this.onChatBlur, this);
 };

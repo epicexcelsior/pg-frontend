@@ -21,6 +21,7 @@ TouchButton.prototype.initialize = function() {
     }
 
     this._canVibrate = !!navigator.vibrate;
+    this._chatFocused = false; // Track chat focus state
 
     this._setState(false);
 
@@ -32,7 +33,14 @@ TouchButton.prototype.initialize = function() {
         if (window.touchJoypad) {
             window.touchJoypad.buttonStates[this.identifier] = undefined;
         }
+        // Clean up chat focus listeners
+        this.app.off('ui:chat:focus', this.onChatFocus, this);
+        this.app.off('ui:chat:blur', this.onChatBlur, this);
     });
+
+    // Listen for chat focus/blur events
+    this.app.on('ui:chat:focus', this.onChatFocus, this);
+    this.app.on('ui:chat:blur', this.onChatBlur, this);
 
     this._setEvents('on');
 };
@@ -81,6 +89,9 @@ TouchButton.prototype._onTouchUp = function (e) {
 };
 
 TouchButton.prototype._onPointerDown = function () {
+    // Don't respond to input if chat is focused
+    if (this._chatFocused) return;
+    
     if (this._canVibrate && this.vibration !== 0) {
         navigator.vibrate(this.vibration);
     }
@@ -98,6 +109,18 @@ TouchButton.prototype._setState = function (state) {
     }
 
     this._state = state;
+};
+
+TouchButton.prototype.onChatFocus = function() {
+    this._chatFocused = true;
+    // Reset button state when chat is focused
+    this._setState(false);
+    console.log("TouchButton: Chat focused - input disabled");
+};
+
+TouchButton.prototype.onChatBlur = function() {
+    this._chatFocused = false;
+    console.log("TouchButton: Chat blurred - input enabled");
 };
 
 // swap method called for script hot-reloading

@@ -1,295 +1,275 @@
-// Scripts/Booths/BoothController.js
-var BoothController = pc.createScript('boothController');
+// C:\Users\Epic\Documents\GitHub\pg-frontend\Scripts\Booths\BoothController.js
+var BoothController = pc.createScript("boothController");
 
-BoothController.attributes.add('servicesEntity', { type: 'entity', title: 'Services Entity' });
-// Add attributes for the different UI prompt entities if needed,
-// or rely on firing events for a UIManager to handle.
-// Example:
-// BoothController.attributes.add('claimPromptEntity', { type: 'entity', title: 'Claim Prompt UI Entity' });
-// BoothController.attributes.add('donationPromptEntity', { type: 'entity', title: 'Donation Prompt UI Entity' });
-
-BoothController.prototype.initialize = function() {
-    console.log("BoothController initializing...");
-
-    this.authService = this.app.services?.get('authService'); // Get AuthService via registry
-    if (!this.authService) {
-        console.error("BoothController: AuthService not found via app.services. Booth interactions might fail.");
-    }
-
-    // Store the booth zone the player is currently inside
+BoothController.prototype.initialize = function () {
+    console.log("BoothController initializing as the orchestrator...");
     this.currentZoneScript = null;
+    this.pendingClaimBoothId = null;
+    this.isNetworkConnected = false;
+    this.boothEntitiesById = new Map();
+    this.boothsByOwner = new Map();
 
-    // Listen for booth zone enter/leave events (fired by BoothClaimZone)
-    this.app.on('booth:entered', this.onEnterZone, this);
-    this.app.on('booth:left', this.onLeaveZone, this);
-
-    // Listen for booth state updates from the network (fired by NetworkManager/BoothSync)
-    this.app.on('booth:updated', this.onBoothUpdated, this);
-
-    // Listen for claim errors from the network
-    this.app.on('booth:claimError', this.onClaimError, this);
-
-    // Listen for auth state changes
-    this.app.on('auth:stateChanged', this.onAuthStateChanged, this);
-
-    // Listen for local player data changes (e.g., claimedBoothId updated)
-    this.app.on('player:data:changed', this.onLocalPlayerDataChanged, this);
-
-    // Listen for successful claims to trigger effects
-    this.app.on('booth:claimSuccess', this.onClaimSuccess, this);
-
-    // Listen for donation confirmations to trigger booth donation effect
-    this.app.on('effects:donation', this.onDonationEffect, this);
-
-    console.log("BoothController initialized.");
+    this.app.on('colyseus:connected', this.onNetworkConnected, this);
+    this.app.on("booth:entered", this.onEnterZone, this);
+    this.app.on("booth:left", this.onLeaveZone, this);
+    this.app.on("booth:added", this.onBoothAdded, this);
+    this.app.on("booth:updated", this.onBoothUpdated, this);
+    this.app.on("booth:removed", this.onBoothRemoved, this);
+    this.app.on("auth:stateChanged", this.onAuthStateChanged, this);
+    this.app.on("player:data:changed", this.onLocalPlayerDataChanged, this);
+    this.app.on("booth:claim:request", this.handleClaimRequest, this);
+    this.app.on("booth:claimSuccess", this.onClaimSuccess, this);
+    this.app.on("effects:donation", this.onDonationEffect, this);
 };
-BoothController.prototype.onClaimSuccess = function(data) {
-    console.log("BoothController: Received booth:claimSuccess", data);
 
-    // Validate data
-    const boothId = data ? data.boothId : null;
+BoothController.prototype.getPrivyManager = function () {
+    const services = this.app.services;
+    if (services && services.registry && services.registry.privyManager) {
+        return services.registry.privyManager;
+    }
+    if (services && typeof services.get === 'function') {
+        try {
+            return services.get('privyManager') || null;
+        } catch (error) {
+            console.warn('BoothController: Failed to resolve PrivyManager service.', error);
+        }
+    }
+    return null;
+};
+
+BoothController.prototype.getLocalPlayerData = function () {
+    const localPlayerData = this.app.localPlayer?.script?.playerData || null;
+    if (localPlayerData) {
+        return localPlayerData;
+    }
+    const services = this.app.services;
+    if (services && services.registry && services.registry.playerData) {
+        return services.registry.playerData;
+    }
+    if (services && typeof services.get === 'function') {
+        const serviceInstance = services.get('playerData');
+        if (serviceInstance) {
+            return serviceInstance;
+        }
+    }
+    return null;
+};
+
+BoothController.prototype.handleClaimRequest = function(boothId) {
+    const privyManager = this.getPrivyManager();
+    const targetBoothId = typeof boothId === 'string' ? boothId : (boothId && boothId.boothId ? boothId.boothId : null);
+
+    if (!targetBoothId) {
+        console.warn('BoothController: handleClaimRequest invoked without a booth identifier.', boothId);
+        return;
+    }
+
+    if (!privyManager) {
+        console.warn('BoothController: PrivyManager service unavailable. Cannot process booth claim.');
+        return;
+    }
+
+    if (privyManager.isAuthenticated() && privyManager.getWalletAddress()) {
+        this.app.fire('booth:claimRequest', targetBoothId);
+        this.pendingClaimBoothId = null;
+    } else {
+        this.pendingClaimBoothId = targetBoothId;
+        privyManager.login();
+    }
+};
+
+BoothController.prototype.onBoothAdded = function (boothData) {
+    if (!boothData || !boothData.boothId) {
+        return;
+    }
+    const boothEntity = this.app.root.findByName(boothData.boothId) || null;
+    if (boothEntity) {
+        this.boothEntitiesById.set(boothData.boothId, boothEntity);
+    }
+    this.refreshBoothOwnership(boothData, boothEntity);
+};
+
+BoothController.prototype.onBoothRemoved = function (boothData) {
+    if (!boothData || !boothData.boothId) {
+        return;
+    }
+    this.boothEntitiesById.delete(boothData.boothId);
+    const boothId = boothData.boothId;
+    for (const [wallet, info] of this.boothsByOwner.entries()) {
+        if (info.boothId === boothId) {
+            this.boothsByOwner.delete(wallet);
+        }
+    }
+};
+
+BoothController.prototype.refreshBoothOwnership = function (boothData, boothEntity) {
+    const boothId = boothData?.boothId || boothEntity?.name;
     if (!boothId) {
-        console.warn("BoothController: claimSuccess event data did not contain 'boothId'.", data);
         return;
     }
 
-    // Find the main booth entity
-    const boothEntity = this.app.root.findByName(boothId);
-    if (!boothEntity) {
-        console.warn(`BoothController: Could not find booth entity named '${boothId}' to play effect.`);
-        return;
+    const resolvedEntity = boothEntity || this.boothEntitiesById.get(boothId) || this.app.root.findByName(boothId) || null;
+    if (resolvedEntity) {
+        this.boothEntitiesById.set(boothId, resolvedEntity);
     }
 
-    // Find the pre-placed effect entity by name (as confirmed in hierarchy)
-    const effectEntity = boothEntity.findByName('BoothClaimEffect');
-    if (!effectEntity) {
-        console.warn(`BoothController: Could not find child effect entity named 'BoothClaimEffect' on booth '${boothId}'.`);
-        return;
-    }
+    const claimedBy = boothData?.claimedBy || resolvedEntity?.script?.boothClaimZone?.claimedBy || '';
 
-    // Get the particle system component
-    const ps = effectEntity.particlesystem;
-    if (!ps) {
-        console.warn(`BoothController: No particle system component found on 'BoothClaimEffect' entity for booth '${boothId}'.`);
-        return;
-    }
-
-    // Trigger the effect
-    console.log(`BoothController: Triggering claim effect for booth ${boothId}`);
-    ps.reset(); // Reset to start state
-    ps.play();  // Play the effect (ensure loop=false in editor template)
-
-};
-
-BoothController.prototype.onDonationEffect = function(data) {
-    console.log("BoothController: Received effects:donation", data);
-
-    const recipient = data ? data.recipient : null;
-    if (!recipient || typeof recipient !== 'string') {
-        console.warn("BoothController: effects:donation missing valid 'recipient'.", data);
-        return;
-    }
-
-    // Traverse scene to find booth entities whose BoothClaimZone is claimed by recipient
-    /** @type {pc.Entity[]} */
-    const matchingBooths = [];
-    const traverseAndCollect = (entity) => {
-        if (!entity) return;
-        if (entity.script && entity.script.boothClaimZone) {
-            const zone = entity.script.boothClaimZone;
-            if (zone && zone.claimedBy === recipient) {
-                matchingBooths.push(entity);
-            }
+    for (const [wallet, info] of this.boothsByOwner.entries()) {
+        if (info.boothId === boothId) {
+            this.boothsByOwner.delete(wallet);
         }
-        const children = entity.children || [];
-        for (var i = 0; i < children.length; i++) {
-            traverseAndCollect(children[i]);
-        }
-    };
-    traverseAndCollect(this.app.root);
-
-    if (matchingBooths.length === 0) {
-        console.warn(`BoothController: No booth with claimedBy '${recipient}' found to play donation effect.`);
-        return;
     }
 
-    for (var b = 0; b < matchingBooths.length; b++) {
-        var boothEntity = matchingBooths[b];
-        var boothId = boothEntity?.name || '(unknown)';
-
-        // Find the pre-placed donation effect entity by name
-        const effectEntity = boothEntity.findByName('BoothDonateEffect');
-        if (!effectEntity) {
-            console.warn(`BoothController: Could not find child effect entity named 'BoothDonateEffect' on booth '${boothId}'.`);
-            continue;
-        }
-
-        // Get the particle system component
-        const ps = effectEntity.particlesystem;
-        if (!ps) {
-            console.warn(`BoothController: No particle system on 'BoothDonateEffect' for booth '${boothId}'.`);
-            continue;
-        }
-
-        console.log(`BoothController: Triggering donation effect for booth ${boothId} (recipient ${recipient})`);
-        ps.reset();
-        ps.play();
+    if (claimedBy) {
+        this.boothsByOwner.set(claimedBy, { boothId: boothId, entity: resolvedEntity });
     }
 };
 
-BoothController.prototype.onEnterZone = function(boothZoneScript) {
-    console.log('BoothController: onEnterZone called for booth ' + boothZoneScript.boothId); // Added logging
+// FIX: This function no longer fires the claim. It just sets up the expectation.
+BoothController.prototype.onAuthStateChanged = function (authStateData) {
+    if (this.pendingClaimBoothId && authStateData.isAuthenticated && authStateData.address) {
+        console.log("BoothController: Auth complete. Waiting for PlayerData to confirm address sync.");
+        // We now wait for onLocalPlayerDataChanged to fire the pending claim.
+    }
+    if (this.currentZoneScript) {
+        this.decideAndShowPrompt();
+    }
+};
+
+// FIX: This is the new final step in the claim flow.
+BoothController.prototype.onLocalPlayerDataChanged = function() {
+    const playerData = this.getLocalPlayerData();
+    if (this.pendingClaimBoothId && this.isNetworkConnected && playerData && typeof playerData.getWalletAddress === 'function' && playerData.getWalletAddress()) {
+        this.app.fire('booth:claimRequest', this.pendingClaimBoothId);
+        this.pendingClaimBoothId = null;
+    }
+
+    if (this.currentZoneScript) {
+        this.decideAndShowPrompt();
+    }
+};
+
+BoothController.prototype.onEnterZone = function (boothZoneScript) {
     this.currentZoneScript = boothZoneScript;
     this.decideAndShowPrompt();
 };
 
-BoothController.prototype.onLeaveZone = function(boothZoneScript) {
+BoothController.prototype.onLeaveZone = function (boothZoneScript) {
     if (this.currentZoneScript === boothZoneScript) {
-        console.log(`BoothController: Left zone for booth ${boothZoneScript.boothId}`);
         this.currentZoneScript = null;
-        // Hide any active prompts immediately
-        this.app.fire('ui:hideClaimPrompt');
-        this.app.fire('ui:hideDonationPrompt');
+        this.app.fire("ui:hideClaimPrompt");
+        this.app.fire("ui:hideDonationPrompt");
     }
 };
 
-BoothController.prototype.onBoothUpdated = function(boothData) {
-    console.log(`BoothController: Received booth:updated for booth ${boothData.boothId}. Claimed by: ${boothData.claimedBy || 'None'}, Username: ${boothData.claimedByUsername || 'None'}`);
-
-    // Find the corresponding booth entity in the scene
+BoothController.prototype.onBoothUpdated = function (boothData) {
+    // This logic correctly updates the 3D text in the scene.
     const boothEntity = this.app.root.findByName(boothData.boothId);
-
     if (boothEntity) {
-        // Update the zone script's internal state if the player is currently in this zone
-        if (this.currentZoneScript && this.currentZoneScript.boothId === boothData.boothId) {
-             this.currentZoneScript.claimedBy = boothData.claimedBy;
-             // Re-evaluate prompt if the player is in this zone
-             console.log(`BoothController: Booth ${boothData.boothId} updated while player inside. Re-evaluating prompt.`);
-             this.decideAndShowPrompt();
-        }
-
-        // Find the text elements and update their text based on claim status
-        const screenEntity = boothEntity.findByName('3D Screen');
+        this.boothEntitiesById.set(boothData.boothId, boothEntity);
+        boothEntity.script.boothClaimZone.claimedBy = boothData.claimedBy; // Ensure local script is in sync
+        const screenEntity = boothEntity.findByName("3D Screen");
         if (screenEntity) {
-            const upperTxtEntity = screenEntity.findByName('UpperTxt');
-            const usernameTxtEntity = screenEntity.findByName('UsernameTxt');
-
-            if (upperTxtEntity && upperTxtEntity.element && usernameTxtEntity && usernameTxtEntity.element) {
-                const isClaimed = !!boothData.claimedBy; // Check if claimedBy is not null or empty string
-
-                if (isClaimed) {
-                    // Booth is claimed
-                    const usernameToDisplay = boothData.claimedByUsername || ""; // Use username or empty string
-                    console.log(`BoothController: Booth ${boothData.boothId} claimed by ${usernameToDisplay}. Updating text.`);
-                    upperTxtEntity.element.text = "Give to";
-                    usernameTxtEntity.element.text = usernameToDisplay;
+            const upperTxt = screenEntity.findByName("UpperTxt")?.element;
+            const usernameTxt = screenEntity.findByName("UsernameTxt")?.element;
+            if (upperTxt && usernameTxt) {
+                upperTxt.text = boothData.claimedBy ? "Give to" : "CLAIM";
+                if (boothData.claimedBy) {
+                    const twitterHandle = boothData.claimedByTwitterHandle;
+                    const username = boothData.claimedByUsername;
+                    if (twitterHandle) {
+                        usernameTxt.text = `@${twitterHandle}`;
+                    } else {
+                        usernameTxt.text = username || "";
+                    }
                 } else {
-                    // Booth is unclaimed
-                    console.log(`BoothController: Booth ${boothData.boothId} is unclaimed. Updating text.`);
-                    upperTxtEntity.element.text = "CLAIM";
-                    usernameTxtEntity.element.text = "ME!";
+                    usernameTxt.text = "ME!";
                 }
-            } else {
-                console.warn(`BoothController: UpperTxt or UsernameTxt element not found on booth ${boothData.boothId}`);
             }
-        } else {
-            console.warn(`BoothController: '2D Screen' entity not found on booth ${boothData.boothId}`);
         }
-
+        this.refreshBoothOwnership(boothData, boothEntity);
+        if (this.currentZoneScript?.boothId === boothData.boothId) {
+            this.decideAndShowPrompt();
+        }
     } else {
-        console.warn(`BoothController: Booth entity with name ${boothData.boothId} not found in scene.`);
+        this.boothEntitiesById.delete(boothData.boothId);
+        this.refreshBoothOwnership(boothData, null);
     }
 };
 
-BoothController.prototype.onClaimError = function(errorData) {
-    // Show error feedback to the user, potentially via a UIManager event
-    console.warn(`BoothController: Received claim error for booth ${errorData.boothId}: ${errorData.reason}`);
-    this.app.fire('ui:showError', `Claim Failed: ${errorData.reason}`); // Example event
-};
+BoothController.prototype.decideAndShowPrompt = function () {
+    if (!this.currentZoneScript) return;
+    const claimedBy = this.currentZoneScript.claimedBy;
+    const localPlayerData = this.getLocalPlayerData();
+    if (!localPlayerData) return;
 
-BoothController.prototype.onAuthStateChanged = function(authStateData) {
-     // If the player is currently in a zone, re-evaluate the prompt based on the new auth state
-    if (this.currentZoneScript) {
-        console.log("BoothController: Auth state changed while player in zone. Re-evaluating prompt.");
-        this.decideAndShowPrompt();
-    }
-};
+    const localAddress = localPlayerData.getWalletAddress();
+    const localClaimedBooth = localPlayerData.getClaimedBoothId();
 
-BoothController.prototype.onLocalPlayerDataChanged = function(playerDataScript) {
-    // Check if the player is currently in a zone when their data changes
-    if (this.currentZoneScript) {
-        console.log("BoothController: Local player data changed while in zone. Re-evaluating prompt.");
-        this.decideAndShowPrompt();
-    }
-};
-
-
-BoothController.prototype.decideAndShowPrompt = function() {
-    if (!this.currentZoneScript) {
-        // Not in a zone, hide prompts
-        this.app.fire('ui:hideClaimPrompt');
-        this.app.fire('ui:hideDonationPrompt');
-        return;
-    }
-
-    const boothId = this.currentZoneScript.boothId;
-    const claimedBy = this.currentZoneScript.claimedBy; // Get current claim status
-    // Get local player data script
-    const localPlayerEntity = this.app.localPlayer;
-    const localPlayerData = localPlayerEntity?.script?.playerData;
-
-    if (!localPlayerData) {
-        console.warn("BoothController: Cannot decide prompt, local PlayerData script not found.");
-        this.app.fire('ui:hideClaimPrompt');
-        this.app.fire('ui:hideDonationPrompt');
-        return;
-    }
-
-    const localPlayerAddress = localPlayerData.getWalletAddress();
-    const localClaimedBoothId = localPlayerData.getClaimedBoothId(); // Get the crucial state
-
-    console.log(`BoothController: Deciding prompt for ${boothId}. Booth Claimed by: ${claimedBy || 'None'}, Local Addr: ${localPlayerAddress || 'None'}, Local Claimed Booth: ${localClaimedBoothId || 'None'}`);
-
-    // --- Logic ---
     if (!claimedBy) {
-        // --- Booth is Unclaimed ---
-        // Show claim prompt ONLY if the local player hasn't claimed a booth yet
-        if (!localClaimedBoothId) {
-             this.app.fire('ui:hideDonationPrompt');
-             console.log(`BoothController: Firing ui:showClaimPrompt for ${boothId}`);
-             this.app.fire('ui:showClaimPrompt', this.currentZoneScript);
-        } else {
-            // Booth is unclaimed, but player already claimed one. Hide both.
-             console.log(`BoothController: Booth ${boothId} is unclaimed, but player already claimed ${localClaimedBoothId}. Hiding prompts.`);
-             this.app.fire('ui:hideClaimPrompt');
-             this.app.fire('ui:hideDonationPrompt');
-        }
+        this.app.fire("ui:hideDonationPrompt");
+        this.app.fire(localClaimedBooth ? "ui:hideClaimPrompt" : "ui:showClaimPrompt", this.currentZoneScript);
     } else {
-        // --- Booth is Claimed ---
-        this.app.fire('ui:hideClaimPrompt'); // Always hide claim prompt if booth is claimed
-
-        if (claimedBy === localPlayerAddress) {
-            // Player owns this booth - hide donation prompt
-            console.log(`BoothController: Player owns booth ${boothId}. Hiding donation prompt.`);
-            this.app.fire('ui:hideDonationPrompt');
-            // Future: Show owner options?
-        } else if (localPlayerAddress) {
-            // Booth claimed by another player AND local player is authenticated - show donation prompt
-            console.log(`BoothController: Firing ui:showDonationPrompt for ${boothId}, recipient: ${claimedBy}`);
-            this.app.fire('ui:showDonationPrompt', this.currentZoneScript);
+        this.app.fire("ui:hideClaimPrompt");
+        if (claimedBy === localAddress) {
+            this.app.fire("ui:hideDonationPrompt");
         } else {
-            // Booth claimed by another player BUT local player is NOT authenticated - hide donation prompt
-            console.log(`BoothController: Booth ${boothId} claimed by another, but local player not authenticated. Hiding donation prompt.`);
-            this.app.fire('ui:hideDonationPrompt');
-            // Future: Maybe prompt to authenticate to donate?
+            this.app.fire(localAddress ? "ui:showDonationPrompt" : "ui:hideDonationPrompt", this.currentZoneScript);
         }
     }
 };
 
+BoothController.prototype.onClaimSuccess = function (data) {
+    const boothEntity = this.app.root.findByName(data.boothId);
+    boothEntity?.findByName("BoothClaimEffect")?.particlesystem.play();
+    boothEntity?.sound?.play("claimSound");
+};
 
-// swap method called for script hot-reloading
-// inherit your script state here
-// BoothController.prototype.swap = function(old) { };
+BoothController.prototype.onDonationEffect = function (data) {
+    if (!data || !data.recipient) {
+        return;
+    }
 
-// to learn more about script anatomy, please read:
-// https://developer.playcanvas.com/en/user-manual/scripting/
+    const ownerEntry = this.boothsByOwner.get(data.recipient);
+    if (ownerEntry && ownerEntry.entity) {
+        this.playDonationEffect(ownerEntry.entity);
+        return;
+    }
+
+    this.app.root.findByTag("booth").forEach((boothEntity) => {
+        if (boothEntity.script?.boothClaimZone?.claimedBy === data.recipient) {
+            this.playDonationEffect(boothEntity);
+        }
+    });
+};
+
+BoothController.prototype.playDonationEffect = function (boothEntity) {
+    boothEntity?.findByName("BoothDonateEffect")?.particlesystem.play();
+    boothEntity?.sound?.play("donationSound");
+};
+
+BoothController.prototype.onNetworkConnected = function () {
+    this.isNetworkConnected = true;
+    const playerData = this.getLocalPlayerData();
+    if (this.pendingClaimBoothId && playerData && typeof playerData.getWalletAddress === 'function' && playerData.getWalletAddress()) {
+        this.app.fire('booth:claimRequest', this.pendingClaimBoothId);
+        this.pendingClaimBoothId = null;
+    }
+};
+
+BoothController.prototype.destroy = function () {
+    this.app.off('colyseus:connected', this.onNetworkConnected, this);
+    this.app.off("booth:entered", this.onEnterZone, this);
+    this.app.off("booth:left", this.onLeaveZone, this);
+    this.app.off("booth:added", this.onBoothAdded, this);
+    this.app.off("booth:updated", this.onBoothUpdated, this);
+    this.app.off("booth:removed", this.onBoothRemoved, this);
+    this.app.off("auth:stateChanged", this.onAuthStateChanged, this);
+    this.app.off("player:data:changed", this.onLocalPlayerDataChanged, this);
+    this.app.off("booth:claim:request", this.handleClaimRequest, this);
+    this.app.off("booth:claimSuccess", this.onClaimSuccess, this);
+    this.app.off("effects:donation", this.onDonationEffect, this);
+    this.boothEntitiesById.clear();
+    this.boothsByOwner.clear();
+};
