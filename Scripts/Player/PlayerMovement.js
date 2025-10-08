@@ -54,6 +54,7 @@ function yawFromDirXZ(vx, vz) {
 
 PlayerMovement.prototype.initialize = function () {
   this.isMobile = pc.platform.touch;
+  this.chatFocused = false; // Track if chat input is focused
 
   var axis = this.entity.findByName("Camera Axis");
   this.cameraScript = axis && axis.script ? axis.script.cameraMovement : null;
@@ -126,6 +127,10 @@ PlayerMovement.prototype.initialize = function () {
     weight: this.layer ? this.layer.weight : "n/a",
     active: this._state,
   });
+
+  // Listen for chat focus/blur events to disable movement
+  this.app.on('ui:chat:focus', this.onChatFocus, this);
+  this.app.on('ui:chat:blur', this.onChatBlur, this);
 };
 
 PlayerMovement.prototype._cameraBasisXZ = function () {
@@ -142,6 +147,10 @@ PlayerMovement.prototype._cameraBasisXZ = function () {
 PlayerMovement.prototype._gatherInput = function () {
   this.inX = 0;
   this.inZ = 0;
+  
+  // Don't gather input if chat is focused
+  if (this.chatFocused) return;
+  
   if (this.isMobile) {
     var s =
       window.touchJoypad && window.touchJoypad.sticks
@@ -235,4 +244,20 @@ PlayerMovement.prototype.update = function (dt) {
     rotation: this._currentYaw,
     speed: speedNormalized,
   });
+};
+
+PlayerMovement.prototype.onChatFocus = function() {
+  this.chatFocused = true;
+  console.log("PlayerMovement: Chat focused - movement disabled");
+};
+
+PlayerMovement.prototype.onChatBlur = function() {
+  this.chatFocused = false;
+  console.log("PlayerMovement: Chat blurred - movement enabled");
+};
+
+PlayerMovement.prototype.destroy = function() {
+  // Clean up event listeners
+  this.app.off('ui:chat:focus', this.onChatFocus, this);
+  this.app.off('ui:chat:blur', this.onChatBlur, this);
 };
