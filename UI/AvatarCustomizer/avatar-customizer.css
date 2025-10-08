@@ -80,7 +80,7 @@
 /* --- Bottom-right button container that holds BOTH buttons --- */
 #ui-button-container {
   position: fixed;
-  bottom: 24px;
+  bottom: 80px; /* Moved up from 24px to avoid feedback button interference */
   right: 24px;
   display: flex;
   flex-direction: row; /* Left-to-right: Wave (first), then Avatar */
@@ -103,7 +103,7 @@
 /* --- Mobile Responsive --- */
 @media (max-width: 768px) {
   #ui-button-container {
-    bottom: max(16px, env(safe-area-inset-bottom));
+    bottom: max(72px, calc(env(safe-area-inset-bottom) + 56px)); /* Maintain 56px gap from bottom on mobile */
     right: max(16px, env(safe-area-inset-right));
   }
 }
