@@ -37,6 +37,7 @@ HtmlAvatarCustomizer.prototype.initialize = function () {
   }
 
   this._loadAssets();
+  this._preloadSounds();
 };
 
 HtmlAvatarCustomizer.prototype._loadAssets = function () {
@@ -146,7 +147,8 @@ HtmlAvatarCustomizer.prototype._buildDom = function () {
   });
 
   var applyBtn = root.querySelector("[data-apply]");
-  if (applyBtn)
+  if (applyBtn) {
+    applyBtn.setAttribute('data-suppress-default-sound', 'true');
     applyBtn.addEventListener("click", function () {
       self.callbacks.apply.forEach(function (fn) {
         try {
@@ -158,6 +160,7 @@ HtmlAvatarCustomizer.prototype._buildDom = function () {
       self.close();
       self.app.fire("ui:playSound", "avatar_apply_click");
     });
+  }
 
   var cancelBtn = root.querySelector("[data-cancel]");
   if (cancelBtn)
@@ -235,13 +238,17 @@ HtmlAvatarCustomizer.prototype._createButtonsContainerAndToggle = function () {
     else self.open();
   });
 
+  btn.addEventListener("mouseenter", function () {
+    self.app.fire("ui:playSound", "ui_hover_default");
+  });
+
   // Append AFTER Wave for correct order
   buttonContainer.appendChild(btn);
 
   this.toggleButton = btn;
   this.toggleButton.setAttribute("aria-pressed", "false");
 
-  if (this.openOnStart) this.toggleButton.style.display = "none";
+  // if (this.openOnStart) this.toggleButton.style.display = "none";
 };
 
 HtmlAvatarCustomizer.prototype._createBridge = function () {
@@ -371,7 +378,7 @@ HtmlAvatarCustomizer.prototype.open = function () {
   if (this.toggleButton) {
     this.toggleButton.classList.add("is-open");
     this.toggleButton.setAttribute("aria-pressed", "true");
-    this.toggleButton.style.display = "none";
+    // this.toggleButton.style.display = "none";
   }
 };
 
@@ -383,7 +390,15 @@ HtmlAvatarCustomizer.prototype.close = function () {
   if (this.toggleButton) {
     this.toggleButton.classList.remove("is-open");
     this.toggleButton.setAttribute("aria-pressed", "false");
-    this.toggleButton.style.display = "";
+    // this.toggleButton.style.display = "";
+  }
+};
+
+HtmlAvatarCustomizer.prototype._preloadSounds = function () {
+  if (this.app.soundManager && this.app.soundManager.preloadSound) {
+    this.app.soundManager.preloadSound('ui_click_default');
+    this.app.soundManager.preloadSound('avatar_apply_click');
+    this.app.soundManager.preloadSound('ui_hover_default');
   }
 };
 
