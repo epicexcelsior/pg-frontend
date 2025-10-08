@@ -268,3 +268,123 @@ body > #tutorial-container > #tutorial-content-wrapper.tutorial-visible {
     backface-visibility: hidden !important;
     perspective: 1000px !important;
 }
+
+/* Mobile Responsive Styles */
+@media (max-width: 768px) {
+    body > #tutorial-container > #tutorial-content-wrapper {
+        width: 95% !important;
+        max-width: none !important;
+        padding: 20px !important;
+        margin: 10px auto !important;
+    }
+    
+    #tutorial-content-wrapper h2 {
+        font-size: 1.5em !important;
+        margin-bottom: 15px !important;
+    }
+    
+    .warning-section .warning {
+        padding: 12px !important;
+        font-size: 14px !important;
+        margin: 15px 0 !important;
+    }
+    
+    .controls-section p {
+        font-size: 14px !important;
+        margin: 15px 0 !important;
+    }
+    
+    .instructions-container {
+        flex-direction: column !important;
+        gap: 15px !important;
+        margin: 20px 0 !important;
+    }
+    
+    .instruction-card {
+        min-width: auto !important;
+        max-width: none !important;
+        padding: 20px !important;
+    }
+    
+    .instruction-card h3 {
+        font-size: 1.3em !important;
+        margin-bottom: 10px !important;
+    }
+    
+    .instruction-card p {
+        font-size: 14px !important;
+    }
+    
+    .twitter-integration p {
+        font-size: 14px !important;
+    }
+    
+    .social-links p {
+        font-size: 12px !important;
+    }
+    
+    #tutorial-content-wrapper .tutorial-button {
+        padding: 12px 25px !important;
+        font-size: 16px !important;
+    }
+}
+
+@media (max-width: 480px) {
+    body > #tutorial-container > #tutorial-content-wrapper {
+        width: 98% !important;
+        padding: 15px !important;
+        margin: 5px auto !important;
+    }
+    
+    #tutorial-content-wrapper h2 {
+        font-size: 1.3em !important;
+        margin-bottom: 12px !important;
+    }
+    
+    .warning-section .warning {
+        padding: 10px !important;
+        font-size: 13px !important;
+        margin: 12px 0 !important;
+    }
+    
+    .controls-section p {
+        font-size: 13px !important;
+        margin: 12px 0 !important;
+    }
+    
+    .instructions-container {
+        gap: 12px !important;
+        margin: 15px 0 !important;
+    }
+    
+    .instruction-card {
+        padding: 15px !important;
+    }
+    
+    .instruction-card h3 {
+        font-size: 1.2em !important;
+        margin-bottom: 8px !important;
+    }
+    
+    .instruction-card p {
+        font-size: 13px !important;
+    }
+    
+    .twitter-integration p {
+        font-size: 13px !important;
+    }
+    
+    .social-links p {
+        font-size: 11px !important;
+        line-height: 1.3 !important;
+    }
+    
+    #tutorial-content-wrapper .tutorial-button {
+        padding: 10px 20px !important;
+        font-size: 15px !important;
+    }
+    
+    #tutorial-content-wrapper a {
+        font-size: 12px !important;
+    }
+}
