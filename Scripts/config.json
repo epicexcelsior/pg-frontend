@@ -1,9 +1,7 @@
 {
   "colyseusEndpoint": "ws://localhost:2567",
   "privyHostOrigin": "https://localhost:5173",
-  "cloudflareWorkerAnnounceEndpoint": "http://127.0.0.1:8787/announceDonation",
   "donationFeeRecipientAddress": "r1eKs83sknjVn8cSx5u7afNx8ykjoi1GWULwZvcaAio",
   "heliusRpcUrl": "https://helius.plsgive.com",
-  "donationFeePercentage": 10,
-  "privyAppId": "ciot16npk0016jq0f805v642z"
+  "donationFeePercentage": 10
 }
