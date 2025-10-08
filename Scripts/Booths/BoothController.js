@@ -22,12 +22,58 @@ BoothController.prototype.initialize = function () {
     this.app.on("effects:donation", this.onDonationEffect, this);
 };
 
+BoothController.prototype.getPrivyManager = function () {
+    const services = this.app.services;
+    if (services && services.registry && services.registry.privyManager) {
+        return services.registry.privyManager;
+    }
+    if (services && typeof services.get === 'function') {
+        try {
+            return services.get('privyManager') || null;
+        } catch (error) {
+            console.warn('BoothController: Failed to resolve PrivyManager service.', error);
+        }
+    }
+    return null;
+};
+
+BoothController.prototype.getLocalPlayerData = function () {
+    const localPlayerData = this.app.localPlayer?.script?.playerData || null;
+    if (localPlayerData) {
+        return localPlayerData;
+    }
+    const services = this.app.services;
+    if (services && services.registry && services.registry.playerData) {
+        return services.registry.playerData;
+    }
+    if (services && typeof services.get === 'function') {
+        const serviceInstance = services.get('playerData');
+        if (serviceInstance) {
+            return serviceInstance;
+        }
+    }
+    return null;
+};
+
 BoothController.prototype.handleClaimRequest = function(boothId) {
-    const privyManager = this.app.services.get('privyManager');
+    const privyManager = this.getPrivyManager();
+    const targetBoothId = typeof boothId === 'string' ? boothId : (boothId && boothId.boothId ? boothId.boothId : null);
+
+    if (!targetBoothId) {
+        console.warn('BoothController: handleClaimRequest invoked without a booth identifier.', boothId);
+        return;
+    }
+
+    if (!privyManager) {
+        console.warn('BoothController: PrivyManager service unavailable. Cannot process booth claim.');
+        return;
+    }
+
     if (privyManager.isAuthenticated() && privyManager.getWalletAddress()) {
-        this.app.fire('booth:claimRequest', { boothId: boothId });
+        this.app.fire('booth:claimRequest', targetBoothId);
+        this.pendingClaimBoothId = null;
     } else {
-        this.pendingClaimBoothId = boothId;
+        this.pendingClaimBoothId = targetBoothId;
         privyManager.login();
     }
 };
@@ -93,7 +139,8 @@ BoothController.prototype.onAuthStateChanged = function (authStateData) {
 
 // FIX: This is the new final step in the claim flow.
 BoothController.prototype.onLocalPlayerDataChanged = function() {
-    if (this.pendingClaimBoothId && this.isNetworkConnected && this.app.localPlayer.script.playerData.getWalletAddress()) {
+    const playerData = this.getLocalPlayerData();
+    if (this.pendingClaimBoothId && this.isNetworkConnected && playerData && typeof playerData.getWalletAddress === 'function' && playerData.getWalletAddress()) {
         this.app.fire('booth:claimRequest', this.pendingClaimBoothId);
         this.pendingClaimBoothId = null;
     }
@@ -154,7 +201,7 @@ BoothController.prototype.onBoothUpdated = function (boothData) {
 BoothController.prototype.decideAndShowPrompt = function () {
     if (!this.currentZoneScript) return;
     const claimedBy = this.currentZoneScript.claimedBy;
-    const localPlayerData = this.app.localPlayer?.script?.playerData;
+    const localPlayerData = this.getLocalPlayerData();
     if (!localPlayerData) return;
 
     const localAddress = localPlayerData.getWalletAddress();
@@ -204,7 +251,8 @@ BoothController.prototype.playDonationEffect = function (boothEntity) {
 
 BoothController.prototype.onNetworkConnected = function () {
     this.isNetworkConnected = true;
-    if (this.pendingClaimBoothId && this.app.services.playerData.getWalletAddress()) {
+    const playerData = this.getLocalPlayerData();
+    if (this.pendingClaimBoothId && playerData && typeof playerData.getWalletAddress === 'function' && playerData.getWalletAddress()) {
         this.app.fire('booth:claimRequest', this.pendingClaimBoothId);
         this.pendingClaimBoothId = null;
     }

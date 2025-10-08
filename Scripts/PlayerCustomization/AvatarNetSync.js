@@ -6,7 +6,7 @@
   function AvatarNetSync(app, opts) {
     opts = opts || {};
     this.app = app;
-    this.sendRecipe = opts.sendRecipe || function (recipe) { app.fire('network:send:avatarRecipe', recipe); };
+    this.sendRecipe = opts.sendRecipe || function (recipe) { app.fire('player:avatar:recipe', recipe); };
     this.applyRecipeToPlayer = opts.applyRecipeToPlayer || function () { return Promise.resolve(); };
     this.isLocalPlayerId = opts.isLocalPlayerId || function () { return false; };
 

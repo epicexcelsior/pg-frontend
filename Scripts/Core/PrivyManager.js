@@ -438,20 +438,20 @@ PrivyManager.prototype.handleAuthLogout = function () {
     const localPlayerData = this.app.localPlayer?.script?.playerData;
 
     if (localPlayerData && typeof localPlayerData.getClaimedBoothId === 'function' && localPlayerData.getClaimedBoothId()) {
-        this.app.fire('network:send:unclaimBooth');
+        this.app.fire('booth:unclaimRequest');
         if (typeof localPlayerData.clearClaimedBooth === 'function') {
             localPlayerData.clearClaimedBooth('privy:logout');
         }
     } else if (previousAddress) {
-        this.app.fire('network:send:unclaimBooth');
+        this.app.fire('booth:unclaimRequest');
     }
 
     if (previousAddress) {
-        this.app.fire('network:send:updateAddress', {
-        walletAddress: '',
-        twitterHandle: '',
-        twitterUserId: ''
-    });
+        this.app.fire('network:send', 'updateAddress', {
+            walletAddress: '',
+            twitterHandle: '',
+            twitterUserId: ''
+        });
     }
 
     this.user = null;

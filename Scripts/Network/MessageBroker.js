@@ -14,8 +14,6 @@ MessageBroker.prototype.setupRoomMessageListeners = function (room) {
     if (!room) return;
     room.onMessage("claimSuccess", (data) => this.app.fire('booth:claimSuccess', data));
     room.onMessage("claimError", (data) => this.app.fire('booth:claimError', data));
-    // [!code ++]
-    // Renamed to match server-side refactor
     room.onMessage("announceDonation", (data) => {
         const donationEvent = {
             signature: data.signature || null,
@@ -58,50 +56,75 @@ MessageBroker.prototype.setupRoomMessageListeners = function (room) {
     room.onMessage("animation:play", (data) => this.app.fire('animation:play:network', data));
 };
 
+MessageBroker.prototype.sendIfConnected = function (type, payload) {
+    if (this.app.room) {
+        this.app.room.send(type, payload);
+    }
+};
+
 MessageBroker.prototype.setupAppEventListeners = function () {
-    // Restore listeners for specific, direct messages
     this.app.on('player:move', (posData) => {
-        if (this.app.room) {
-            this.app.room.send('updatePosition', posData);
-        }
+        this.sendIfConnected('updatePosition', posData);
     }, this);
-    this.app.on('booth:claimRequest', (boothId) => {
-        if (this.app.room) {
-            this.app.room.send('claimBooth', { boothId });
+    this.app.on('booth:claimRequest', (data) => {
+        const boothId = typeof data === 'string' ? data : (data && data.boothId ? data.boothId : null);
+        if (typeof boothId !== 'string' || boothId.length === 0) {
+            console.warn('MessageBroker: Ignored booth claim request with invalid boothId.', data);
+            return;
         }
+        this.sendIfConnected('claimBooth', { boothId: boothId });
     }, this);
     this.app.on('booth:unclaimRequest', () => {
-        if (this.app.room) {
-            this.app.room.send('unclaimBooth');
-        }
+        this.sendIfConnected('unclaimBooth');
     }, this);
     this.app.on('player:setUsername', (username) => {
-        if (this.app.room) {
-            this.app.room.send('setUsername', { username });
+        const trimmed = typeof username === 'string' ? username.trim() : '';
+        if (!trimmed) {
+            return;
         }
+        this.sendIfConnected('setUsername', { username: trimmed });
     }, this);
     this.app.on('player:chat', (message) => {
-        if (this.app.room) {
-            this.app.room.send('chatMessage', { message });
+        const raw = typeof message === 'string' ? message : (message && typeof message.content === 'string' ? message.content : '');
+        const trimmed = typeof raw === 'string' ? raw.trim() : '';
+        if (!trimmed) {
+            return;
         }
+        const limited = trimmed.length > 100 ? trimmed.substring(0, 100) : trimmed;
+        this.sendIfConnected('chatMessage', { content: limited });
     }, this);
     this.app.on('player:avatar:recipe', (recipe) => {
-        if (this.app.room) {
-            this.app.room.send('avatar:recipe', recipe);
-        }
+        this.sendIfConnected('avatar:recipe', recipe);
     }, this);
-    this.app.on('player:animation:play', (name) => {
-        if (this.app.room) {
-            this.app.room.send('animation:play', { name });
+    this.app.on('player:animation:play', (payload) => {
+        const animationName = typeof payload === 'string' ? payload : (payload && payload.name ? payload.name : null);
+        if (!animationName) {
+            return;
         }
+        this.sendIfConnected('animation:play', { name: animationName });
     }, this);
 
-    // Add the generic listener that handles the donation flow correctly
     this.app.on('network:send', (type, payload) => {
-        if (this.app.room) {
-            this.app.room.send(type, payload);
+        if (typeof type !== 'string' || !type.length) {
+            console.warn('MessageBroker: network:send called without a valid message type.', type);
+            return;
         }
+        this.sendIfConnected(type, payload);
     }, this);
+
+    const legacyEvents = [
+        { event: 'network:send:chatMessage', type: 'chatMessage' },
+        { event: 'network:send:avatarRecipe', type: 'avatar:recipe' },
+        { event: 'network:send:animation', type: 'animation:play' },
+        { event: 'network:send:unclaimBooth', type: 'unclaimBooth' },
+        { event: 'network:send:updateAddress', type: 'updateAddress' }
+    ];
+
+    legacyEvents.forEach((entry) => {
+        this.app.on(entry.event, (payload) => {
+            this.app.fire('network:send', entry.type, payload);
+        }, this);
+    });
 };
 
 MessageBroker.prototype.formatIdentity = function (username, address) {

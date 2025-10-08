@@ -42,16 +42,22 @@ PlayerAnimation.prototype.onLocalPlay = function(data) {
 
     // This script is on every player, but only the local player should send the network message.
     if (this.entity.isLocalPlayer) {
-        if (data.name === 'wave' && !this.canWave) {
+        const animationName = typeof data.name === 'string' ? data.name : '';
+        if (!animationName) {
+            console.warn('PlayerAnimation: Ignoring animation request without a valid name.', data);
+            return;
+        }
+
+        if (animationName === 'wave' && !this.canWave) {
             console.log("Wave animation is on cooldown.");
             return;
         }
 
         console.log(`Entity ${this.entity.name} is the local player. Firing network event.`);
         // Send the animation event over the network.
-        this.app.fire('network:send:animation', { name: data.name });
+        this.app.fire('player:animation:play', animationName);
 
-        if (data.name === 'wave') {
+        if (animationName === 'wave') {
             this.canWave = false;
             setTimeout(() => {
                 this.canWave = true;

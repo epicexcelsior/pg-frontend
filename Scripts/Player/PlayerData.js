@@ -5,6 +5,8 @@ PlayerData.prototype.initialize = function() {
     this.walletAddress = null;
     this.username = localStorage.getItem('userName') || "";
     this.claimedBoothId = "";
+    this.twitterHandle = "";
+    this.twitterUserId = "";
 
     this.app.on('auth:stateChanged', this.onAuthStateChanged, this);
     this.app.on('booth:claimSuccess', this.handleBoothClaimSuccess, this);
@@ -19,14 +21,38 @@ PlayerData.prototype.onAuthStateChanged = function (event) {
     console.log('PlayerData: onAuthStateChanged event received.', { isConnected, walletAddress: address, user });
 
     const newAddress = (isConnected && address) ? address : '';
+    const normalizedTwitterHandle = typeof event.twitterHandle === 'string'
+        ? event.twitterHandle
+        : (event.twitterIdentity && typeof event.twitterIdentity.handle === 'string' ? event.twitterIdentity.handle : '');
+    const normalizedTwitterUserId = typeof event.twitterUserId === 'string'
+        ? event.twitterUserId
+        : (event.twitterIdentity && event.twitterIdentity.userId != null ? String(event.twitterIdentity.userId) : '');
 
-    // Check if the address has actually changed
-    if (this.walletAddress !== newAddress) {
+    const walletChanged = this.walletAddress !== newAddress;
+    const twitterHandleChanged = this.twitterHandle !== normalizedTwitterHandle;
+    const twitterUserIdChanged = this.twitterUserId !== normalizedTwitterUserId;
+
+    if (walletChanged) {
         this.walletAddress = newAddress;
         console.log(`PlayerData: Wallet address set to: ${this.walletAddress}`);
+    }
 
-        // Inform the server of the new address
-        this.app.fire('network:send', 'updateAddress', { walletAddress: this.walletAddress });
+    if (twitterHandleChanged) {
+        this.twitterHandle = normalizedTwitterHandle;
+        console.log(`PlayerData: Twitter handle set to: ${this.twitterHandle || '(none)'}`);
+    }
+
+    if (twitterUserIdChanged) {
+        this.twitterUserId = normalizedTwitterUserId;
+    }
+
+    if (walletChanged || twitterHandleChanged || twitterUserIdChanged) {
+        // Inform the server of the new address / social state
+        this.app.fire('network:send', 'updateAddress', {
+            walletAddress: this.walletAddress || '',
+            twitterHandle: this.twitterHandle || '',
+            twitterUserId: this.twitterUserId || ''
+        });
 
         // Inform the rest of the client app that data has changed
         console.log('PlayerData: Firing player:data:changed event.');
@@ -36,6 +62,8 @@ PlayerData.prototype.onAuthStateChanged = function (event) {
     // If logging out, ensure claimed booth is cleared
     if (!isConnected) {
         this.claimedBoothId = '';
+        this.twitterHandle = '';
+        this.twitterUserId = '';
     }
 };
 
@@ -54,7 +82,7 @@ PlayerData.prototype.handleBoothStateChange = function(data) {
         return;
     }
 
-    if (data.claimedBy === this.walletAddress && this.claimedBoothId !== data.boothId) {
+    if (this.walletAddress && data.claimedBy === this.walletAddress && this.claimedBoothId !== data.boothId) {
         this.claimedBoothId = data.boothId;
         this.app.fire('player:data:changed', this);
         return;

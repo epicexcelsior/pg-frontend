@@ -67,7 +67,7 @@ AvatarCustomization.attributes.add('autoOpenOnSpawn', {
         if (typeof namespace.AvatarNetSync === 'function') {
             this.netSync = new namespace.AvatarNetSync(this.app, {
                 sendRecipe: function (recipe) {
-                    self.app.fire('network:send:avatarRecipe', recipe);
+                    self.app.fire('player:avatar:recipe', recipe);
                 },
                 applyRecipeToPlayer: function (playerId, recipe) {
                     return self.applyRecipeForRemote(playerId, recipe);
