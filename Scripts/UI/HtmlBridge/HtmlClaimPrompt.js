@@ -66,6 +66,7 @@ HtmlClaimPrompt.prototype.onClaimClick = function () {
 
 HtmlClaimPrompt.prototype.onKeyDown = function (event) {
     if (event.key === pc.KEY_E && this.claimPromptEl.style.display === 'block') {
+        this.app.fire('ui:playSound', 'ui_click_default');
         this.onClaimClick();
         event.event.preventDefault();
     }

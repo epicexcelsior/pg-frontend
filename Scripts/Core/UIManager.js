@@ -23,26 +23,15 @@ UIManager.prototype.setupSoundEventListeners = function() {
     document.body.addEventListener('click', (event) => {
         // Play a click sound if the user clicks on an interactive element.
         const interactiveElement = event.target.closest('button, [role="button"], .sound-click');
-        if (interactiveElement) {
+        // Play a click sound, unless the element is marked to suppress it.
+        if (interactiveElement && !interactiveElement.hasAttribute('data-suppress-default-sound')) {
             this.app.fire('ui:playSound', 'ui_click_default');
         }
     }, true); // Use capture phase to catch events early.
 
     // --- Hover Sound ---
-    document.body.addEventListener('mouseover', (event) => {
-        const interactiveElement = event.target.closest('button, a, [role="button"], .sound-hover');
-        
-        // Only play the sound if we've moved to a new interactive element.
-        if (interactiveElement && interactiveElement !== this.lastHoveredElement) {
-            this.app.fire('ui:playSound', 'ui_hover_default');
-            this.lastHoveredElement = interactiveElement;
-        }
-    }, true);
-
-    // Reset last hovered element when the mouse leaves the window
-    document.body.addEventListener('mouseleave', () => {
-        this.lastHoveredElement = null;
-    }, true);
+    // The global mouseover listener has been removed to prevent repetitive sounds.
+    // Hover sounds are now handled by individual UI components using 'mouseenter'.
 };
 
 UIManager.prototype.registerComponent = function (component) {

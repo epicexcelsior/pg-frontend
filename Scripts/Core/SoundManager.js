@@ -116,6 +116,23 @@ SoundManager.prototype.playSound = function(soundName) {
     this.entity.sound.play(soundName);
 };
 
+/**
+ * Preloads a sound asset without playing it.
+ * @param {string} soundName - The name of the sound to preload.
+ */
+SoundManager.prototype.preloadSound = function(soundName) {
+    if (!this.soundMap.has(soundName)) {
+        console.warn(`SoundManager: Cannot preload sound '${soundName}', not found.`);
+        return;
+    }
+
+    const asset = this.soundMap.get(soundName);
+    // If the asset is not loaded yet, start loading it.
+    if (asset && !asset.resource && !asset.loading) {
+        this.app.assets.load(asset);
+    }
+};
+
 // Clean up the event listener when the script is destroyed or swapped
 SoundManager.prototype.swap = function(old) {
     this.app.off('ui:playSound', old.playSound, old);

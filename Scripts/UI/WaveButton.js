@@ -20,6 +20,10 @@ WaveButton.prototype.initialize = function () {
     this._onClick = this.onWaveButtonClick.bind(this);
     this.button.addEventListener('click', this._onClick);
 
+    // Hover sound
+    this._onMouseEnter = () => this.app.fire('ui:playSound', 'ui_hover_default');
+    this.button.addEventListener('mouseenter', this._onMouseEnter);
+
     // Try to insert into #ui-button-container immediately…
     this._ensureInContainer();
 
@@ -29,6 +33,11 @@ WaveButton.prototype.initialize = function () {
 
     // Also handle the legacy event (if HtmlAvatarCustomizer wants to pick us up)
     this.app.fire('ui:wavebutton:create', this.button);
+
+    // Preload sounds
+    if (this.app.soundManager && this.app.soundManager.preloadSound) {
+        this.app.soundManager.preloadSound('ui_hover_default');
+    }
 };
 
 WaveButton.prototype._ensureInContainer = function () {
@@ -48,6 +57,7 @@ WaveButton.prototype.onWaveButtonClick = function () {
 WaveButton.prototype.destroy = function () {
     if (this.button) {
         this.button.removeEventListener('click', this._onClick);
+        this.button.removeEventListener('mouseenter', this._onMouseEnter);
         if (this.button.parentNode) this.button.parentNode.removeChild(this.button);
         this.button = null;
     }
