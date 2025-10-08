@@ -120,7 +120,15 @@ HtmlTutorial.prototype._createHtml = function(htmlContent) {
 
         document.body.appendChild(this.tutorialContainer);
 
+        // Add sound effects to close button
         closeButton.addEventListener('click', () => this.hide());
+        closeButton.addEventListener('mouseenter', () => {
+            this.app.fire('ui:playSound', 'ui_hover_default');
+        });
+
+        // Apply theme if available
+        this._applyTheme();
+        
         this.initialized = true;
         return true;
     } catch (error) {
@@ -132,6 +140,39 @@ HtmlTutorial.prototype._createHtml = function(htmlContent) {
         this.tutorialContainer = null;
         this.contentWrapper = null;
         return false;
+    }
+};
+
+HtmlTutorial.prototype._applyTheme = function() {
+    // Apply theme variables to CSS custom properties if theme is available
+    if (this.app.uiManager && this.app.uiManager.getTheme) {
+        const theme = this.app.uiManager.getTheme();
+        const root = document.documentElement;
+        
+        if (theme.colors) {
+            root.style.setProperty('--tutorial-primary', theme.colors.primary);
+            root.style.setProperty('--tutorial-primary-2', theme.colors.primary2);
+            root.style.setProperty('--tutorial-accent', theme.colors.accent);
+            root.style.setProperty('--tutorial-accent-2', theme.colors.accent2);
+            root.style.setProperty('--tutorial-surface', theme.colors.surface);
+            root.style.setProperty('--tutorial-surface-2', theme.colors.surface2);
+            root.style.setProperty('--tutorial-text', theme.colors.text);
+            root.style.setProperty('--tutorial-text-muted', theme.colors.textMuted);
+            root.style.setProperty('--tutorial-text-dark', theme.colors.textDark);
+        }
+        
+        if (theme.fonts) {
+            root.style.setProperty('--tutorial-font-family', theme.fonts.family);
+            root.style.setProperty('--tutorial-font-size-small', theme.fonts.size.small);
+            root.style.setProperty('--tutorial-font-size-medium', theme.fonts.size.medium);
+            root.style.setProperty('--tutorial-font-size-large', theme.fonts.size.large);
+            root.style.setProperty('--tutorial-font-size-xlarge', theme.fonts.size.xlarge);
+        }
+        
+        if (theme.styles) {
+            root.style.setProperty('--tutorial-border-radius', theme.styles.borderRadius);
+            root.style.setProperty('--tutorial-box-shadow', theme.styles.boxShadow);
+        }
     }
 };
 
@@ -155,6 +196,9 @@ HtmlTutorial.prototype.hide = function() {
     if (!this.tutorialContainer || !this.contentWrapper || !this.isVisible) return;
 
     this.isVisible = false;
+    
+    // Play click sound
+    this.app.fire('ui:playSound', 'ui_click_default');
 
     requestAnimationFrame(() => {
         this.contentWrapper.classList.remove('tutorial-visible');

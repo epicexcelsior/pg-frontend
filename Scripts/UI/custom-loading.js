@@ -76,6 +76,80 @@ pc.script.createLoadingScreen((app) => {
                 color: #fff; /* White text */
                 text-shadow: 0 1px 3px rgba(0, 0, 0, 0.6); /* Text shadow like your login info */
             }
+
+            /* Button container for social/external links */
+            #loading-buttons-container {
+                position: absolute;
+                bottom: 20px;
+                left: 50%;
+                transform: translateX(-50%);
+                display: flex;
+                gap: 15px;
+                justify-content: center;
+                align-items: center;
+                flex-wrap: nowrap;
+            }
+
+            .loading-button {
+                padding: 10px 20px;
+                background: rgba(255, 255, 255, 0.9);
+                border: 2px solid rgba(255, 255, 255, 0.7);
+                border-radius: 8px;
+                color: #333;
+                text-decoration: none;
+                font-size: 14px;
+                font-weight: 500;
+                transition: all 0.2s ease;
+                box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+                white-space: nowrap;
+                display: inline-block;
+            }
+
+            .loading-button:hover {
+                background: rgba(255, 255, 255, 1);
+                border-color: rgba(255, 255, 255, 0.9);
+                transform: translateY(-2px);
+                box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
+                color: #222;
+            }
+
+            .loading-button:active {
+                transform: translateY(0);
+                box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2);
+            }
+
+            /* Mobile responsive layout */
+            @media (max-width: 768px) {
+                #loading-buttons-container {
+                    flex-direction: column;
+                    gap: 12px;
+                    bottom: 30px;
+                }
+
+                .loading-button {
+                    padding: 12px 24px;
+                    font-size: 15px;
+                    min-width: 160px;
+                    text-align: center;
+                }
+
+                #progress-bar-container {
+                    width: 80%;
+                }
+            }
+
+            @media (max-width: 480px) {
+                #loading-buttons-container {
+                    bottom: 20px;
+                    gap: 10px;
+                }
+
+                .loading-button {
+                    padding: 10px 20px;
+                    font-size: 14px;
+                    min-width: 140px;
+                }
+            }
         `;
           document.head.appendChild(styleTag);
      };
@@ -113,6 +187,39 @@ pc.script.createLoadingScreen((app) => {
                loadingTextElement.id = 'loading-text-element';
                // loadingTextElement.textContent = 'Loading Game...'; // Initial text, will be updated
                screen.appendChild(loadingTextElement);
+
+               // Social/External Link Buttons
+               const buttonsContainer = document.createElement('div');
+               buttonsContainer.id = 'loading-buttons-container';
+
+               // Website button
+               const websiteButton = document.createElement('a');
+               websiteButton.className = 'loading-button';
+               websiteButton.href = 'https://plsgive.com/';
+               websiteButton.target = '_blank';
+               websiteButton.rel = 'noopener noreferrer';
+               websiteButton.textContent = 'Website';
+
+               // Twitter button
+               const twitterButton = document.createElement('a');
+               twitterButton.className = 'loading-button';
+               twitterButton.href = 'https://x.com/intent/user?screen_name=playplsgive';
+               twitterButton.target = '_blank';
+               twitterButton.rel = 'noopener noreferrer';
+               twitterButton.textContent = 'Twitter';
+
+               // Feedback button
+               const feedbackButton = document.createElement('a');
+               feedbackButton.className = 'loading-button';
+               feedbackButton.href = 'https://forms.gle/xrJchANvtrouMTWv9';
+               feedbackButton.target = '_blank';
+               feedbackButton.rel = 'noopener noreferrer';
+               feedbackButton.textContent = 'Feedback';
+
+               buttonsContainer.appendChild(websiteButton);
+               buttonsContainer.appendChild(twitterButton);
+               buttonsContainer.appendChild(feedbackButton);
+               screen.appendChild(buttonsContainer);
 
                document.body.appendChild(screen);
           }

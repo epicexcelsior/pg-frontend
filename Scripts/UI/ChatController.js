@@ -19,10 +19,13 @@ ChatController.prototype.initialize = function() {
 };
 
 ChatController.prototype.sendMessage = function(messageContent) {
-    console.log("ChatController: Received ui:chat:send event. Firing network:send:chatMessage.");
-    // Fire an event for the network layer (e.g., MessageBroker or NetworkManager) to handle
-    // This decouples the UI controller from the specific network implementation.
-    this.app.fire('network:send:chatMessage', { content: messageContent });
+    const trimmed = typeof messageContent === 'string' ? messageContent.trim() : '';
+    if (!trimmed) {
+        console.warn("ChatController: Ignored empty chat message.");
+        return;
+    }
+    console.log("ChatController: Received ui:chat:send event. Forwarding to player:chat.");
+    this.app.fire('player:chat', trimmed);
 
     // Optional: Optimistically display the user's own message immediately?
     // Or wait for the server confirmation via 'chat:newMessage'?
