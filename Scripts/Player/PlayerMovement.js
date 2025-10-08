@@ -120,6 +120,18 @@ PlayerMovement.prototype.initialize = function () {
         e.enabled = false;
       for (var i = 0; i < e.children.length; i++) hideDFS(e.children[i]);
     })(this.app.root);
+  } else {
+    // Ensure mobile UI is visible on mobile
+    (function showDFS(e) {
+      var n = (e.name || "").toLowerCase();
+      if (
+        n.indexOf("joystick") !== -1 ||
+        n.indexOf("joypad") !== -1 ||
+        n.indexOf("touch") !== -1
+      )
+        e.enabled = true;
+      for (var i = 0; i < e.children.length; i++) showDFS(e.children[i]);
+    })(this.app.root);
   }
 
   console.log("[AnimInit]", {

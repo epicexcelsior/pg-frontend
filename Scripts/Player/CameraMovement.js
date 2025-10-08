@@ -29,6 +29,14 @@ CameraMovement.attributes.add('pitchMax', { type: 'number', default: 75 });
 // Optional explicit target name
 CameraMovement.attributes.add('targetName', { type: 'string', default: '' });
 
+// Mobile camera joystick
+CameraMovement.attributes.add('cameraJoystickId', { 
+    type: 'string', 
+    default: 'cameraJoystick0',
+    title: 'Camera Joystick ID',
+    description: 'Identifier for the camera control joystick on mobile'
+});
+
 CameraMovement.prototype.initialize = function(){
     this.yaw = 0;
     this.pitch = 15;
@@ -37,6 +45,7 @@ CameraMovement.prototype.initialize = function(){
     this._mouseBias = 0;
     this.isMobile = pc.platform.touch;
     this.canvas = this.app.graphicsDevice.canvas;
+    this.chatFocused = false; // Track if chat input is focused
 
     // Mouse handlers (desktop only)
     this.rmb = false;
@@ -55,7 +64,14 @@ CameraMovement.prototype.initialize = function(){
             this.app.mouse.off('mouseup',   this.onMouseUp, this);
             this.canvas.removeEventListener('contextmenu', this._ctx);
         }
+        // Clean up chat focus listeners
+        this.app.off('ui:chat:focus', this.onChatFocus, this);
+        this.app.off('ui:chat:blur', this.onChatBlur, this);
     }, this);
+
+    // Listen for chat focus/blur events to disable camera control
+    this.app.on('ui:chat:focus', this.onChatFocus, this);
+    this.app.on('ui:chat:blur', this.onChatBlur, this);
 
     // Child camera stays at (0,0,distance) – adjust attr in Editor if too far/near
     const cam = this.entity.findByName('PlayerCamera');
@@ -108,8 +124,22 @@ CameraMovement.prototype.postUpdate = function(dt){
         }
     }
 
-    // (D) Micro mouse bias
-    if (Math.abs(this._mouseBias) > 0.0001){
+    // (D) Mobile joystick input for camera control
+    if (this.isMobile && !this.chatFocused) {
+        const cameraStick = window.touchJoypad && window.touchJoypad.sticks 
+            ? window.touchJoypad.sticks[this.cameraJoystickId] 
+            : null;
+        
+        if (cameraStick) {
+            // Use joystick input for camera rotation
+            const sensitivity = 2.0; // Adjust sensitivity as needed
+            this.yaw -= cameraStick.x * sensitivity * dt * 60; // Convert to per-second
+            this.pitch -= cameraStick.y * sensitivity * dt * 60;
+        }
+    }
+
+    // (E) Micro mouse bias (desktop only)
+    if (!this.isMobile && Math.abs(this._mouseBias) > 0.0001){
         const clamped = pc.math.clamp(this._mouseBias, -this.microBiasClampDeg, this.microBiasClampDeg);
         this.yaw += clamped;
         this._mouseBias *= Math.exp(-this.microDecay * dt);
@@ -136,4 +166,14 @@ CameraMovement.prototype.onMouseMove = function(e){
     } else {
         this._mouseBias += (-e.dx * this.microMouseFactor);
     }
+};
+
+CameraMovement.prototype.onChatFocus = function() {
+    this.chatFocused = true;
+    console.log("CameraMovement: Chat focused - camera control disabled");
+};
+
+CameraMovement.prototype.onChatBlur = function() {
+    this.chatFocused = false;
+    console.log("CameraMovement: Chat blurred - camera control enabled");
 };
