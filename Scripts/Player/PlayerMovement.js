@@ -55,6 +55,7 @@ function yawFromDirXZ(vx, vz) {
 PlayerMovement.prototype.initialize = function () {
   this.isMobile = pc.platform.touch;
   this.chatFocused = false; // Track if chat input is focused
+  this.activeInputLocks = new Set();
 
   var axis = this.entity.findByName("Camera Axis");
   this.cameraScript = axis && axis.script ? axis.script.cameraMovement : null;
@@ -143,6 +144,8 @@ PlayerMovement.prototype.initialize = function () {
   // Listen for chat focus/blur events to disable movement
   this.app.on('ui:chat:focus', this.onChatFocus, this);
   this.app.on('ui:chat:blur', this.onChatBlur, this);
+  this.app.on('ui:input:focus', this.onUiInputFocus, this);
+  this.app.on('ui:input:blur', this.onUiInputBlur, this);
 };
 
 PlayerMovement.prototype._cameraBasisXZ = function () {
@@ -160,8 +163,8 @@ PlayerMovement.prototype._gatherInput = function () {
   this.inX = 0;
   this.inZ = 0;
   
-  // Don't gather input if chat is focused
-  if (this.chatFocused) return;
+  // Don't gather input if UI has locked controls
+  if (this.chatFocused || this._isInputLocked()) return;
   
   if (this.isMobile) {
     var s =
@@ -260,16 +263,46 @@ PlayerMovement.prototype.update = function (dt) {
 
 PlayerMovement.prototype.onChatFocus = function() {
   this.chatFocused = true;
+  this._applyInputLock('chat');
   console.log("PlayerMovement: Chat focused - movement disabled");
 };
 
 PlayerMovement.prototype.onChatBlur = function() {
   this.chatFocused = false;
+  this._releaseInputLock('chat');
   console.log("PlayerMovement: Chat blurred - movement enabled");
+};
+
+PlayerMovement.prototype.onUiInputFocus = function(payload) {
+  var reason = payload && payload.source ? String(payload.source) : 'ui-input';
+  this._applyInputLock(reason);
+};
+
+PlayerMovement.prototype.onUiInputBlur = function(payload) {
+  var reason = payload && payload.source ? String(payload.source) : 'ui-input';
+  this._releaseInputLock(reason);
+};
+
+PlayerMovement.prototype._applyInputLock = function(reason) {
+  this.activeInputLocks.add(reason || 'global');
+};
+
+PlayerMovement.prototype._releaseInputLock = function(reason) {
+  if (reason) {
+    this.activeInputLocks.delete(reason);
+  } else {
+    this.activeInputLocks.clear();
+  }
+};
+
+PlayerMovement.prototype._isInputLocked = function() {
+  return this.activeInputLocks.size > 0;
 };
 
 PlayerMovement.prototype.destroy = function() {
   // Clean up event listeners
   this.app.off('ui:chat:focus', this.onChatFocus, this);
   this.app.off('ui:chat:blur', this.onChatBlur, this);
+  this.app.off('ui:input:focus', this.onUiInputFocus, this);
+  this.app.off('ui:input:blur', this.onUiInputBlur, this);
 };
