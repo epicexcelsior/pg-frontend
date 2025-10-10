@@ -18,6 +18,7 @@ PrivyManager.prototype.initialize = function () {
 
     this.twitterHandle = null;
     this.twitterUserId = null;
+    this.privyDid = null;
 
     this.privyHostOrigin = null;
     this.configLoader = null;
@@ -409,6 +410,9 @@ PrivyManager.prototype.handleAuthSuccess = function (payload) {
 
     this.user = payload.user;
     this.authenticated = true;
+    this.privyDid = (payload && payload.user && typeof payload.user.id === 'string')
+        ? payload.user.id
+        : null;
 
     var twitterIdentity = this.refreshTwitterIdentity(this.user);
 
@@ -426,6 +430,7 @@ PrivyManager.prototype.handleAuthSuccess = function (payload) {
         twitterHandle: this.twitterHandle,
         twitterUserId: this.twitterUserId,
         twitterIdentity: twitterIdentity || null,
+        privyDid: this.privyDid,
     });
 };
 
@@ -456,6 +461,7 @@ PrivyManager.prototype.handleAuthLogout = function () {
 
     this.user = null;
     this.authenticated = false;
+    this.privyDid = null;
     this.refreshTwitterIdentity(null);
 
     try {
@@ -472,6 +478,7 @@ PrivyManager.prototype.handleAuthLogout = function () {
         twitterHandle: null,
         twitterUserId: null,
         twitterIdentity: null,
+        privyDid: null,
     });
 };
 
@@ -481,6 +488,7 @@ PrivyManager.prototype.restoreUserSession = function () {
         if (storedUser) {
             this.user = JSON.parse(storedUser);
             this.authenticated = false;
+            this.privyDid = (this.user && typeof this.user.id === 'string') ? this.user.id : null;
             console.log('PrivyManager: Restored user data from localStorage. Session is not active.', this.user);
 
             var twitterIdentity = this.refreshTwitterIdentity(this.user);
@@ -493,6 +501,7 @@ PrivyManager.prototype.restoreUserSession = function () {
                 twitterHandle: this.twitterHandle,
                 twitterUserId: this.twitterUserId,
                 twitterIdentity: twitterIdentity || null,
+                privyDid: this.privyDid,
             });
         }
     } catch (error) {
@@ -662,6 +671,10 @@ PrivyManager.prototype.getWalletAddress = function () {
     }
 
     return null;
+};
+
+PrivyManager.prototype.getPrivyDid = function () {
+    return this.privyDid;
 };
 
 

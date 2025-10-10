@@ -7,6 +7,7 @@ PlayerData.prototype.initialize = function() {
     this.claimedBoothId = "";
     this.twitterHandle = "";
     this.twitterUserId = "";
+    this.privyDid = "";
 
     this.app.on('auth:stateChanged', this.onAuthStateChanged, this);
     this.app.on('booth:claimSuccess', this.handleBoothClaimSuccess, this);
@@ -27,10 +28,14 @@ PlayerData.prototype.onAuthStateChanged = function (event) {
     const normalizedTwitterUserId = typeof event.twitterUserId === 'string'
         ? event.twitterUserId
         : (event.twitterIdentity && event.twitterIdentity.userId != null ? String(event.twitterIdentity.userId) : '');
+    const normalizedPrivyDid = typeof event.privyDid === 'string'
+        ? event.privyDid
+        : (user && typeof user.id === 'string' ? user.id : '');
 
     const walletChanged = this.walletAddress !== newAddress;
     const twitterHandleChanged = this.twitterHandle !== normalizedTwitterHandle;
     const twitterUserIdChanged = this.twitterUserId !== normalizedTwitterUserId;
+    const privyDidChanged = this.privyDid !== normalizedPrivyDid;
 
     if (walletChanged) {
         this.walletAddress = newAddress;
@@ -46,12 +51,17 @@ PlayerData.prototype.onAuthStateChanged = function (event) {
         this.twitterUserId = normalizedTwitterUserId;
     }
 
-    if (walletChanged || twitterHandleChanged || twitterUserIdChanged) {
+    if (privyDidChanged) {
+        this.privyDid = normalizedPrivyDid;
+    }
+
+    if (walletChanged || twitterHandleChanged || twitterUserIdChanged || privyDidChanged) {
         // Inform the server of the new address / social state
         this.app.fire('network:send', 'updateAddress', {
             walletAddress: this.walletAddress || '',
             twitterHandle: this.twitterHandle || '',
-            twitterUserId: this.twitterUserId || ''
+            twitterUserId: this.twitterUserId || '',
+            privyDid: this.privyDid || ''
         });
 
         // Inform the rest of the client app that data has changed
@@ -64,6 +74,7 @@ PlayerData.prototype.onAuthStateChanged = function (event) {
         this.claimedBoothId = '';
         this.twitterHandle = '';
         this.twitterUserId = '';
+        this.privyDid = '';
     }
 };
 
@@ -114,4 +125,5 @@ PlayerData.prototype.destroy = function() {
 PlayerData.prototype.getWalletAddress = function() { return this.walletAddress; };
 PlayerData.prototype.getUsername = function() { return this.username; };
 PlayerData.prototype.getClaimedBoothId = function() { return this.claimedBoothId; };
+PlayerData.prototype.getPrivyDid = function() { return this.privyDid; };
 
