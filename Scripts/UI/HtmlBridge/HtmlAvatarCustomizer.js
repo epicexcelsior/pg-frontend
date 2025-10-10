@@ -31,6 +31,7 @@ HtmlAvatarCustomizer.prototype.initialize = function () {
   this._rateLimitTimer = null;
   this.isOpen = false;
   this.toggleButton = null;
+  this._requestedVariantStream = false;
 
   if (this.app.uiManager && this.app.uiManager.registerComponent) {
     this.app.uiManager.registerComponent(this);
@@ -375,6 +376,7 @@ HtmlAvatarCustomizer.prototype.open = function () {
   this.root.classList.add("is-open");
   this.root.classList.remove("is-closed");
   this.isOpen = true;
+  this._requestVariantStreaming();
   if (this.toggleButton) {
     this.toggleButton.classList.add("is-open");
     this.toggleButton.setAttribute("aria-pressed", "true");
@@ -400,6 +402,23 @@ HtmlAvatarCustomizer.prototype._preloadSounds = function () {
     this.app.soundManager.preloadSound('avatar_apply_click');
     this.app.soundManager.preloadSound('ui_hover_default');
   }
+};
+
+HtmlAvatarCustomizer.prototype._requestVariantStreaming = function () {
+  if (this._requestedVariantStream) {
+    return;
+  }
+  this._requestedVariantStream = true;
+  const queue = this.app && this.app.tagLoadQueue;
+  if (!queue || typeof queue.loadByTags !== 'function') {
+    return;
+  }
+  queue.loadByTags(['avatars-variants'], {
+    priority: 3,
+    phase: 'postSpawnStream'
+  }).catch(function (err) {
+    console.warn('HtmlAvatarCustomizer: Failed to stream avatar variants.', err);
+  });
 };
 
 HtmlAvatarCustomizer.prototype.destroy = function () {
