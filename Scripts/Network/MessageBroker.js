@@ -3,6 +3,13 @@ var MessageBroker = pc.createScript('messageBroker');
 
 MessageBroker.prototype.initialize = function () {
     this.currentRoom = null;
+    this.lastMovePayload = null;
+    this.lastMoveSentAt = 0;
+    this.moveMinInterval = 100; // ms between sends when player is moving
+    this.moveMaxInterval = 400; // ms heartbeat even if stationary
+    this.movePosThresholdSq = 0.04 * 0.04; // ~4 cm positional threshold
+    this.moveRotThreshold = 2; // degrees
+    this.moveSpeedThreshold = 0.02;
     this.setupAppEventListeners();
     this.app.on('colyseus:connected', this.onConnected, this);
     this.app.on('colyseus:disconnected', this.onDisconnected, this);
@@ -79,9 +86,7 @@ MessageBroker.prototype.sendIfConnected = function (type, payload) {
 };
 
 MessageBroker.prototype.setupAppEventListeners = function () {
-    this.app.on('player:move', (posData) => {
-        this.sendIfConnected('updatePosition', posData);
-    }, this);
+    this.app.on('player:move', this.handlePlayerMove, this);
     this.app.on('booth:claimRequest', (data) => {
         const boothId = typeof data === 'string' ? data : (data && data.boothId ? data.boothId : null);
         if (typeof boothId !== 'string' || boothId.length === 0) {
@@ -129,7 +134,11 @@ MessageBroker.prototype.setupAppEventListeners = function () {
             console.warn('MessageBroker: network:send called without a valid message type.', type);
             return;
         }
-        this.sendIfConnected(type, payload);
+        const sanitized = this.sanitizeOutbound(type, payload);
+        if (sanitized === null) {
+            return;
+        }
+        this.sendIfConnected(type, sanitized);
     }, this);
 
     const legacyEvents = [
@@ -176,6 +185,96 @@ MessageBroker.prototype.formatSolAmount = function (value) {
 MessageBroker.prototype.destroy = function () {
     this.app.off('colyseus:connected', this.onConnected, this);
     this.app.off('colyseus:disconnected', this.onDisconnected, this);
+    this.app.off('player:move', this.handlePlayerMove, this);
     this.currentRoom = null;
+};
+
+MessageBroker.prototype.handlePlayerMove = function (posData) {
+    if (!posData || typeof posData !== 'object') {
+        return;
+    }
+
+    const numeric = this.sanitizeMovementPayload(posData);
+    if (!numeric) {
+        return;
+    }
+
+    const now = Date.now();
+    const lastPayload = this.lastMovePayload;
+    const elapsed = now - this.lastMoveSentAt;
+
+    const shouldSend =
+        !lastPayload ||
+        elapsed >= this.moveMaxInterval ||
+        (elapsed >= this.moveMinInterval && this.hasMovementDelta(lastPayload, numeric));
+
+    if (!shouldSend) {
+        return;
+    }
+
+    this.lastMovePayload = numeric;
+    this.lastMoveSentAt = now;
+    this.sendIfConnected('updatePosition', numeric);
+};
+
+MessageBroker.prototype.sanitizeMovementPayload = function (payload) {
+    const x = Number(payload.x);
+    const y = Number(payload.y);
+    const z = Number(payload.z);
+    const rotation = Number(payload.rotation);
+    const speed = Number(payload.speed);
+
+    if (![x, y, z, rotation].every(Number.isFinite)) {
+        console.warn('MessageBroker: rejected movement payload with non-finite values.', payload);
+        return null;
+    }
+
+    const sanitized = {
+        x: this.roundTo(x, 2),
+        y: this.roundTo(y, 2),
+        z: this.roundTo(z, 2),
+        rotation: this.roundTo(rotation, 1),
+        speed: Number.isFinite(speed) ? pc.math.clamp(speed, 0, 1) : 0
+    };
+
+    return sanitized;
+};
+
+MessageBroker.prototype.hasMovementDelta = function (prev, next) {
+    const dx = next.x - prev.x;
+    const dy = next.y - prev.y;
+    const dz = next.z - prev.z;
+    const distanceSq = dx * dx + dy * dy + dz * dz;
+    if (distanceSq >= this.movePosThresholdSq) {
+        return true;
+    }
+    if (Math.abs(next.rotation - prev.rotation) >= this.moveRotThreshold) {
+        return true;
+    }
+    if (Math.abs((next.speed || 0) - (prev.speed || 0)) >= this.moveSpeedThreshold) {
+        return true;
+    }
+    return false;
+};
+
+MessageBroker.prototype.roundTo = function (value, decimals) {
+    const factor = Math.pow(10, decimals);
+    return Math.round(value * factor) / factor;
+};
+
+MessageBroker.prototype.sanitizeOutbound = function (type, payload) {
+    switch (type) {
+        case 'updatePosition':
+            return this.sanitizeMovementPayload(payload);
+        case 'chatMessage': {
+            const content = typeof payload?.content === 'string' ? payload.content.trim() : '';
+            if (!content.length) {
+                return null;
+            }
+            return { content: content.slice(0, 100) };
+        }
+        default:
+            return payload;
+    }
 };
 

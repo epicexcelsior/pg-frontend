@@ -83,18 +83,21 @@ PlayerSync.prototype.onConnected = function (room) {
     this.room = room;
     this.localSessionId = room.sessionId;
 
-    this.room.state.players.onAdd((playerState, sessionId) => {
-        this.spawnPlayer(playerState, sessionId);
-        playerState.onChange(() => this.handlePlayerChange(playerState, sessionId));
-    });
+    const handlePlayerAdded = (playerState, sessionId) => {
+        this.ensurePlayerBindings(playerState, sessionId);
+        if (!this.playerEntities[sessionId]) {
+            this.spawnPlayer(playerState, sessionId);
+        }
+    };
+
+    this.room.state.players.onAdd(handlePlayerAdded);
 
     this.room.state.players.onRemove((playerState, sessionId) => {
         this.removePlayer(sessionId);
     });
 
     this.room.state.players.forEach((playerState, sessionId) => {
-        this.spawnPlayer(playerState, sessionId);
-        playerState.onChange(() => this.handlePlayerChange(playerState, sessionId));
+        handlePlayerAdded(playerState, sessionId);
     });
 };
 
@@ -110,7 +113,6 @@ PlayerSync.prototype.onDisconnected = function () {
 
 PlayerSync.prototype.spawnPlayer = function (playerState, sessionId) {
     if (this.playerEntities[sessionId]) {
-        console.warn(`PlayerSync: Player entity for session ID ${sessionId} already exists. Aborting spawn.`);
         return;
     }
 
@@ -284,5 +286,14 @@ PlayerSync.prototype.updateNameplate = function (playerEntity, username) {
     const nameplate = playerEntity.findByName('NameplateText');
     if (nameplate?.element) {
         nameplate.element.text = username || '';
+    }
+};
+
+PlayerSync.prototype.ensurePlayerBindings = function (playerState, sessionId) {
+    if (!playerState) return;
+    if (!playerState.__playerSyncChangeHandler) {
+        const changeHandler = () => this.handlePlayerChange(playerState, sessionId);
+        playerState.__playerSyncChangeHandler = changeHandler;
+        playerState.onChange(changeHandler);
     }
 };
