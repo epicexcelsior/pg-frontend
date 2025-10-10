@@ -2,12 +2,25 @@
 var MessageBroker = pc.createScript('messageBroker');
 
 MessageBroker.prototype.initialize = function () {
+    this.currentRoom = null;
     this.setupAppEventListeners();
+    this.app.on('colyseus:connected', this.onConnected, this);
+    this.app.on('colyseus:disconnected', this.onDisconnected, this);
     if (this.app.room) {
-        this.setupRoomMessageListeners(this.app.room);
-    } else {
-        this.app.once('colyseus:connected', this.setupRoomMessageListeners, this);
+        this.onConnected(this.app.room);
     }
+};
+
+MessageBroker.prototype.onConnected = function (room) {
+    if (!room || this.currentRoom === room) {
+        return;
+    }
+    this.currentRoom = room;
+    this.setupRoomMessageListeners(room);
+};
+
+MessageBroker.prototype.onDisconnected = function () {
+    this.currentRoom = null;
 };
 
 MessageBroker.prototype.setupRoomMessageListeners = function (room) {
@@ -54,6 +67,9 @@ MessageBroker.prototype.setupRoomMessageListeners = function (room) {
     });
     room.onMessage("avatar:recipe", (data) => this.app.fire('avatar:recipe', data));
     room.onMessage("animation:play", (data) => this.app.fire('animation:play:network', data));
+    room.onMessage("booth:updateDescription:ok", (data) => this.app.fire('booth:description:ok', data));
+    room.onMessage("booth:updateDescription:error", (data) => this.app.fire('booth:description:error', data));
+    room.onMessage("leaderboard:data", (data) => this.app.fire('leaderboard:data', data));
 };
 
 MessageBroker.prototype.sendIfConnected = function (type, payload) {
@@ -102,6 +118,10 @@ MessageBroker.prototype.setupAppEventListeners = function () {
             return;
         }
         this.sendIfConnected('animation:play', { name: animationName });
+    }, this);
+    this.app.on('leaderboard:request', (payload) => {
+        const limit = payload && typeof payload.limit === 'number' ? payload.limit : 10;
+        this.sendIfConnected('leaderboard:get', { limit: limit });
     }, this);
 
     this.app.on('network:send', (type, payload) => {
@@ -153,4 +173,9 @@ MessageBroker.prototype.formatSolAmount = function (value) {
     return trimmed.length ? trimmed : '0';
 };
 
+MessageBroker.prototype.destroy = function () {
+    this.app.off('colyseus:connected', this.onConnected, this);
+    this.app.off('colyseus:disconnected', this.onDisconnected, this);
+    this.currentRoom = null;
+};
 

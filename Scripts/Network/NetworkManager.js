@@ -7,11 +7,15 @@ NetworkManager.prototype.initialize = function () {
     this.room = null; // Store room reference when connected
 
     // Listen for the connection event from ConnectionManager
-    this.app.once('colyseus:connected', this.onConnected, this);
-    this.app.once('colyseus:disconnected', this.onDisconnected, this); // Listen for disconnects too
+    this.app.on('colyseus:connected', this.onConnected, this);
+    this.app.on('colyseus:disconnected', this.onDisconnected, this); // Listen for disconnects too
 
     // Setup app listeners that DON'T depend on the room immediately
     this.setupAppListeners();
+
+    if (this.app.room) {
+        this.onConnected(this.app.room);
+    }
 };
 
 // Called when ConnectionManager successfully connects
@@ -19,6 +23,9 @@ NetworkManager.prototype.onConnected = function(room) {
     console.log("NetworkManager: Received colyseus:connected event.");
     if (!room) {
         console.error("NetworkManager: Connected event received but room object is missing!");
+        return;
+    }
+    if (this.room === room) {
         return;
     }
     this.room = room; // Store the room reference
@@ -95,6 +102,11 @@ NetworkManager.prototype.setupAppListeners = function() {
 // swap method called for script hot-reloading
 // inherit your script state here
 // NetworkManager.prototype.swap = function(old) { };
+
+NetworkManager.prototype.destroy = function () {
+    this.app.off('colyseus:connected', this.onConnected, this);
+    this.app.off('colyseus:disconnected', this.onDisconnected, this);
+};
 
 // to learn more about script anatomy, please read:
 // https://developer.playcanvas.com/en/user-manual/scripting/
