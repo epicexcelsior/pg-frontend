@@ -8,6 +8,7 @@ BoothController.prototype.initialize = function () {
     this.isNetworkConnected = false;
     this.boothEntitiesById = new Map();
     this.boothsByOwner = new Map();
+    this.boothDescriptions = new Map();
 
     this.app.on('colyseus:connected', this.onNetworkConnected, this);
     this.app.on("booth:entered", this.onEnterZone, this);
@@ -20,6 +21,8 @@ BoothController.prototype.initialize = function () {
     this.app.on("booth:claim:request", this.handleClaimRequest, this);
     this.app.on("booth:claimSuccess", this.onClaimSuccess, this);
     this.app.on("effects:donation", this.onDonationEffect, this);
+    this.app.on("booth:description:ok", this.onBoothDescriptionSaved, this);
+    this.app.on("booth:description:error", this.onBoothDescriptionError, this);
 };
 
 BoothController.prototype.getPrivyManager = function () {
@@ -86,6 +89,7 @@ BoothController.prototype.onBoothAdded = function (boothData) {
     if (boothEntity) {
         this.boothEntitiesById.set(boothData.boothId, boothEntity);
     }
+    this.boothDescriptions.set(boothData.boothId, boothData.description || '');
     this.refreshBoothOwnership(boothData, boothEntity);
 };
 
@@ -94,6 +98,7 @@ BoothController.prototype.onBoothRemoved = function (boothData) {
         return;
     }
     this.boothEntitiesById.delete(boothData.boothId);
+    this.boothDescriptions.delete(boothData.boothId);
     const boothId = boothData.boothId;
     for (const [wallet, info] of this.boothsByOwner.entries()) {
         if (info.boothId === boothId) {
@@ -124,6 +129,10 @@ BoothController.prototype.refreshBoothOwnership = function (boothData, boothEnti
     if (claimedBy) {
         this.boothsByOwner.set(claimedBy, { boothId: boothId, entity: resolvedEntity });
     }
+};
+
+BoothController.prototype.getBoothDescription = function (boothId) {
+    return this.boothDescriptions.get(boothId) || '';
 };
 
 // FIX: This function no longer fires the claim. It just sets up the expectation.
@@ -160,12 +169,14 @@ BoothController.prototype.onLeaveZone = function (boothZoneScript) {
         this.currentZoneScript = null;
         this.app.fire("ui:hideClaimPrompt");
         this.app.fire("ui:hideDonationPrompt");
+        this.app.fire("ui:hideBoothDescriptionEditor");
     }
 };
 
 BoothController.prototype.onBoothUpdated = function (boothData) {
     // This logic correctly updates the 3D text in the scene.
     const boothEntity = this.app.root.findByName(boothData.boothId);
+    this.boothDescriptions.set(boothData.boothId, boothData.description || '');
     if (boothEntity) {
         this.boothEntitiesById.set(boothData.boothId, boothEntity);
         boothEntity.script.boothClaimZone.claimedBy = boothData.claimedBy; // Ensure local script is in sync
@@ -173,6 +184,7 @@ BoothController.prototype.onBoothUpdated = function (boothData) {
         if (screenEntity) {
             const upperTxt = screenEntity.findByName("UpperTxt")?.element;
             const usernameTxt = screenEntity.findByName("UsernameTxt")?.element;
+            const descriptionTxt = screenEntity.findByName("DescriptionTxt")?.element || screenEntity.findByName("Description")?.element;
             if (upperTxt && usernameTxt) {
                 upperTxt.text = boothData.claimedBy ? "Give to" : "CLAIM";
                 if (boothData.claimedBy) {
@@ -187,8 +199,15 @@ BoothController.prototype.onBoothUpdated = function (boothData) {
                     usernameTxt.text = "ME!";
                 }
             }
+            if (descriptionTxt) {
+                descriptionTxt.text = boothData.description || "";
+            }
         }
         this.refreshBoothOwnership(boothData, boothEntity);
+        this.app.fire('ui:boothDescription:update', {
+            boothId: boothData.boothId,
+            description: boothData.description || ''
+        });
         if (this.currentZoneScript?.boothId === boothData.boothId) {
             this.decideAndShowPrompt();
         }
@@ -209,15 +228,39 @@ BoothController.prototype.decideAndShowPrompt = function () {
 
     if (!claimedBy) {
         this.app.fire("ui:hideDonationPrompt");
+        this.app.fire("ui:hideBoothDescriptionEditor");
         this.app.fire(localClaimedBooth ? "ui:hideClaimPrompt" : "ui:showClaimPrompt", this.currentZoneScript);
     } else {
         this.app.fire("ui:hideClaimPrompt");
         if (claimedBy === localAddress) {
             this.app.fire("ui:hideDonationPrompt");
+            this.app.fire("ui:showBoothDescriptionEditor", {
+                boothId: this.currentZoneScript.boothId,
+                description: this.getBoothDescription(this.currentZoneScript.boothId)
+            });
         } else {
+            this.app.fire("ui:hideBoothDescriptionEditor");
             this.app.fire(localAddress ? "ui:showDonationPrompt" : "ui:hideDonationPrompt", this.currentZoneScript);
         }
     }
+};
+
+BoothController.prototype.onBoothDescriptionSaved = function (payload) {
+    if (!payload || !payload.boothId) {
+        return;
+    }
+    const description = typeof payload.description === "string" ? payload.description : "";
+    this.boothDescriptions.set(payload.boothId, description);
+    if (this.currentZoneScript && this.currentZoneScript.boothId === payload.boothId) {
+        this.app.fire('ui:boothDescription:ack', {
+            boothId: payload.boothId,
+            description: description
+        });
+    }
+};
+
+BoothController.prototype.onBoothDescriptionError = function (payload) {
+    this.app.fire('ui:boothDescription:error', payload || {});
 };
 
 BoothController.prototype.onClaimSuccess = function (data) {
@@ -270,6 +313,9 @@ BoothController.prototype.destroy = function () {
     this.app.off("booth:claim:request", this.handleClaimRequest, this);
     this.app.off("booth:claimSuccess", this.onClaimSuccess, this);
     this.app.off("effects:donation", this.onDonationEffect, this);
+    this.app.off("booth:description:ok", this.onBoothDescriptionSaved, this);
+    this.app.off("booth:description:error", this.onBoothDescriptionError, this);
     this.boothEntitiesById.clear();
+    this.boothDescriptions.clear();
     this.boothsByOwner.clear();
 };
