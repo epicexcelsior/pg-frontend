@@ -63,6 +63,7 @@ PlayerSync.prototype.initialize = function () {
     this.playerEntities = {};
     this.room = null;
     this.localSessionId = null;
+    this._loggedMissingNameplate = false;
     this.app.on('colyseus:connected', this.onConnected, this);
     this.app.on('colyseus:disconnected', this.onDisconnected, this);
 };
@@ -173,6 +174,7 @@ PlayerSync.prototype.spawnPlayer = function (playerState, sessionId) {
     this.app.root.addChild(playerEntity);
     this.playerEntities[sessionId] = playerEntity;
     this._syncAvatarRecipe(playerEntity, playerState, sessionId);
+    this._setupNameplate(playerEntity, isLocalPlayer, playerState.username);
     this.updateNameplate(playerEntity, playerState.username);
     this.app.fire('player:spawned', { entity: playerEntity, isLocal: isLocalPlayer, sessionId: sessionId, state: playerState });
 };
@@ -196,6 +198,7 @@ PlayerSync.prototype.handlePlayerChange = function (playerState, sessionId) {
         if (playerData && playerState.hasOwnProperty('username') && playerData.username !== playerState.username) {
             this.app.fire('player:data:update', { username: playerState.username });
         }
+        this.updateNameplate(entity, playerState.username);
     } else {
         this.updateRemotePlayerVisuals(entity, playerState);
         this._syncAvatarRecipe(entity, playerState, sessionId);
@@ -283,10 +286,23 @@ PlayerSync.prototype.update = function (dt) {
 };
 
 PlayerSync.prototype.updateNameplate = function (playerEntity, username) {
-    const nameplate = playerEntity.findByName('NameplateText');
-    if (nameplate?.element) {
-        nameplate.element.text = username || '';
+    if (!playerEntity) {
+        return;
     }
+    let nameplate = playerEntity.nameplateText;
+    if (!nameplate || !nameplate.element) {
+        nameplate = playerEntity.findByName('NameplateText');
+        if (nameplate && nameplate.element) {
+            playerEntity.nameplateText = nameplate;
+        } else {
+            if (!this._loggedMissingNameplate) {
+                console.warn('PlayerSync: NameplateText entity with an element component was not found on the player prefab.');
+                this._loggedMissingNameplate = true;
+            }
+            return;
+        }
+    }
+    nameplate.element.text = username || '';
 };
 
 PlayerSync.prototype.ensurePlayerBindings = function (playerState, sessionId) {
@@ -295,5 +311,38 @@ PlayerSync.prototype.ensurePlayerBindings = function (playerState, sessionId) {
         const changeHandler = () => this.handlePlayerChange(playerState, sessionId);
         playerState.__playerSyncChangeHandler = changeHandler;
         playerState.onChange(changeHandler);
+    }
+};
+
+PlayerSync.prototype._setupNameplate = function (playerEntity, isLocalPlayer, username) {
+    if (!playerEntity) {
+        return;
+    }
+    let root = playerEntity.nameplateRoot;
+    if (!root) {
+        root = playerEntity.findByName('NameplateRoot') || null;
+        if (root) {
+            playerEntity.nameplateRoot = root;
+        }
+    }
+    this._setNameplateVisibility(playerEntity, !isLocalPlayer);
+    if (username) {
+        this.updateNameplate(playerEntity, username);
+    }
+};
+
+PlayerSync.prototype._setNameplateVisibility = function (playerEntity, shouldShow) {
+    if (!playerEntity) {
+        return;
+    }
+    let root = playerEntity.nameplateRoot;
+    if (!root) {
+        root = playerEntity.findByName('NameplateRoot') || null;
+        if (root) {
+            playerEntity.nameplateRoot = root;
+        }
+    }
+    if (root) {
+        root.enabled = shouldShow;
     }
 };

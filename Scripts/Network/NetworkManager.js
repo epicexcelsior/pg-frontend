@@ -88,7 +88,7 @@ NetworkManager.prototype.setupAppListeners = function() {
 // --- Helper Functions (from original_project) ---
 
 // Removed updateUsernameOnServer function.
-// MessageBroker listens for 'user:setname' and sends the update.
+// MessageBroker listens for 'player:setUsername' and sends the update.
 // Removed onPlayerAdd - Handled by PlayerSync.js
 
 // Removed onPlayerRemove - Handled by PlayerSync.js

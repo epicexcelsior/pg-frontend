@@ -102,6 +102,11 @@ HtmlLoginManager.prototype._createHtml = function(htmlResource) {
         this.usernameInputEl.addEventListener('focus', () => {
             this.app.fire('ui:playSound', 'ui_click_default');
         });
+        const storedName = this._getStoredUsername();
+        if (storedName) {
+            this.usernameInputEl.value = storedName;
+            window.userName = storedName;
+        }
     }
 
     // Apply theme if available
@@ -147,28 +152,63 @@ HtmlLoginManager.prototype._applyTheme = function() {
     }
 };
 
+HtmlLoginManager.prototype._sanitizeUsername = function(raw) {
+    if (typeof raw !== 'string') {
+        return '';
+    }
+    const withoutTags = raw.replace(/(<([^>]+)>)/gi, '');
+    const collapsedWhitespace = withoutTags.replace(/\s+/g, ' ').trim();
+    if (!collapsedWhitespace.length) {
+        return '';
+    }
+    return collapsedWhitespace.substring(0, 16);
+};
+
+HtmlLoginManager.prototype._getStoredUsername = function() {
+    try {
+        const stored = localStorage.getItem('userName');
+        return this._sanitizeUsername(stored || '') || '';
+    } catch (err) {
+        console.warn('HtmlLoginManager: Unable to access stored username.', err);
+        return '';
+    }
+};
+
+HtmlLoginManager.prototype._storeUsername = function(username) {
+    try {
+        localStorage.setItem('userName', username);
+    } catch (err) {
+        console.warn('HtmlLoginManager: Failed to persist username to localStorage.', err);
+    }
+};
+
 HtmlLoginManager.prototype.onSubmitClick = function() {
     if (!this.usernameInputEl) return;
     if (this._isTransitioning) {
         return;
     }
     
-    const username = this.usernameInputEl.value.trim();
-    if (!username) return;
+    const sanitized = this._sanitizeUsername(this.usernameInputEl.value);
+    if (!sanitized) {
+        this.usernameInputEl.focus();
+        return;
+    }
+    this.usernameInputEl.value = sanitized;
 
     // Play click sound
     this.app.fire('ui:playSound', 'ui_click_default');
 
     // Store username in localStorage
-    localStorage.setItem('userName', username);
-    this.app.fire('user:setname', username);
-    window.userName = username;
+    this._storeUsername(sanitized);
+    this.app.fire('player:username:localUpdate', sanitized);
+    this.app.fire('player:setUsername', sanitized);
+    window.userName = sanitized;
 
     // Instead of directly connecting to a wallet, we just show the main UI
     // The user will be prompted to log in when they try to perform an action (like claiming a booth).
     // Or, we can have a dedicated login button. For now, we proceed to the game.
 
-    this._beginSceneTransition(username);
+    this._beginSceneTransition(sanitized);
 };
 
 HtmlLoginManager.prototype._beginSceneTransition = function (username) {
@@ -604,10 +644,14 @@ HtmlLoginManager.prototype._handleLocalStreamProgress = function (payload) {
 };
 
 HtmlLoginManager.prototype.onTutorialClosed = function() {
-    const username = window.userName;
+    const username = this._getStoredUsername();
+    if (username) {
+        window.userName = username;
+    }
     this.app.fire('game:start');
     if (username) {
-        this.app.fire('user:setname', username);
+        this.app.fire('player:username:localUpdate', username);
+        this.app.fire('player:setUsername', username);
     }
 };
 

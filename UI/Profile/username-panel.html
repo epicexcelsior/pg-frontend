@@ -1,0 +1,30 @@
+<div id="username-panel-root">
+    <button type="button" id="username-open-btn" class="username-floating-btn">
+        <span class="username-btn-label">Change Name</span>
+        <span class="username-btn-current is-empty" id="username-current-label">Set your username</span>
+    </button>
+
+    <div id="username-modal" class="username-modal" aria-hidden="true" role="dialog" aria-labelledby="username-modal-title">
+        <div class="username-modal__card">
+            <div class="username-modal__header">
+                <h2 id="username-modal-title">Update Username</h2>
+                <button type="button" id="username-close-btn" class="username-modal__close" aria-label="Close panel">
+                    <span aria-hidden="true">&times;</span>
+                </button>
+            </div>
+            <p class="username-modal__description">
+                Choose the name other players will see above your avatar and on your booth.
+            </p>
+            <form id="username-form" class="username-form">
+                <label class="username-form__label" for="username-field">Username</label>
+                <input id="username-field" class="username-form__input" type="text" maxlength="16" autocomplete="off" spellcheck="false" autocapitalize="none" />
+                <div class="username-form__hint">Up to 16 characters. Keep it friendly :)</div>
+                <div class="username-actions">
+                    <button type="submit" class="username-btn username-btn--primary" id="username-save-btn">Save</button>
+                    <button type="button" class="username-btn username-btn--secondary" id="username-cancel-btn">Cancel</button>
+                </div>
+                <div id="username-feedback" class="username-feedback" aria-live="polite"></div>
+            </form>
+        </div>
+    </div>
+</div>

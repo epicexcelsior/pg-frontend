@@ -3,7 +3,7 @@ var PlayerData = pc.createScript('playerData');
 
 PlayerData.prototype.initialize = function() {
     this.walletAddress = null;
-    this.username = localStorage.getItem('userName') || "";
+    this.username = this.normalizeUsername(localStorage.getItem('userName') || "");
     this.claimedBoothId = "";
     this.twitterHandle = "";
     this.twitterUserId = "";
@@ -13,6 +13,9 @@ PlayerData.prototype.initialize = function() {
     this.app.on('booth:claimSuccess', this.handleBoothClaimSuccess, this);
     this.app.on('booth:updated', this.handleBoothStateChange, this);
     this.app.on('booth:added', this.handleBoothStateChange, this);
+    this.app.on('player:username:localUpdate', this.handleLocalUsernameUpdate, this);
+    this.app.on('player:data:update', this.handleServerDataUpdate, this);
+    this.app.on('user:setname', this.handleLegacySetName, this);
 };
 
 PlayerData.prototype.onAuthStateChanged = function (event) {
@@ -119,6 +122,9 @@ PlayerData.prototype.destroy = function() {
     this.app.off('booth:claimSuccess', this.handleBoothClaimSuccess, this);
     this.app.off('booth:updated', this.handleBoothStateChange, this);
     this.app.off('booth:added', this.handleBoothStateChange, this);
+    this.app.off('player:username:localUpdate', this.handleLocalUsernameUpdate, this);
+    this.app.off('player:data:update', this.handleServerDataUpdate, this);
+    this.app.off('user:setname', this.handleLegacySetName, this);
 };
 
 // --- GETTERS ---
@@ -126,4 +132,62 @@ PlayerData.prototype.getWalletAddress = function() { return this.walletAddress; 
 PlayerData.prototype.getUsername = function() { return this.username; };
 PlayerData.prototype.getClaimedBoothId = function() { return this.claimedBoothId; };
 PlayerData.prototype.getPrivyDid = function() { return this.privyDid; };
+
+PlayerData.prototype.normalizeUsername = function(raw) {
+    if (typeof raw !== 'string') {
+        return '';
+    }
+    const withoutTags = raw.replace(/(<([^>]+)>)/gi, '');
+    const collapsedWhitespace = withoutTags.replace(/\s+/g, ' ').trim();
+    if (!collapsedWhitespace.length) {
+        return '';
+    }
+    return collapsedWhitespace.substring(0, 16);
+};
+
+PlayerData.prototype.persistUsername = function(username) {
+    try {
+        localStorage.setItem('userName', username);
+    } catch (err) {
+        console.warn('PlayerData: Failed to persist username to localStorage.', err);
+    }
+};
+
+PlayerData.prototype.handleLocalUsernameUpdate = function(raw) {
+    const normalized = this.normalizeUsername(raw);
+    if (!normalized) {
+        return;
+    }
+    if (this.username === normalized) {
+        return;
+    }
+    this.username = normalized;
+    this.persistUsername(normalized);
+    this.app.fire('player:data:changed', this);
+};
+
+PlayerData.prototype.handleServerDataUpdate = function(payload) {
+    if (!payload || typeof payload.username !== 'string') {
+        return;
+    }
+    const normalized = this.normalizeUsername(payload.username);
+    if (!normalized) {
+        if (this.username !== '') {
+            this.username = '';
+            this.persistUsername('');
+            this.app.fire('player:data:changed', this);
+        }
+        return;
+    }
+    if (this.username === normalized) {
+        return;
+    }
+    this.username = normalized;
+    this.persistUsername(normalized);
+    this.app.fire('player:data:changed', this);
+};
+
+PlayerData.prototype.handleLegacySetName = function(username) {
+    this.handleLocalUsernameUpdate(username);
+};
 

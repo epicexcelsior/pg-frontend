@@ -5,6 +5,8 @@ MessageBroker.prototype.initialize = function () {
     this.currentRoom = null;
     this.lastMovePayload = null;
     this.lastMoveSentAt = 0;
+    this.lastUsernameSent = null;
+    this.pendingUsername = null;
     this.moveMinInterval = 100; // ms between sends when player is moving
     this.moveMaxInterval = 400; // ms heartbeat even if stationary
     this.movePosThresholdSq = 0.04 * 0.04; // ~4 cm positional threshold
@@ -24,10 +26,20 @@ MessageBroker.prototype.onConnected = function (room) {
     }
     this.currentRoom = room;
     this.setupRoomMessageListeners(room);
+    if (this.pendingUsername) {
+        const pending = this.pendingUsername;
+        this.pendingUsername = null;
+        this.lastUsernameSent = pending;
+        this.sendIfConnected('setUsername', { username: pending });
+    }
 };
 
 MessageBroker.prototype.onDisconnected = function () {
     this.currentRoom = null;
+    if (this.lastUsernameSent) {
+        this.pendingUsername = this.lastUsernameSent;
+        this.lastUsernameSent = null;
+    }
 };
 
 MessageBroker.prototype.setupRoomMessageListeners = function (room) {
@@ -99,11 +111,19 @@ MessageBroker.prototype.setupAppEventListeners = function () {
         this.sendIfConnected('unclaimBooth');
     }, this);
     this.app.on('player:setUsername', (username) => {
-        const trimmed = typeof username === 'string' ? username.trim() : '';
-        if (!trimmed) {
+        const cleaned = this.cleanUsername(username);
+        if (!cleaned) {
             return;
         }
-        this.sendIfConnected('setUsername', { username: trimmed });
+        if (!this.currentRoom) {
+            this.pendingUsername = cleaned;
+            return;
+        }
+        if (this.lastUsernameSent === cleaned) {
+            return;
+        }
+        this.lastUsernameSent = cleaned;
+        this.sendIfConnected('setUsername', { username: cleaned });
     }, this);
     this.app.on('player:chat', (message) => {
         const raw = typeof message === 'string' ? message : (message && typeof message.content === 'string' ? message.content : '');
@@ -276,5 +296,17 @@ MessageBroker.prototype.sanitizeOutbound = function (type, payload) {
         default:
             return payload;
     }
+};
+
+MessageBroker.prototype.cleanUsername = function (raw) {
+    if (typeof raw !== 'string') {
+        return '';
+    }
+    const withoutTags = raw.replace(/(<([^>]+)>)/gi, '');
+    const collapsedWhitespace = withoutTags.replace(/\s+/g, ' ').trim();
+    if (!collapsedWhitespace.length) {
+        return '';
+    }
+    return collapsedWhitespace.substring(0, 16);
 };
 
