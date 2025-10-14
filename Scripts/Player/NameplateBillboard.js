@@ -1,148 +1,99 @@
+// Scripts/UI/NameplateBillboard.js
 var NameplateBillboard = pc.createScript('nameplateBillboard');
 
-NameplateBillboard.attributes.add('faceCamera', {
-    type: 'boolean',
-    default: true,
-    title: 'Face Camera',
-    description: 'Rotate an extra 180° so the front of the element faces the camera.'
-});
+/**
+ * Rotate a world-space UI toward the active camera.
+ * - yawOnly: rotate only around Y (prevents tilt)
+ * - useDistanceScale: optional distance-based size clamping
+ */
 
+// --- Attributes ---
 NameplateBillboard.attributes.add('yawOnly', {
     type: 'boolean',
-    default: true,
+    default: false,            // default OFF since your setup needs full face
     title: 'Yaw Only',
-    description: 'When enabled, only rotate around the Y axis (prevents the label from tilting).'
+    description: 'Rotate only around Y to prevent tilting'
 });
 
-NameplateBillboard.attributes.add('useDistanceScale', {
-    type: 'boolean',
-    default: false,
-    title: 'Scale With Distance'
-});
+NameplateBillboard.attributes.add('useDistanceScale', { type: 'boolean', default: false, title: 'Scale With Distance' });
+NameplateBillboard.attributes.add('near',  { type: 'number', default: 2.0,  title: 'Near (m)' });
+NameplateBillboard.attributes.add('far',   { type: 'number', default: 20.0, title: 'Far (m)' });
+NameplateBillboard.attributes.add('minScale', { type: 'number', default: 0.85, title: 'Min Scale' });
+NameplateBillboard.attributes.add('maxScale', { type: 'number', default: 1.25, title: 'Max Scale' });
 
-NameplateBillboard.attributes.add('near', {
-    type: 'number',
-    default: 2.0,
-    title: 'Near Distance'
-});
+NameplateBillboard.attributes.add('cameraEntity', { type: 'entity', title: 'Camera (optional)' });
 
-NameplateBillboard.attributes.add('far', {
-    type: 'number',
-    default: 20.0,
-    title: 'Far Distance'
-});
-
-NameplateBillboard.attributes.add('minScale', {
-    type: 'number',
-    default: 0.85,
-    title: 'Min Scale'
-});
-
-NameplateBillboard.attributes.add('maxScale', {
-    type: 'number',
-    default: 1.25,
-    title: 'Max Scale'
-});
-
-NameplateBillboard.attributes.add('cameraEntity', {
-    type: 'entity',
-    title: 'Camera (optional)'
-});
-
+// --- Internals ---
 NameplateBillboard.prototype.initialize = function () {
-    this._camera = this.cameraEntity || null;
+    this._cam = this.cameraEntity || null;
     this._baseScale = this.entity.getLocalScale().clone();
-    this._lastCameraSearch = 0;
-    this._tempVec = new pc.Vec3();
+    this._v = new pc.Vec3();
+
+    // Precompute reciprocal to avoid per-frame division (handles bad inputs)
+    var range = Math.max(0.0001, this.far - this.near);
+    this._invRange = 1.0 / range;
+};
+
+NameplateBillboard.prototype._getCamera = function () {
+    if (this._cam && this._cam.enabled) return this._cam;
+
+    var sys = this.app.systems && this.app.systems.camera;
+    if (!sys) return null;
+
+    if (sys.activeCamera && sys.activeCamera.entity && sys.activeCamera.entity.enabled) {
+        this._cam = sys.activeCamera.entity;
+        return this._cam;
+    }
+
+    var cams = sys.cameras;
+    for (var i = 0; i < cams.length; i++) {
+        var e = cams[i] && cams[i].entity;
+        if (e && e.enabled) {
+            this._cam = e;
+            return this._cam;
+        }
+    }
+    return null;
 };
 
 NameplateBillboard.prototype.update = function (dt) {
-    var camera = this._getActiveCamera();
-    if (!camera) {
-        return;
-    }
+    var cam = this._getCamera();
+    if (!cam) return;
 
-    var entityPos = this.entity.getPosition();
-    var cameraPos = camera.getPosition();
+    var camPos = cam.getPosition();
+    var myPos  = this.entity.getPosition();
 
-    this._tempVec.copy(cameraPos).sub(entityPos);
-    if (this._tempVec.lengthSq() < 1e-8) {
-        return;
-    }
+    // dir = camera - label (vector pointing from label to camera)
+    this._v.copy(camPos).sub(myPos);
+    if (this._v.lengthSq() < 1e-8) return;
 
     if (this.yawOnly) {
-        this._tempVec.y = 0;
-        if (this._tempVec.lengthSq() < 1e-8) {
-            return;
-        }
-        this._tempVec.normalize();
-        var yaw = Math.atan2(this._tempVec.x, this._tempVec.z) * pc.math.RAD_TO_DEG;
-        if (this.faceCamera) {
-            yaw += 180;
-        }
+        // Remove pitch component so label stays upright
+        this._v.y = 0;
+        if (this._v.lengthSq() < 1e-8) return;
+        this._v.normalize();
+
+        // Compute yaw so the label faces the camera consistently
+        // NOTE: Use negatives here so yaw math matches the full face branch
+        var yaw = Math.atan2(-this._v.x, -this._v.z) * pc.math.RAD_TO_DEG;
         this.entity.setEulerAngles(0, yaw, 0);
     } else {
-        this.entity.lookAt(cameraPos);
-        if (this.faceCamera) {
-            this.entity.rotateLocal(0, 180, 0);
-        }
+        // Full face camera without introducing roll:
+        // 1) lookAt camera
+        this.entity.lookAt(camPos);
+        // 2) flip 180° so the "front" faces the camera (lookAt points -Z toward target)
+        this.entity.rotateLocal(0, 180, 0);
+        // No roll correction needed here; lookAt uses world up.
     }
 
     if (this.useDistanceScale) {
-        var distance = cameraPos.distance(entityPos);
-        var range = Math.max(0.0001, this.far - this.near);
-        var t = pc.math.clamp((distance - this.near) / range, 0, 1);
-        var scale = pc.math.lerp(this.minScale, this.maxScale, t);
-        this.entity.setLocalScale(
-            this._baseScale.x * scale,
-            this._baseScale.y * scale,
-            this._baseScale.z * scale
-        );
+        var d = camPos.distance(myPos);
+        var t = pc.math.clamp((d - this.near) * this._invRange, 0, 1);
+        var s = pc.math.lerp(this.minScale, this.maxScale, t);
+        this.entity.setLocalScale(this._baseScale.x * s, this._baseScale.y * s, this._baseScale.z * s);
     }
-};
-
-NameplateBillboard.prototype._getActiveCamera = function () {
-    if (this._camera && this._camera.enabled) {
-        return this._camera;
-    }
-
-    var now = Date.now();
-    if (now - this._lastCameraSearch < 200) {
-        return null;
-    }
-    this._lastCameraSearch = now;
-
-    var cameraSystem = this.app.systems && this.app.systems.camera;
-    if (!cameraSystem) {
-        return null;
-    }
-
-    if (cameraSystem.activeCamera && cameraSystem.activeCamera.entity && cameraSystem.activeCamera.entity.enabled) {
-        this._camera = cameraSystem.activeCamera.entity;
-        return this._camera;
-    }
-
-    var cams = cameraSystem.cameras;
-    if (cams && cams.length) {
-        for (var i = 0; i < cams.length; i++) {
-            var candidate = cams[i];
-            if (candidate && candidate.entity && candidate.entity.enabled) {
-                this._camera = candidate.entity;
-                return this._camera;
-            }
-        }
-    }
-
-    var fallback = this.app.root.findOne(function (entity) {
-        return entity.camera && entity.enabled;
-    });
-    if (fallback) {
-        this._camera = fallback;
-    }
-
-    return this._camera;
 };
 
 NameplateBillboard.prototype.destroy = function () {
-    this._camera = null;
+    this._cam = null;
 };

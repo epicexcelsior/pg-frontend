@@ -303,6 +303,9 @@ PlayerSync.prototype.updateNameplate = function (playerEntity, username) {
         }
     }
     nameplate.element.text = username || '';
+    var s = (username || '').toString().trim();
+    if (s.length > 16) s = s.slice(0, 16);
+    nameplate.element.text = s;
 };
 
 PlayerSync.prototype.ensurePlayerBindings = function (playerState, sessionId) {
