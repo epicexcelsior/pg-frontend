@@ -81,12 +81,16 @@ HtmlUsernamePanel.prototype._registerEvents = function () {
     this.app.on('player:data:changed', this.onPlayerDataChanged, this);
     this.app.on('colyseus:connected', this.updateDisplay, this);
     this.app.on('player:spawned', this.updateDisplay, this);
+    this.app.on('ui:usernamePanel:open', this.openPanel, this);
+    this.app.on('ui:usernamePanel:close', this.closePanel, this);
 };
 
 HtmlUsernamePanel.prototype.destroy = function () {
     this.app.off('player:data:changed', this.onPlayerDataChanged, this);
     this.app.off('colyseus:connected', this.updateDisplay, this);
     this.app.off('player:spawned', this.updateDisplay, this);
+    this.app.off('ui:usernamePanel:open', this.openPanel, this);
+    this.app.off('ui:usernamePanel:close', this.closePanel, this);
 
     if (this.openButton && this._boundOpen) {
         this.openButton.removeEventListener('click', this._boundOpen);

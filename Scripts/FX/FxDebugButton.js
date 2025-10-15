@@ -15,7 +15,7 @@ FxDebugButton.attributes.add('effectId', {
 
 FxDebugButton.attributes.add('useDonationEvent', {
     type: 'boolean',
-    default: false,
+    default: true,
     title: 'Fire Donation Event',
     description: 'When enabled, fires effects:donation instead of fx:play.'
 });

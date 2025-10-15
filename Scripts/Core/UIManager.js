@@ -7,7 +7,9 @@ UIManager.prototype.initialize = function () {
     this.app.uiManager = this;
 
     // Load the global theme
-    this.theme = window.Theme || {};
+    this.theme = this._normalizeTheme(window.Theme || {});
+    this.performanceProfile = this._detectPerformanceProfile();
+    this.animations = this._createAnimationConfig();
     console.log("UIManager initialized. Theme:", this.theme);
 
     this.injectGlobalStyles();
@@ -17,9 +19,11 @@ UIManager.prototype.initialize = function () {
     this._boundTransitionBegin = this.beginTransition.bind(this);
     this._boundTransitionEnd = this.endTransition.bind(this);
     this._boundStreamProgress = this._handleStreamProgress.bind(this);
+    this._boundAnimationToggle = this._handleAnimationToggle.bind(this);
     this.app.on('transition:begin', this._boundTransitionBegin, this);
     this.app.on('transition:end', this._boundTransitionEnd, this);
     this.app.on('load:stream:progress', this._boundStreamProgress, this);
+    this.app.on('ui:animations:toggle', this._boundAnimationToggle, this);
 };
 
 UIManager.prototype.setupSoundEventListeners = function() {
@@ -57,11 +61,23 @@ UIManager.prototype.registerComponent = function (component) {
         component.setTheme(this.theme);
     }
 
+    if (component.setAnimationConfig) {
+        component.setAnimationConfig(this.animations);
+    }
+
     console.log("UIManager registered component:", component.name || component.constructor.name);
 };
 
 UIManager.prototype.getTheme = function () {
     return this.theme;
+};
+
+UIManager.prototype.getAnimationConfig = function () {
+    return this.animations;
+};
+
+UIManager.prototype.isAnimationEnabled = function () {
+    return !!(this.animations && this.animations.enabled);
 };
 
 UIManager.prototype.injectGlobalStyles = function () {
@@ -79,7 +95,134 @@ UIManager.prototype.injectGlobalStyles = function () {
             --surface-color: ${this.theme.colors.surface};
             --text-color: ${this.theme.colors.text};
             --text-muted-color: ${this.theme.colors.textMuted};
+            --text-dark-color: ${this.theme.colors.textDark};
             --border-radius: ${this.theme.styles.borderRadius};
+            --animation-duration-instant: ${this.animations.durations.instant}s;
+            --animation-duration-quick: ${this.animations.durations.quick}s;
+            --animation-duration-standard: ${this.animations.durations.standard}s;
+            --animation-duration-extended: ${this.animations.durations.extended}s;
+            --animation-ease-entrance: ${this.animations.easings.entrance};
+            --animation-ease-exit: ${this.animations.easings.exit};
+            --animation-ease-emphasize: ${this.animations.easings.emphasize};
+            --action-dock-gap: ${this._getLayoutValue('actionDock', 'gap', 14)}px;
+            --action-dock-button-size: ${this._getLayoutValue('actionDock', 'buttonSize', 54)}px;
+            --action-dock-offset-bottom: calc(${this._getLayoutOffset('actionDock', 'bottom', 80)}px + env(safe-area-inset-bottom, 0px));
+            --action-dock-offset-right: calc(${this._getLayoutOffset('actionDock', 'right', 24)}px + env(safe-area-inset-right, 0px));
+            --toggle-surface: ${this.theme.colors.surface};
+        }
+        @media (max-width: 768px) {
+            :root {
+                --action-dock-offset-bottom: calc(${this._getLayoutMobileOffset('actionDock', 'bottom', 72)}px + env(safe-area-inset-bottom, 0px));
+                --action-dock-offset-right: calc(${this._getLayoutMobileOffset('actionDock', 'right', 16)}px + env(safe-area-inset-right, 0px));
+            }
+        }
+        #ui-button-container {
+            position: fixed;
+            bottom: var(--action-dock-offset-bottom);
+            right: var(--action-dock-offset-right);
+            display: flex;
+            flex-direction: row;
+            align-items: center;
+            gap: var(--action-dock-gap);
+            z-index: 5002;
+            pointer-events: none;
+        }
+        #ui-button-container .ui-action-button {
+            pointer-events: auto;
+        }
+        .ui-action-button {
+            width: var(--action-dock-button-size);
+            height: var(--action-dock-button-size);
+            padding: 0;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 14px;
+            border: none;
+            background: var(--toggle-surface, rgba(26, 32, 46, 0.9));
+            box-shadow: 0 14px 32px rgba(0, 0, 0, 0.28);
+            cursor: pointer;
+            transition: transform var(--animation-duration-quick) var(--animation-ease-entrance),
+                        box-shadow var(--animation-duration-quick) ease,
+                        background var(--animation-duration-quick) ease;
+            color: var(--text-color);
+            font-size: 22px;
+            backdrop-filter: blur(12px);
+        }
+        .ui-action-button .icon {
+            width: 26px;
+            height: 26px;
+            background-size: contain;
+            background-repeat: no-repeat;
+            background-position: center;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .ui-action-button .label {
+            display: none;
+        }
+        .ui-action-button:hover {
+            transform: scale(1.06);
+            background: rgba(26, 32, 46, 0.96);
+            box-shadow: 0 16px 36px rgba(0, 0, 0, 0.32);
+        }
+        .ui-action-button.is-open,
+        .ui-action-button.is-active {
+            background: var(--accent-color);
+            color: var(--text-dark-color);
+        }
+        .wave-action-wrapper {
+            position: relative;
+        }
+        .fanout-menu {
+            position: absolute;
+            bottom: calc(var(--action-dock-button-size) + 14px);
+            right: 0;
+            display: flex;
+            flex-direction: column;
+            align-items: flex-end;
+            gap: 10px;
+            pointer-events: none;
+            z-index: 5001;
+            opacity: 0;
+            transition: opacity var(--animation-duration-quick) ease;
+        }
+        .fanout-menu.is-open {
+            pointer-events: auto;
+            opacity: 1;
+        }
+        .fanout-menu__button {
+            pointer-events: auto;
+            width: 46px;
+            height: 46px;
+            border-radius: 12px;
+            background: rgba(24, 30, 44, 0.92);
+            color: var(--text-color);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 22px;
+            box-shadow: 0 14px 30px rgba(0, 0, 0, 0.28);
+            transform-origin: bottom right;
+            opacity: 0;
+            transform: translateY(12px) scale(0.9);
+            transition: opacity var(--animation-duration-quick) ease, transform var(--animation-duration-quick) ease;
+        }
+        .fanout-menu.is-open .fanout-menu__button {
+            opacity: 1;
+            transform: none;
+        }
+        .fanout-menu__button.placeholder {
+            opacity: 0.75;
+        }
+        @media (max-width: 768px) {
+            #ui-button-container {
+                bottom: var(--action-dock-offset-bottom);
+                right: var(--action-dock-offset-right);
+                gap: 12px;
+            }
         }
         #ui-transition-overlay {
             position: fixed;
@@ -367,8 +510,200 @@ UIManager.prototype.destroy = function () {
     this.app.off('transition:begin', this._boundTransitionBegin, this);
     this.app.off('transition:end', this._boundTransitionEnd, this);
     this.app.off('load:stream:progress', this._boundStreamProgress, this);
+    this.app.off('ui:animations:toggle', this._boundAnimationToggle, this);
     if (this._boundDocumentClick) {
         document.body.removeEventListener('click', this._boundDocumentClick, true);
         this._boundDocumentClick = null;
     }
+};
+
+UIManager.prototype._handleAnimationToggle = function (payload) {
+    if (!this.animations) {
+        return;
+    }
+    if (payload && Object.prototype.hasOwnProperty.call(payload, 'enabled')) {
+        this.animations.enabled = !!payload.enabled;
+        this.animations.forced = true;
+    }
+    if (payload && typeof payload.multiplier === 'number') {
+        this.animations.multiplier = Math.max(0, payload.multiplier);
+    }
+    this.components.forEach(function (component) {
+        if (component && typeof component.setAnimationConfig === 'function') {
+            component.setAnimationConfig(this.animations);
+        }
+    }, this);
+};
+
+UIManager.prototype._normalizeTheme = function (theme) {
+    const defaultColors = {
+        primary: '#1d9bf0',
+        primary2: '#1d77f2',
+        accent: '#1df2a4',
+        accent2: '#1de8f2',
+        surface: 'rgba(17, 17, 17, 0.92)',
+        surface2: 'rgba(34, 34, 34, 0.95)',
+        text: '#ffffff',
+        textMuted: 'rgba(255, 255, 255, 0.85)',
+        textDark: '#111111',
+        success: '#28a745',
+        warning: '#ffc107',
+        error: '#dc3545'
+    };
+
+    const defaultFonts = {
+        family: "'Segoe UI', Tahoma, Geneva, Verdana, sans-serif",
+        size: {
+            small: '12px',
+            medium: '14px',
+            large: '16px',
+            xlarge: '20px'
+        },
+        weight: {
+            light: 300,
+            regular: 400,
+            semibold: 600,
+            bold: 700
+        }
+    };
+
+    const defaultStyles = {
+        borderRadius: '14px',
+        boxShadow: '0 18px 36px rgba(0, 0, 0, 0.35)',
+        button: {
+            padding: '10px 14px',
+            borderRadius: '10px',
+            transition: 'transform 0.15s ease, box-shadow 0.15s ease'
+        },
+        input: {
+            padding: '10px',
+            borderRadius: '8px',
+            border: '1px solid rgba(255, 255, 255, 0.1)',
+            backgroundColor: 'rgba(255, 255, 255, 0.05)'
+        }
+    };
+
+    const normalized = Object.assign({}, theme);
+    normalized.colors = Object.assign({}, defaultColors, theme.colors || {});
+    normalized.fonts = Object.assign({}, defaultFonts, theme.fonts || {});
+    normalized.fonts.size = Object.assign({}, defaultFonts.size, theme.fonts && theme.fonts.size ? theme.fonts.size : {});
+    normalized.fonts.weight = Object.assign({}, defaultFonts.weight, theme.fonts && theme.fonts.weight ? theme.fonts.weight : {});
+    normalized.styles = Object.assign({}, defaultStyles, theme.styles || {});
+    normalized.styles.button = Object.assign({}, defaultStyles.button, theme.styles && theme.styles.button ? theme.styles.button : {});
+    normalized.styles.input = Object.assign({}, defaultStyles.input, theme.styles && theme.styles.input ? theme.styles.input : {});
+
+    const defaultLayout = {
+        actionDock: {
+            gap: 14,
+            buttonSize: 54,
+            baseOffset: { bottom: 80, right: 24 },
+            mobileOffset: { bottom: 72, right: 16 }
+        },
+        avatarPanel: {
+            width: 360,
+            maxWidthMobile: 320
+        },
+        quickMenu: {
+            maxHeight: 420,
+            width: 320
+        }
+    };
+
+    normalized.layout = Object.assign({}, defaultLayout, theme.layout || {});
+    if (normalized.layout.actionDock) {
+        normalized.layout.actionDock.baseOffset = Object.assign({}, defaultLayout.actionDock.baseOffset, theme.layout && theme.layout.actionDock && theme.layout.actionDock.baseOffset ? theme.layout.actionDock.baseOffset : {});
+        normalized.layout.actionDock.mobileOffset = Object.assign({}, defaultLayout.actionDock.mobileOffset, theme.layout && theme.layout.actionDock && theme.layout.actionDock.mobileOffset ? theme.layout.actionDock.mobileOffset : {});
+    }
+
+    const defaultPerformance = {
+        enableAutoQuality: true,
+        reducedMotionFallback: 'fade'
+    };
+
+    normalized.performance = Object.assign({}, defaultPerformance, theme.performance || {});
+
+    return normalized;
+};
+
+UIManager.prototype._detectPerformanceProfile = function () {
+    const prefersReducedMotion = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    const deviceMemory = typeof navigator !== 'undefined' && navigator.deviceMemory ? navigator.deviceMemory : null;
+    const cores = typeof navigator !== 'undefined' && navigator.hardwareConcurrency ? navigator.hardwareConcurrency : null;
+    const autoQuality = this.theme.performance && this.theme.performance.enableAutoQuality !== false;
+
+    const likelyLowEnd = autoQuality && (
+        prefersReducedMotion ||
+        (deviceMemory && deviceMemory <= 4) ||
+        (cores && cores <= 4) ||
+        (window.innerWidth < 820 && window.devicePixelRatio && window.devicePixelRatio > 2)
+    );
+
+    return {
+        prefersReducedMotion,
+        likelyLowEnd
+    };
+};
+
+UIManager.prototype._createAnimationConfig = function () {
+    const base = {
+        enabled: true,
+        durations: {
+            instant: 0.1,
+            quick: 0.16,
+            standard: 0.26,
+            extended: 0.44
+        },
+        easings: {
+            entrance: 'power3.out',
+            exit: 'power2.in',
+            emphasize: 'power4.out'
+        },
+        stagger: 0.05,
+        lowPerformanceMultiplier: 0.75,
+        multiplier: 1
+    };
+
+    const themeAnimations = this.theme.animations || {};
+    const merged = Object.assign({}, base, themeAnimations);
+    merged.durations = Object.assign({}, base.durations, themeAnimations.durations || {});
+    merged.easings = Object.assign({}, base.easings, themeAnimations.easings || {});
+    merged.stagger = typeof themeAnimations.stagger === 'number' ? themeAnimations.stagger : base.stagger;
+    merged.lowPerformanceMultiplier = typeof themeAnimations.lowPerformanceMultiplier === 'number'
+        ? themeAnimations.lowPerformanceMultiplier
+        : base.lowPerformanceMultiplier;
+
+    if (this.performanceProfile && this.performanceProfile.prefersReducedMotion) {
+        merged.enabled = false;
+    }
+
+    if (this.performanceProfile && this.performanceProfile.likelyLowEnd) {
+        merged.multiplier = merged.lowPerformanceMultiplier;
+    }
+
+    merged.reducedMotionFallback = (this.theme.performance && this.theme.performance.reducedMotionFallback) || 'fade';
+    return merged;
+};
+
+UIManager.prototype._getLayoutValue = function (section, key, fallback) {
+    const layout = this.theme && this.theme.layout && this.theme.layout[section];
+    if (!layout || typeof layout[key] === 'undefined') {
+        return fallback;
+    }
+    return layout[key];
+};
+
+UIManager.prototype._getLayoutOffset = function (section, key, fallback) {
+    const layout = this.theme && this.theme.layout && this.theme.layout[section];
+    if (!layout || !layout.baseOffset || typeof layout.baseOffset[key] === 'undefined') {
+        return fallback;
+    }
+    return layout.baseOffset[key];
+};
+
+UIManager.prototype._getLayoutMobileOffset = function (section, key, fallback) {
+    const layout = this.theme && this.theme.layout && this.theme.layout[section];
+    if (!layout || !layout.mobileOffset || typeof layout.mobileOffset[key] === 'undefined') {
+        return fallback;
+    }
+    return layout.mobileOffset[key];
 };

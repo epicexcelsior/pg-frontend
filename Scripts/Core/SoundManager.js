@@ -56,6 +56,12 @@ SoundManager.prototype.initialize = function() {
 
     this.lastPlayed = new Map();
     this._slotReadyPromises = new Map();
+    this.effectsEnabled = true;
+    this._preferenceKeys = {
+        volume: 'pg:ui:masterVolume',
+        effects: 'pg:ui:effectsEnabled'
+    };
+    this._restoreUiPreferences();
 
     // Create sound slots from the configured assets
     this.soundMap = new Map();
@@ -118,6 +124,8 @@ SoundManager.prototype.initialize = function() {
     this._bindUiSoundEvents();
     this.app.on('audio:expanded:ready', this._onAudioReady, this);
     this._preloadConfiguredSounds();
+    this.app.on('ui:sound:setMasterVolume', this._onSetMasterVolume, this);
+    this.app.on('ui:sound:setEffectsEnabled', this._onSetEffectsEnabled, this);
 
     console.log("SoundManager initialized.");
 };
@@ -135,7 +143,7 @@ SoundManager.prototype.playSound = function(soundName) {
     // Cooldown check
     const now = Date.now();
     const lastTime = this.lastPlayed.get(soundName) || 0;
-    if (now - lastTime < this.globalCooldown) {
+    if (!this.effectsEnabled || now - lastTime < this.globalCooldown) {
         return; // Sound is on cooldown
     }
     this.lastPlayed.set(soundName, now);
@@ -348,15 +356,20 @@ SoundManager.prototype._extractAssetId = function (reference) {
 };
 
 SoundManager.prototype._applyMasterVolume = function (value) {
-    this.masterVolume = value;
+    var clamped = Math.max(0, Math.min(1, value));
+    this.masterVolume = clamped;
     if (!this.entity.sound || !this.entity.sound.slots) {
+        this._broadcastVolume();
+        this._persistPreference(this._preferenceKeys.volume, clamped.toFixed(2));
         return;
     }
     for (const slotName in this.entity.sound.slots) {
         if (Object.prototype.hasOwnProperty.call(this.entity.sound.slots, slotName)) {
-            this.entity.sound.slots[slotName].volume = value;
+            this.entity.sound.slots[slotName].volume = clamped;
         }
     }
+    this._broadcastVolume();
+    this._persistPreference(this._preferenceKeys.volume, clamped.toFixed(2));
 };
 
 SoundManager.prototype.destroy = function () {
@@ -365,6 +378,8 @@ SoundManager.prototype.destroy = function () {
         this.app.off('audio:expanded:ready', this._onAudioReady, this);
     }
     this.off('attr:masterVolume', this._applyMasterVolume, this);
+    this.app.off('ui:sound:setMasterVolume', this._onSetMasterVolume, this);
+    this.app.off('ui:sound:setEffectsEnabled', this._onSetEffectsEnabled, this);
     if (this.app.soundManager === this) {
         delete this.app.soundManager;
     }
@@ -374,4 +389,66 @@ SoundManager.prototype.destroy = function () {
     if (this.soundMap) {
         this.soundMap.clear();
     }
+};
+
+SoundManager.prototype._onSetMasterVolume = function (value) {
+    if (typeof value !== 'number') {
+        return;
+    }
+    this._applyMasterVolume(value);
+};
+
+SoundManager.prototype._onSetEffectsEnabled = function (state) {
+    if (typeof state !== 'boolean') {
+        return;
+    }
+    this.effectsEnabled = state;
+    this._broadcastEffectsState();
+    this._persistPreference(this._preferenceKeys.effects, String(state));
+};
+
+SoundManager.prototype._broadcastVolume = function () {
+    if (this.app) {
+        this.app.fire('sound:masterVolume:updated', this.masterVolume);
+    }
+};
+
+SoundManager.prototype._broadcastEffectsState = function () {
+    if (this.app) {
+        this.app.fire('sound:effects:state', this.effectsEnabled);
+    }
+};
+
+SoundManager.prototype._persistPreference = function (key, value) {
+    if (typeof window === 'undefined' || !window.localStorage) {
+        return;
+    }
+    try {
+        window.localStorage.setItem(key, value);
+    } catch (err) {
+        console.warn('SoundManager: Failed to persist preference', key, err);
+    }
+};
+
+SoundManager.prototype._restoreUiPreferences = function () {
+    if (typeof window === 'undefined' || !window.localStorage) {
+        return;
+    }
+    try {
+        var storedVolume = window.localStorage.getItem(this._preferenceKeys.volume);
+        if (storedVolume !== null) {
+            var parsedVolume = parseFloat(storedVolume);
+            if (!isNaN(parsedVolume)) {
+                this.masterVolume = Math.max(0, Math.min(1, parsedVolume));
+            }
+        }
+        var storedEffects = window.localStorage.getItem(this._preferenceKeys.effects);
+        if (storedEffects !== null) {
+            this.effectsEnabled = storedEffects === 'true';
+        }
+    } catch (err) {
+        console.warn('SoundManager: Unable to restore stored UI preferences.', err);
+    }
+    this._broadcastEffectsState();
+    this._broadcastVolume();
 };

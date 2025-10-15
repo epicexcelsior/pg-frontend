@@ -32,6 +32,12 @@ HtmlAvatarCustomizer.prototype.initialize = function () {
   this.isOpen = false;
   this.toggleButton = null;
   this._requestedVariantStream = false;
+  this.animationConfig = {
+    enabled: true,
+    durations: { standard: 0.26, quick: 0.18 },
+    easings: { entrance: 'power3.out', exit: 'power2.in' },
+    multiplier: 1
+  };
 
   if (this.app.uiManager && this.app.uiManager.registerComponent) {
     this.app.uiManager.registerComponent(this);
@@ -211,7 +217,7 @@ HtmlAvatarCustomizer.prototype._createButtonsContainerAndToggle = function () {
   // Create the avatar toggle button (will sit to the RIGHT of wave)
   var btn = document.createElement("button");
   btn.id = "avatar-toggle-button";
-  btn.className = "avatar-toggle-button";
+  btn.className = "ui-action-button avatar-toggle-button";
   btn.type = "button";
   btn.setAttribute("aria-label", "Open avatar customization");
 
@@ -250,6 +256,14 @@ HtmlAvatarCustomizer.prototype._createButtonsContainerAndToggle = function () {
   this.toggleButton.setAttribute("aria-pressed", "false");
 
   // if (this.openOnStart) this.toggleButton.style.display = "none";
+
+  var themeToApply = this.theme;
+  if (!themeToApply && this.app.uiManager && typeof this.app.uiManager.getTheme === "function") {
+    themeToApply = this.app.uiManager.getTheme();
+  }
+  if (themeToApply) {
+    this.setTheme(themeToApply);
+  }
 };
 
 HtmlAvatarCustomizer.prototype._createBridge = function () {
@@ -361,9 +375,23 @@ HtmlAvatarCustomizer.prototype._showRateLimit = function (remainingMs) {
 };
 
 HtmlAvatarCustomizer.prototype.setTheme = function (theme) {
-  if (!this.root || !theme) return;
-  if (theme.colors && theme.colors.accent)
-    this.root.style.setProperty("--accent-color", theme.colors.accent);
+  this.theme = theme;
+  if (!theme) return;
+  if (this.root) {
+    var colors = theme.colors || {};
+    var layout = theme.layout && theme.layout.avatarPanel ? theme.layout.avatarPanel : null;
+
+    this.root.style.setProperty("--accent-color", colors.accent || "#1df2a4");
+    this.root.style.setProperty("--accent2-color", colors.accent2 || colors.primary || "#1de8f2");
+    this.root.style.setProperty("--avatar-surface", colors.surface2 || colors.surface || "rgba(17, 22, 34, 0.94)");
+    this.root.style.setProperty("--avatar-border", "rgba(255, 255, 255, 0.08)");
+    this.root.style.setProperty("--avatar-slot-surface", "rgba(255, 255, 255, 0.05)");
+    this.root.style.setProperty("--avatar-shadow", (theme.styles && theme.styles.boxShadow) || "0 28px 60px rgba(0, 0, 0, 0.45)");
+    this.root.style.setProperty("--text-muted-color", colors.textMuted || "rgba(255, 255, 255, 0.7)");
+    if (layout && layout.width) {
+      this.root.style.setProperty("--avatar-panel-width", layout.width + "px");
+    }
+  }
   if (this.toggleButton && theme.colors && theme.colors.surface)
     this.toggleButton.style.setProperty(
       "--toggle-surface",
@@ -371,28 +399,48 @@ HtmlAvatarCustomizer.prototype.setTheme = function (theme) {
     );
 };
 
+HtmlAvatarCustomizer.prototype.setAnimationConfig = function (config) {
+  if (!config) {
+    return;
+  }
+  this.animationConfig = Object.assign({}, this.animationConfig, config);
+};
+
 HtmlAvatarCustomizer.prototype.open = function () {
-  if (!this.root) return;
-  this.root.classList.add("is-open");
-  this.root.classList.remove("is-closed");
+  if (!this.root || this.isOpen) return;
   this.isOpen = true;
+  this.root.classList.remove("is-closed");
+  this.root.classList.add("is-open");
+  this.root.style.pointerEvents = "auto";
+  this._animatePanel(true);
   this._requestVariantStreaming();
   if (this.toggleButton) {
     this.toggleButton.classList.add("is-open");
     this.toggleButton.setAttribute("aria-pressed", "true");
-    // this.toggleButton.style.display = "none";
   }
 };
 
 HtmlAvatarCustomizer.prototype.close = function () {
-  if (!this.root) return;
-  this.root.classList.add("is-closed");
-  this.root.classList.remove("is-open");
+  if (!this.root || !this.isOpen) return;
+  var self = this;
   this.isOpen = false;
+  this.root.style.pointerEvents = "none";
   if (this.toggleButton) {
     this.toggleButton.classList.remove("is-open");
     this.toggleButton.setAttribute("aria-pressed", "false");
-    // this.toggleButton.style.display = "";
+  }
+
+  var duration = this._animatePanel(false);
+  var finalize = function () {
+    if (!self.root) return;
+    self.root.classList.add("is-closed");
+    self.root.classList.remove("is-open");
+  };
+
+  if (duration > 0 && window.gsap && this._shouldAnimate()) {
+    gsap.delayedCall(duration, finalize);
+  } else {
+    finalize();
   }
 };
 
@@ -419,6 +467,39 @@ HtmlAvatarCustomizer.prototype._requestVariantStreaming = function () {
   }).catch(function (err) {
     console.warn('HtmlAvatarCustomizer: Failed to stream avatar variants.', err);
   });
+};
+
+HtmlAvatarCustomizer.prototype._shouldAnimate = function () {
+  return this.animationConfig && this.animationConfig.enabled !== false;
+};
+
+HtmlAvatarCustomizer.prototype._animatePanel = function (isOpening) {
+  if (!window.gsap || !this._shouldAnimate() || !this.root) {
+    return 0;
+  }
+  var baseDuration = (this.animationConfig.durations && this.animationConfig.durations.standard) || 0.26;
+  var duration = Math.max(0.16, baseDuration * (this.animationConfig.multiplier || 1));
+  var easeIn = (this.animationConfig.easings && this.animationConfig.easings.entrance) || 'power3.out';
+  var easeOut = (this.animationConfig.easings && this.animationConfig.easings.exit) || 'power2.in';
+
+  gsap.killTweensOf(this.root);
+  if (isOpening) {
+    gsap.fromTo(this.root,
+      { opacity: 0, y: 28, scale: 0.95 },
+      { opacity: 1, y: 0, scale: 1, duration: duration, ease: easeIn }
+    );
+    return duration;
+  }
+
+  var closingDuration = Math.max(0.14, duration * 0.85);
+  gsap.to(this.root, {
+    opacity: 0,
+    y: 24,
+    scale: 0.94,
+    duration: closingDuration,
+    ease: easeOut
+  });
+  return closingDuration;
 };
 
 HtmlAvatarCustomizer.prototype.destroy = function () {

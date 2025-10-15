@@ -96,6 +96,13 @@ HtmlBoothDescription.prototype.initialize = function () {
         }
     };
 
+    this.animationConfig = {
+        enabled: true,
+        durations: { standard: 0.24, quick: 0.16 },
+        easings: { entrance: 'power3.out', exit: 'power2.in' },
+        multiplier: 1
+    };
+
     this._bindHandlers();
     this.createDom();
 
@@ -124,33 +131,193 @@ HtmlBoothDescription.prototype._bindHandlers = function () {
     this._onSaveClick = this.onSubmit.bind(this);
 };
 
+HtmlBoothDescription.prototype._ensureStyles = function () {
+    if (HtmlBoothDescription._stylesInjected) {
+        return;
+    }
+    var style = document.createElement('style');
+    style.id = 'booth-description-styles';
+    style.textContent = `
+    .booth-description-editor {
+        position: fixed;
+        bottom: var(--booth-bottom-offset, 96px);
+        right: var(--booth-right-offset, 32px);
+        width: var(--booth-panel-width, 320px);
+        display: flex;
+        flex-direction: column;
+        gap: 16px;
+        padding: 20px;
+        border-radius: 20px;
+        background: var(--booth-surface, rgba(17, 22, 34, 0.94));
+        border: 1px solid var(--booth-border, rgba(255, 255, 255, 0.08));
+        box-shadow: var(--booth-shadow, 0 24px 52px rgba(0, 0, 0, 0.45));
+        color: var(--booth-text, #ffffff);
+        font-family: var(--font-family, 'Segoe UI', sans-serif);
+        backdrop-filter: blur(18px);
+        z-index: 5020;
+        opacity: 0;
+        pointer-events: none;
+        transform-origin: bottom right;
+        transform: translate3d(0, 28px, 0) scale(0.95);
+        transition: opacity var(--animation-duration-standard, 0.26s) ease, transform var(--animation-duration-standard, 0.26s) ease;
+    }
+    .booth-description-editor.is-visible {
+        opacity: 1;
+        pointer-events: auto;
+        transform: none;
+    }
+    .booth-description-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+    }
+    .booth-description-title {
+        font-size: 15px;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        font-weight: 600;
+        color: var(--booth-text-muted, rgba(255, 255, 255, 0.76));
+    }
+    .booth-description-meta {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        font-size: 12px;
+        color: var(--booth-text-muted, rgba(255, 255, 255, 0.7));
+    }
+    .booth-description-counter {
+        font-variant-numeric: tabular-nums;
+    }
+    .booth-description-feedback {
+        font-size: 12px;
+        color: var(--booth-text-muted, rgba(255, 255, 255, 0.7));
+        transition: color 0.2s ease;
+    }
+    .booth-description-textarea {
+        width: 100%;
+        min-height: 120px;
+        border-radius: 16px;
+        border: 1px solid var(--booth-input-border, rgba(255, 255, 255, 0.12));
+        background: var(--booth-input-surface, rgba(12, 16, 28, 0.82));
+        color: var(--booth-text, #ffffff);
+        padding: 14px;
+        font-size: 14px;
+        line-height: 1.45;
+        resize: none;
+        box-shadow: 0 18px 38px rgba(0, 0, 0, 0.18);
+        transition: border var(--animation-duration-quick, 0.18s) ease, box-shadow var(--animation-duration-quick, 0.18s) ease;
+    }
+    .booth-description-textarea:focus {
+        outline: none;
+        border-color: var(--accent-color, #1df2a4);
+        box-shadow: 0 0 0 2px rgba(29, 242, 164, 0.32);
+    }
+    .booth-description-textarea.booth-description-overlimit {
+        border-color: var(--booth-error-color, #ff6b6b);
+        box-shadow: 0 0 0 2px rgba(255, 107, 107, 0.28);
+    }
+    .booth-description-save {
+        width: 100%;
+        padding: 14px 18px;
+        border-radius: 14px;
+        border: none;
+        font-weight: 600;
+        font-size: 14px;
+        cursor: pointer;
+        background: linear-gradient(135deg, var(--accent-color, #1df2a4), var(--accent2-color, #1de8f2));
+        color: var(--text-dark-color, #10151f);
+        box-shadow: 0 16px 32px rgba(29, 242, 164, 0.28);
+        transition: transform var(--animation-duration-quick, 0.18s) ease, box-shadow var(--animation-duration-quick, 0.18s) ease;
+    }
+    .booth-description-save:hover {
+        transform: translateY(-1px);
+        box-shadow: 0 18px 42px rgba(29, 242, 164, 0.32);
+    }
+    .booth-description-save:disabled {
+        opacity: 0.55;
+        cursor: default;
+        box-shadow: none;
+        transform: none;
+    }
+    .booth-description-future {
+        border-radius: 14px;
+        padding: 12px;
+        background: rgba(255, 255, 255, 0.06);
+        color: var(--booth-text-muted, rgba(255, 255, 255, 0.72));
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+        font-size: 12px;
+    }
+    .booth-description-future .future-title {
+        font-size: 12px;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+    }
+    .booth-description-future .future-row {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+    }
+    .booth-description-future label {
+        font-size: 12px;
+        font-weight: 500;
+        opacity: 0.8;
+    }
+    .booth-description-future select {
+        border-radius: 10px;
+        border: 1px dashed rgba(255, 255, 255, 0.22);
+        background: rgba(0, 0, 0, 0.15);
+        color: var(--booth-text-muted, rgba(255, 255, 255, 0.8));
+        padding: 8px 10px;
+        font-size: 12px;
+    }
+    .booth-description-future .future-note {
+        font-size: 12px;
+        opacity: 0.7;
+        font-style: italic;
+    }
+    @media (max-width: 720px) {
+        .booth-description-editor {
+            right: max(16px, env(safe-area-inset-right));
+            left: max(16px, env(safe-area-inset-left));
+            width: auto;
+        }
+    }
+    `;
+    document.head.appendChild(style);
+    HtmlBoothDescription._stylesInjected = true;
+};
+
 HtmlBoothDescription.prototype.createDom = function () {
+    this._ensureStyles();
+
     this.container = document.createElement('div');
     this.container.className = 'booth-description-editor';
-    this.container.style.position = 'fixed';
-    this.container.style.bottom = `${this.config.panel.bottom}px`;
-    this.container.style.right = `${this.config.panel.right}px`;
-    this.container.style.width = `${this.config.panel.width}px`;
-    this.container.style.padding = '16px';
-    this.container.style.display = 'none';
-    this.container.style.zIndex = '1020';
+    this.container.setAttribute('role', 'dialog');
+    this.container.setAttribute('aria-modal', 'true');
+    this.container.setAttribute('aria-hidden', 'true');
+    this.container.style.setProperty('--booth-panel-width', this.config.panel.width + 'px');
+    this.container.style.setProperty('--booth-bottom-offset', this.config.panel.bottom + 'px');
+    this.container.style.setProperty('--booth-right-offset', this.config.panel.right + 'px');
 
     var titleRow = document.createElement('div');
     titleRow.className = 'booth-description-header';
 
     this.titleLabel = document.createElement('div');
+    this.titleLabel.className = 'booth-description-title';
     this.titleLabel.textContent = 'Your Booth Message';
     titleRow.appendChild(this.titleLabel);
 
     this.container.appendChild(titleRow);
 
     this.textarea = document.createElement('textarea');
+    this.textarea.className = 'booth-description-textarea';
     this.textarea.setAttribute('maxlength', String(this.config.maxLength));
     this.textarea.placeholder = `Share what your booth is about (max ${this.config.maxLength} characters)...`;
-    this.textarea.style.width = '100%';
-    this.textarea.style.minHeight = '110px';
-    this.textarea.style.boxSizing = 'border-box';
-    this.textarea.style.resize = 'none';
     this.container.appendChild(this.textarea);
 
     var counterRow = document.createElement('div');
@@ -158,9 +325,11 @@ HtmlBoothDescription.prototype.createDom = function () {
     this.metaRow = counterRow;
 
     this.counter = document.createElement('div');
+    this.counter.className = 'booth-description-counter';
     counterRow.appendChild(this.counter);
 
     this.feedback = document.createElement('div');
+    this.feedback.className = 'booth-description-feedback';
     counterRow.appendChild(this.feedback);
 
     this.container.appendChild(counterRow);
@@ -174,7 +343,6 @@ HtmlBoothDescription.prototype.createDom = function () {
     this.futurePlaceholder = document.createElement('div');
     this.futurePlaceholder.className = 'booth-description-future';
 
-    // NOTE: Future booth customization controls (currently disabled placeholders).
     var futureTitle = document.createElement('div');
     futureTitle.className = 'future-title';
     futureTitle.textContent = 'Customization (Coming Soon)';
@@ -186,6 +354,7 @@ HtmlBoothDescription.prototype.createDom = function () {
     colorLabel.textContent = 'Color Theme';
     var colorSelect = document.createElement('select');
     colorSelect.disabled = true;
+    colorSelect.setAttribute('aria-disabled', 'true');
     ['Default', 'Pastel Glow', 'Neon Night'].forEach(function (name) {
         var opt = document.createElement('option');
         opt.textContent = name;
@@ -200,6 +369,7 @@ HtmlBoothDescription.prototype.createDom = function () {
     fontLabel.textContent = 'Font Style';
     var fontSelect = document.createElement('select');
     fontSelect.disabled = true;
+    fontSelect.setAttribute('aria-disabled', 'true');
     ['Default', 'Serif Classic', 'Display Bold'].forEach(function (name) {
         var opt = document.createElement('option');
         opt.textContent = name;
@@ -231,6 +401,13 @@ HtmlBoothDescription.prototype.setTheme = function (theme) {
     this.applyTheme();
 };
 
+HtmlBoothDescription.prototype.setAnimationConfig = function (config) {
+    if (!config) {
+        return;
+    }
+    this.animationConfig = Object.assign({}, this.animationConfig, config);
+};
+
 HtmlBoothDescription.prototype.applyTheme = function () {
     var theme = this.theme || HTML_BOOTH_DEFAULT_THEME;
     var colors = theme.colors || HTML_BOOTH_DEFAULT_THEME.colors;
@@ -241,111 +418,20 @@ HtmlBoothDescription.prototype.applyTheme = function () {
         return;
     }
 
-    this.container.style.background = colors.surface2 || colors.surface;
-    this.container.style.boxShadow = styles.boxShadow || HTML_BOOTH_DEFAULT_THEME.styles.boxShadow;
-    this.container.style.borderRadius = styles.borderRadius || HTML_BOOTH_DEFAULT_THEME.styles.borderRadius;
-    this.container.style.color = colors.text || '#ffffff';
+    this.container.style.setProperty('--booth-surface', colors.surface2 || colors.surface || 'rgba(17, 22, 34, 0.94)');
+    this.container.style.setProperty('--booth-border', 'rgba(255, 255, 255, 0.08)');
+    this.container.style.setProperty('--booth-shadow', styles.boxShadow || '0 24px 52px rgba(0, 0, 0, 0.45)');
+    this.container.style.setProperty('--booth-text', colors.text || '#ffffff');
+    this.container.style.setProperty('--booth-text-muted', colors.textMuted || 'rgba(255, 255, 255, 0.72)');
+    this.container.style.setProperty('--booth-input-border', styles.input?.border || '1px solid rgba(255, 255, 255, 0.12)');
+    this.container.style.setProperty('--booth-input-surface', styles.input?.backgroundColor || 'rgba(12, 16, 28, 0.82)');
+    this.container.style.setProperty('--booth-error-color', colors.error || '#ff6b6b');
+    this.container.style.setProperty('--accent-color', colors.accent || '#1df2a4');
+    this.container.style.setProperty('--accent2-color', colors.accent2 || colors.primary || '#1de8f2');
     this.container.style.fontFamily = fonts.family || HTML_BOOTH_DEFAULT_THEME.fonts.family;
 
-    if (this.titleLabel) {
-        this.titleLabel.style.fontSize = fonts.size?.medium || '14px';
-        this.titleLabel.style.fontWeight = fonts.weight?.semibold || 600;
-        this.titleLabel.style.letterSpacing = '0.05em';
-        this.titleLabel.style.textTransform = 'uppercase';
-        this.titleLabel.style.marginBottom = '10px';
-        this.titleLabel.style.color = colors.textMuted || colors.text;
-    }
-
-    if (this.textarea) {
-        this.textarea.style.padding = styles.input?.padding || HTML_BOOTH_DEFAULT_THEME.styles.input.padding;
-        this.textarea.style.borderRadius = styles.input?.borderRadius || HTML_BOOTH_DEFAULT_THEME.styles.input.borderRadius;
-        this.textarea.style.border = styles.input?.border || HTML_BOOTH_DEFAULT_THEME.styles.input.border;
-        this.textarea.style.background = styles.input?.backgroundColor || HTML_BOOTH_DEFAULT_THEME.styles.input.backgroundColor;
-        this.textarea.style.color = colors.text || '#ffffff';
-        this.textarea.style.fontSize = fonts.size?.medium || '14px';
-        this.textarea.style.fontFamily = fonts.family || HTML_BOOTH_DEFAULT_THEME.fonts.family;
-    }
-
-    if (this.counter) {
-        this.counter.style.fontSize = fonts.size?.small || '12px';
-        this.counter.style.color = colors.textMuted || '#aeb3d6';
-    }
-
-    if (this.metaRow) {
-        this.metaRow.style.display = 'flex';
-        this.metaRow.style.alignItems = 'center';
-        this.metaRow.style.justifyContent = 'space-between';
-        this.metaRow.style.gap = '12px';
-        this.metaRow.style.marginTop = '8px';
-    }
-
     if (this.feedback) {
-        this.feedback.style.fontSize = fonts.size?.small || '12px';
-        this.feedback.style.color = colors.textMuted || '#aeb3d6';
-    }
-
-    if (this.saveButton) {
-        this.saveButton.style.marginTop = '10px';
-        this.saveButton.style.width = '100%';
-        this.saveButton.style.padding = styles.button?.padding || HTML_BOOTH_DEFAULT_THEME.styles.button.padding;
-        this.saveButton.style.borderRadius = styles.button?.borderRadius || HTML_BOOTH_DEFAULT_THEME.styles.button.borderRadius;
-        this.saveButton.style.border = 'none';
-        this.saveButton.style.fontWeight = fonts.weight?.semibold || 600;
-        this.saveButton.style.fontSize = fonts.size?.medium || '14px';
-        this.saveButton.style.fontFamily = fonts.family || HTML_BOOTH_DEFAULT_THEME.fonts.family;
-        this.saveButton.style.cursor = 'pointer';
-        this.saveButton.style.background = colors.primary || '#4c6ef5';
-        this.saveButton.style.color = colors.text || '#ffffff';
-        this.saveButton.style.transition = 'transform 0.12s ease, box-shadow 0.12s ease, opacity 0.12s ease';
-    }
-
-    if (this.saveButton) {
-        this.saveButton.onmouseover = () => {
-            this.saveButton.style.transform = 'translateY(-1px)';
-            this.saveButton.style.boxShadow = '0 10px 22px rgba(0,0,0,0.28)';
-        };
-        this.saveButton.onmouseout = () => {
-            this.saveButton.style.transform = 'none';
-            this.saveButton.style.boxShadow = 'none';
-        };
-    }
-
-    if (this.futurePlaceholder) {
-        this.futurePlaceholder.style.marginTop = '14px';
-        this.futurePlaceholder.style.padding = '12px';
-        this.futurePlaceholder.style.borderRadius = '10px';
-        this.futurePlaceholder.style.background = 'rgba(255,255,255,0.06)';
-        this.futurePlaceholder.style.color = colors.textMuted || '#d4d7f0';
-        this.futurePlaceholder.style.fontSize = fonts.size?.small || '12px';
-        this.futurePlaceholder.style.display = 'flex';
-        this.futurePlaceholder.style.flexDirection = 'column';
-        this.futurePlaceholder.style.gap = '8px';
-    }
-
-    if (this.futurePlaceholder) {
-        var selects = this.futurePlaceholder.querySelectorAll('select');
-        selects.forEach(function (select) {
-            select.style.width = '100%';
-            select.style.padding = '8px 10px';
-            select.style.borderRadius = '8px';
-            select.style.border = '1px dashed rgba(255,255,255,0.25)';
-            select.style.background = 'rgba(0,0,0,0.15)';
-            select.style.color = colors.textMuted || '#d4d7f0';
-            select.style.fontFamily = fonts.family || 'inherit';
-        });
-
-        var labels = this.futurePlaceholder.querySelectorAll('label');
-        labels.forEach(function (label) {
-            label.style.fontSize = fonts.size?.small || '12px';
-            label.style.fontWeight = fonts.weight?.regular || 400;
-        });
-
-        var note = this.futurePlaceholder.querySelector('.future-note');
-        if (note) {
-            note.style.fontSize = fonts.size?.small || '12px';
-            note.style.opacity = '0.75';
-            note.style.fontStyle = 'italic';
-        }
+        this.feedback.style.color = colors.textMuted || 'rgba(255, 255, 255, 0.72)';
     }
 };
 
@@ -371,10 +457,8 @@ HtmlBoothDescription.prototype.updateCounter = function () {
     if (this.textarea) {
         if (remaining < 0) {
             this.textarea.classList.add('booth-description-overlimit');
-            this.textarea.style.outline = `1px solid ${(this.theme?.colors?.error) || '#ff6b6b'}`;
         } else {
             this.textarea.classList.remove('booth-description-overlimit');
-            this.textarea.style.outline = 'none';
         }
     }
 };
@@ -391,13 +475,28 @@ HtmlBoothDescription.prototype.showEditor = function (payload) {
         this.feedback.style.color = (this.theme.colors && this.theme.colors.textMuted) || '#aeb3d6';
     }
     this.setPending(false);
-    this.container.style.display = 'block';
+    this.container.classList.add('is-visible');
+    this.container.setAttribute('aria-hidden', 'false');
+    this._animatePanel(true);
 };
 
 HtmlBoothDescription.prototype.hideEditor = function () {
     this.currentBoothId = null;
-    this.container.style.display = 'none';
     this.setPending(false);
+    var self = this;
+    var duration = this._animatePanel(false);
+    var finalize = function () {
+        if (!self.container) {
+            return;
+        }
+        self.container.classList.remove('is-visible');
+        self.container.setAttribute('aria-hidden', 'true');
+    };
+    if (duration > 0 && window.gsap && this._shouldAnimate()) {
+        gsap.delayedCall(duration, finalize);
+    } else {
+        finalize();
+    }
     if (document.activeElement === this.textarea) {
         this.textarea.blur();
     }
@@ -431,9 +530,10 @@ HtmlBoothDescription.prototype.onSaveError = function (payload) {
 
 HtmlBoothDescription.prototype.setPending = function (isPending) {
     this.pending = isPending;
-    this.saveButton.disabled = !!isPending;
-    this.saveButton.style.opacity = isPending ? '0.6' : '1';
-    this.saveButton.textContent = isPending ? 'Saving…' : 'Save Message';
+    if (this.saveButton) {
+        this.saveButton.disabled = !!isPending;
+        this.saveButton.textContent = isPending ? 'Saving…' : 'Save Message';
+    }
 };
 
 HtmlBoothDescription.prototype.onSubmit = function () {
@@ -464,6 +564,59 @@ HtmlBoothDescription.prototype.handleBlur = function () {
     }
     this.lockActive = false;
     this.app.fire(this.config.events.blur, { source: this.lockReason });
+};
+
+HtmlBoothDescription.prototype._shouldAnimate = function () {
+    return this.animationConfig && this.animationConfig.enabled !== false;
+};
+
+HtmlBoothDescription.prototype._animatePanel = function (isOpening) {
+    if (!window.gsap || !this._shouldAnimate() || !this.container) {
+        if (!isOpening) {
+            this.container.style.opacity = '';
+            this.container.style.transform = '';
+        }
+        return 0;
+    }
+    var base = (this.animationConfig.durations && this.animationConfig.durations.standard) || 0.24;
+    var duration = Math.max(0.14, base * (this.animationConfig.multiplier || 1));
+    var easeIn = (this.animationConfig.easings && this.animationConfig.easings.entrance) || 'power3.out';
+    var easeOut = (this.animationConfig.easings && this.animationConfig.easings.exit) || 'power2.in';
+
+    gsap.killTweensOf(this.container);
+    if (isOpening) {
+        gsap.fromTo(this.container,
+            { opacity: 0, y: 30, scale: 0.94 },
+            {
+                opacity: 1,
+                y: 0,
+                scale: 1,
+                duration: duration,
+                ease: easeIn,
+                onComplete: function (target) {
+                    target.style.opacity = '';
+                    target.style.transform = '';
+                },
+                onCompleteParams: [this.container]
+            }
+        );
+        return duration;
+    }
+
+    var closingDuration = Math.max(0.12, duration * 0.82);
+    gsap.to(this.container, {
+        opacity: 0,
+        y: 24,
+        scale: 0.92,
+        duration: closingDuration,
+        ease: easeOut,
+        onComplete: function (target) {
+            target.style.opacity = '';
+            target.style.transform = '';
+        },
+        onCompleteParams: [this.container]
+    });
+    return closingDuration;
 };
 
 HtmlBoothDescription.prototype.destroy = function () {
