@@ -90,9 +90,13 @@ FxDebugButton.prototype._onButtonClicked = function () {
     if (this.useDonationEvent) {
         this.app.fire('effects:donation', {
             senderUsername: 'Debug',
+            sender: 'DebugWallet111111111111111111111111111111',
             recipientUsername: 'You',
-            amountSOL: this.donationAmount
+            recipient: 'PlayerWallet2222222222222222222222222',
+            amountSOL: this.donationAmount,
+            message: 'Demo donation trigger'
         });
+        this.app.fire('ui:donation:debug');
         return;
     }
 

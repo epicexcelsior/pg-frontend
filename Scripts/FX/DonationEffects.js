@@ -3,6 +3,11 @@ var DonationEffects = pc.createScript('donationEffects');
 
 DonationEffects.attributes.add('confettiPrefab', { type: 'entity', title: 'Confetti Prefab' });
 DonationEffects.attributes.add('sparklePrefab', { type: 'entity', title: 'Sparkle Prefab' });
+DonationEffects.attributes.add('useLegacyParticleBursts', {
+    type: 'boolean',
+    default: false,
+    title: 'Use Legacy Particle Systems'
+});
 DonationEffects.attributes.add('sfxWhoosh', { type: 'asset', assetType: 'audio', title: 'SFX Whoosh' });
 DonationEffects.attributes.add('sfxCoins', { type: 'asset', assetType: 'audio', title: 'SFX Coins' });
 DonationEffects.attributes.add('sfxSpark', { type: 'asset', assetType: 'audio', title: 'SFX Spark' });
@@ -50,6 +55,38 @@ DonationEffects.prototype.initialize = function () {
         }
     }, this);
 };
+
+function ensureParticleUniforms(ps) {
+    if (!ps) {
+        return;
+    }
+    var material = null;
+    if (ps.material) {
+        material = ps.material;
+    } else if (ps.meshInstances && ps.meshInstances.length && ps.meshInstances[0].material) {
+        material = ps.meshInstances[0].material;
+    }
+    if (!material || typeof material.setParameter !== 'function') {
+        return;
+    }
+
+    var defaults = {
+        radialSpeedDivMult: 1.0,
+        deltaRandomnessStatic: 0.0,
+        softening: 0.0,
+        wrapBounds: [0, 0, 0]
+    };
+
+    for (var key in defaults) {
+        if (!Object.prototype.hasOwnProperty.call(defaults, key)) {
+            continue;
+        }
+        if (typeof material.getParameter === 'function' && material.getParameter(key)) {
+            continue;
+        }
+        material.setParameter(key, defaults[key]);
+    }
+}
 
 DonationEffects.prototype._resolveFxDirector = function () {
     var host = this.fxDirector || this.entity;
@@ -112,6 +149,11 @@ DonationEffects.prototype.onDonation = function (e) {
         rumble: { magnitude: rumbleMagnitude, durationMs: 220 }
     };
 
+    runtimeOverrides.ui = {
+        event: 'ui:donation',
+        payload: this._buildUiPayload(e, amount, isSelf)
+    };
+
     if (this.fxDirectorScript) {
         this.fxDirectorScript.playEffect(this.fxEffectId, runtimeOverrides);
     } else {
@@ -130,6 +172,9 @@ DonationEffects.prototype._getEffectPosition = function () {
 
 DonationEffects.prototype._buildVfxEntries = function () {
     var entries = [];
+    if (!this.useLegacyParticleBursts) {
+        return entries;
+    }
     if (this.confettiPrefab) {
         entries.push({
             entity: this.confettiPrefab,
@@ -187,10 +232,13 @@ DonationEffects.prototype._fallbackEffects = function (payload) {
     if (payload.rumble && payload.rumble.magnitude && this.app.gamepads && typeof this.app.gamepads.rumble === 'function') {
         this.app.gamepads.rumble(payload.rumble.index || 0, payload.rumble.magnitude, payload.rumble.durationMs || 200);
     }
+    if (payload.ui && payload.ui.event && this.app) {
+        this.app.fire(payload.ui.event, payload.ui.payload || {});
+    }
 };
 
 DonationEffects.prototype.spawnBurst = function (prefab, duration) {
-    if (!prefab || !this.entity) {
+    if (!prefab || !this.entity || !this.useLegacyParticleBursts) {
         return;
     }
     var instance = prefab.clone();
@@ -199,6 +247,7 @@ DonationEffects.prototype.spawnBurst = function (prefab, duration) {
 
     var ps = instance.particlesystem || instance.particleSystem;
     if (ps && typeof ps.play === 'function') {
+        ensureParticleUniforms(ps);
         ps.reset();
         ps.play();
     }
@@ -236,6 +285,40 @@ DonationEffects.prototype.playSound = function (asset, delayMs) {
     } else {
         playFn();
     }
+};
+
+DonationEffects.prototype._buildUiPayload = function (eventData, amount, isSelf) {
+    var payload = {
+        amount: amount,
+        fromName: this._formatUiIdentity(eventData && eventData.senderUsername, eventData && eventData.sender),
+        toName: this._formatUiIdentity(eventData && eventData.recipientUsername, eventData && eventData.recipient),
+        isSelf: !!isSelf
+    };
+
+    if (eventData) {
+        payload.sender = eventData.sender || null;
+        payload.recipient = eventData.recipient || null;
+        payload.signature = eventData.signature || null;
+        payload.message = eventData.message || eventData.note || eventData.tweetText || null;
+    }
+
+    return payload;
+};
+
+DonationEffects.prototype._formatUiIdentity = function (username, address) {
+    if (username && typeof username === 'string') {
+        var trimmed = username.trim();
+        if (trimmed.length) {
+            return trimmed;
+        }
+    }
+    if (address && typeof address === 'string') {
+        if (address.length > 12) {
+            return address.substring(0, 4) + '...' + address.substring(address.length - 4);
+        }
+        return address;
+    }
+    return 'Someone';
 };
 
 DonationEffects.prototype.createFlashOverlay = function () {

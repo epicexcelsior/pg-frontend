@@ -7,6 +7,7 @@ MessageBroker.prototype.initialize = function () {
     this.lastMoveSentAt = 0;
     this.lastUsernameSent = null;
     this.pendingUsername = null;
+    this._playgroundMessageTypes = {};
     this.moveMinInterval = 100; // ms between sends when player is moving
     this.moveMaxInterval = 400; // ms heartbeat even if stationary
     this.movePosThresholdSq = 0.04 * 0.04; // ~4 cm positional threshold
@@ -44,6 +45,7 @@ MessageBroker.prototype.onDisconnected = function () {
 
 MessageBroker.prototype.setupRoomMessageListeners = function (room) {
     if (!room) return;
+    room.onMessage("__playground_message_types", this._handlePlaygroundMessageTypes.bind(this));
     room.onMessage("claimSuccess", (data) => this.app.fire('booth:claimSuccess', data));
     room.onMessage("claimError", (data) => this.app.fire('booth:claimError', data));
     room.onMessage("announceDonation", (data) => {
@@ -89,6 +91,13 @@ MessageBroker.prototype.setupRoomMessageListeners = function (room) {
     room.onMessage("booth:updateDescription:ok", (data) => this.app.fire('booth:description:ok', data));
     room.onMessage("booth:updateDescription:error", (data) => this.app.fire('booth:description:error', data));
     room.onMessage("leaderboard:data", (data) => this.app.fire('leaderboard:data', data));
+};
+
+MessageBroker.prototype._handlePlaygroundMessageTypes = function (data) {
+    this._playgroundMessageTypes = data || {};
+    if (this.app) {
+        this.app.fire('network:playground:messageTypes', this._playgroundMessageTypes);
+    }
 };
 
 MessageBroker.prototype.sendIfConnected = function (type, payload) {

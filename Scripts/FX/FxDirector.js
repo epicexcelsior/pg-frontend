@@ -97,10 +97,11 @@ FxDirector.prototype._ensureDefaultEffects = function () {
     if (!this._effects.donation) {
         this._effects.donation = {
             id: 'donation',
-            shake: { trauma: 0.25 },
+            shake: { trauma: 0.3 },
             vfx: [],
             sfx: [],
-            rumble: { magnitude: 0.35, durationMs: 160 }
+            rumble: { magnitude: 0.35, durationMs: 160 },
+            ui: { event: 'ui:donation' }
         };
     }
 };
@@ -203,6 +204,7 @@ FxDirector.prototype.playEffect = function (idOrDefinition, overrides) {
     var vfxList = this._mergeArrays(definition.vfx, runtime.vfx);
     var sfxList = this._mergeArrays(definition.sfx, runtime.sfx);
     var rumbleCfg = this._mergeConfigs(definition.rumble, runtime.rumble);
+    var uiCfg = this._mergeConfigs(definition.ui, runtime.ui);
 
     if (shakeCfg) {
         this._applyShake(shakeCfg);
@@ -215,6 +217,9 @@ FxDirector.prototype.playEffect = function (idOrDefinition, overrides) {
     }
     if (rumbleCfg) {
         this._applyRumble(rumbleCfg);
+    }
+    if (uiCfg) {
+        this._playUi(uiCfg);
     }
 };
 
@@ -473,4 +478,19 @@ FxDirector.prototype._applyRumble = function (cfg) {
     var magnitude = cfg.magnitude !== undefined ? cfg.magnitude : 0.35;
     var duration = cfg.durationMs || cfg.duration || 180;
     this.app.gamepads.rumble(index, pc.math.clamp(magnitude, 0, 1), Math.max(0, duration));
+};
+
+FxDirector.prototype._playUi = function (cfg) {
+    if (!cfg || !cfg.event || !this.app) {
+        return;
+    }
+    var payload = cfg.payload;
+    if (payload && typeof payload === 'object') {
+        try {
+            payload = JSON.parse(JSON.stringify(payload));
+        } catch (err) {
+            payload = Object.assign({}, payload);
+        }
+    }
+    this.app.fire(cfg.event, payload);
 };
