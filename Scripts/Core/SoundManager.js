@@ -110,11 +110,12 @@ SoundManager.prototype.initialize = function() {
     if (this.app.services && typeof this.app.services.register === 'function') {
         this.app.services.register('soundManager', this);
     } else {
-        // Fallback to attaching directly to the app
-        this.app.soundManager = this;
         console.warn("SoundManager: Services registry not found, registered on app.soundManager.");
     }
 
+    this.app.soundManager = this;
+
+    this._bindUiSoundEvents();
     this.app.on('audio:expanded:ready', this._onAudioReady, this);
     this._preloadConfiguredSounds();
 
@@ -187,17 +188,27 @@ SoundManager.prototype.swap = function(old) {
 };
 
 SoundManager.prototype.onDisable = function () {
-    if (this._listenerActive) {
-        this.app.off('ui:playSound', this.playSound, this);
-        this._listenerActive = false;
-    }
+    this._unbindUiSoundEvents();
 };
 
 SoundManager.prototype.onEnable = function () {
-    if (!this._listenerActive) {
-        this.app.on('ui:playSound', this.playSound, this);
-        this._listenerActive = true;
+    this._bindUiSoundEvents();
+};
+
+SoundManager.prototype._bindUiSoundEvents = function () {
+    if (this._listenerActive || !this.app) {
+        return;
     }
+    this.app.on('ui:playSound', this.playSound, this);
+    this._listenerActive = true;
+};
+
+SoundManager.prototype._unbindUiSoundEvents = function () {
+    if (!this._listenerActive || !this.app) {
+        return;
+    }
+    this.app.off('ui:playSound', this.playSound, this);
+    this._listenerActive = false;
 };
 
 SoundManager.prototype._getAudioContext = function () {
