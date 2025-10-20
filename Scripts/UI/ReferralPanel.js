@@ -15,9 +15,28 @@ ReferralPanel.prototype.initialize = function () {
     this.app.on('auth:stateChanged', this.onAuthStateChanged, this);
     this.app.on('auth:gameToken', this.onGameTokenReceived, this);
 
-    if (this.privyManager && typeof this.privyManager.isAuthenticated === 'function' && this.privyManager.isAuthenticated()) {
+    try {
+        const tokenService = this.app.services && typeof this.app.services.get === 'function'
+            ? this.app.services.get('authToken')
+            : null;
+        if (tokenService && typeof tokenService.getToken === 'function') {
+            const existingToken = tokenService.getToken();
+            if (existingToken) {
+                this.gameToken = existingToken;
+            }
+        }
+    } catch (error) {
+        console.warn('ReferralPanel: Failed to resolve authToken service.', error);
+    }
+
+    if (!this.gameToken) {
         this.gameToken = this.extractStoredToken();
-        this.refreshProfile();
+    }
+
+    if (this.privyManager && typeof this.privyManager.isAuthenticated === 'function' && this.privyManager.isAuthenticated()) {
+        if (this.gameToken) {
+            this.refreshProfile();
+        }
     }
 };
 
@@ -55,7 +74,7 @@ ReferralPanel.prototype.createUi = function () {
 
     this.codeText = document.createElement('span');
     this.codeText.className = 'referral-code-text';
-    this.codeText.textContent = '—';
+    this.codeText.textContent = '--';
 
     this.copyButton = document.createElement('button');
     this.copyButton.type = 'button';
@@ -264,16 +283,20 @@ ReferralPanel.prototype.onAuthStateChanged = function (event) {
     this.refreshProfile();
 };
 
-ReferralPanel.prototype.onGameTokenReceived = function (token) {
-    if (typeof token === 'string' && token.trim().length) {
-        this.gameToken = token.trim();
-        try {
-            localStorage.setItem('pgGameJwt', this.gameToken);
-        } catch (error) {
-            console.warn('ReferralPanel: Failed to persist game token.', error);
-        }
-        this.refreshProfile();
+ReferralPanel.prototype.onGameTokenReceived = function (payload) {
+    var token = null;
+    if (payload && typeof payload === 'object') {
+        token = typeof payload.token === 'string' ? payload.token : null;
+    } else if (typeof payload === 'string') {
+        token = payload;
     }
+
+    if (!token || !token.trim().length) {
+        return;
+    }
+
+    this.gameToken = token.trim();
+    this.refreshProfile();
 };
 
 ReferralPanel.prototype.updateUiState = function (enabled) {
@@ -282,12 +305,16 @@ ReferralPanel.prototype.updateUiState = function (enabled) {
     }
     this.submitButton.disabled = !enabled;
     this.input.disabled = !enabled;
-    this.copyButton.disabled = !enabled || !this.codeText || this.codeText.textContent === '—';
+    this.copyButton.disabled = !enabled || !this.codeText || this.codeText.textContent === '--';
 };
 
 ReferralPanel.prototype.resolveApiBase = function () {
     if (!this.configLoader || typeof this.configLoader.get !== 'function') {
         return null;
+    }
+    const directBase = this.configLoader.get('apiBaseUrl');
+    if (typeof directBase === 'string' && directBase.trim().length) {
+        return directBase.trim().replace(/\/+$/, '');
     }
     const endpoint = this.configLoader.get('colyseusEndpoint');
     if (!endpoint || typeof endpoint !== 'string') {
@@ -300,7 +327,7 @@ ReferralPanel.prototype.resolveApiBase = function () {
         const parsed = new URL(baseUrl);
         return `${parsed.protocol}//${parsed.host}`;
     } catch (error) {
-        console.error('ReferralPanel: Failed to parse API endpoint', error);
+        console.error('ReferralPanel: Failed to derive API base from colyseusEndpoint.', error);
         return null;
     }
 };
@@ -319,13 +346,31 @@ ReferralPanel.prototype.getAuthToken = function () {
 ReferralPanel.prototype.extractStoredToken = function () {
     try {
         const stored = localStorage.getItem('pgGameJwt');
-        return stored && stored.trim().length ? stored.trim() : null;
+        if (!stored) {
+            return null;
+        }
+        const trimmed = stored.trim();
+        if (!trimmed.length) {
+            return null;
+        }
+        try {
+            const parsed = JSON.parse(trimmed);
+            if (parsed && typeof parsed.token === 'string' && parsed.token.length) {
+                return parsed.token;
+            }
+        } catch (error) {
+            // Stored value is not JSON - fall back to raw string.
+        }
+        return trimmed;
     } catch (error) {
         return null;
     }
 };
 
 ReferralPanel.prototype.refreshProfile = async function () {
+    if (!this.apiBase) {
+        this.apiBase = this.resolveApiBase();
+    }
     const token = this.getAuthToken();
     if (!token || !this.apiBase) {
         this.updateUiState(false);
@@ -365,12 +410,12 @@ ReferralPanel.prototype.refreshProfile = async function () {
 ReferralPanel.prototype.renderProfile = function () {
     if (!this.profile) {
         this.statusLabel.textContent = 'No referral data yet.';
-        this.codeText.textContent = '—';
+        this.codeText.textContent = '--';
         return;
     }
 
     const status = this.profile.status;
-    const code = this.profile.code || '—';
+    const code = this.profile.code || '--';
     const total = Number(this.profile.totalCredited || 0);
 
     this.codeText.textContent = code;
@@ -484,3 +529,6 @@ ReferralPanel.prototype.destroy = function () {
         this.container.parentNode.removeChild(this.container);
     }
 };
+
+
+
