@@ -7,6 +7,10 @@ MessageBroker.prototype.initialize = function () {
     this.lastMoveSentAt = 0;
     this.lastUsernameSent = null;
     this.pendingUsername = null;
+    this.coinBalance = 0;
+    this.coinLifetime = 0;
+    this.lastCoinFetchAt = 0;
+    this.coinFetchIntervalMs = 45000;
     this._playgroundMessageTypes = {};
     this.moveMinInterval = 100; // ms between sends when player is moving
     this.moveMaxInterval = 400; // ms heartbeat even if stationary
@@ -27,6 +31,7 @@ MessageBroker.prototype.onConnected = function (room) {
     }
     this.currentRoom = room;
     this.setupRoomMessageListeners(room);
+    this.scheduleCoinFetch(true);
     if (this.pendingUsername) {
         const pending = this.pendingUsername;
         this.pendingUsername = null;
@@ -41,6 +46,7 @@ MessageBroker.prototype.onDisconnected = function () {
         this.pendingUsername = this.lastUsernameSent;
         this.lastUsernameSent = null;
     }
+    this.clearCoinSchedule();
 };
 
 MessageBroker.prototype.setupRoomMessageListeners = function (room) {
@@ -48,6 +54,7 @@ MessageBroker.prototype.setupRoomMessageListeners = function (room) {
     room.onMessage("__playground_message_types", this._handlePlaygroundMessageTypes.bind(this));
     room.onMessage("claimSuccess", (data) => this.app.fire('booth:claimSuccess', data));
     room.onMessage("claimError", (data) => this.app.fire('booth:claimError', data));
+    room.onMessage("authRequired", (data) => this.app.fire('booth:authRequired', data));
     room.onMessage("announceDonation", (data) => {
         const donationEvent = {
             signature: data.signature || null,
@@ -80,7 +87,22 @@ MessageBroker.prototype.setupRoomMessageListeners = function (room) {
         }
     });
     room.onMessage("announceDonationError", (data) => this.app.fire('donation:announcementFailed', data));
-    room.onMessage("boothUnclaimed", (data) => this.app.fire('booth:unclaimed', data));
+    room.onMessage("boothUnclaimed", (data) => {
+        this.app.fire('booth:unclaimed', data);
+        const boothId = data && typeof data.boothId === 'string' ? data.boothId : null;
+        if (boothId) {
+            this.app.fire('booth:updated', {
+                boothId: boothId,
+                claimedBy: '',
+                claimedByUsername: '',
+                claimedByTwitterHandle: '',
+                claimedByTwitterId: '',
+                description: '',
+                previousOwner: data && typeof data.previousOwner === 'string' ? data.previousOwner : '',
+                previousOwnerUsername: data && typeof data.previousOwnerUsername === 'string' ? data.previousOwnerUsername : '',
+            });
+        }
+    });
     // [!code --]
     room.onMessage("chatMessage", (data) => {
         const senderName = data?.sender?.username || 'Unknown';
@@ -100,6 +122,52 @@ MessageBroker.prototype._handlePlaygroundMessageTypes = function (data) {
     }
 };
 
+MessageBroker.prototype._collectAuthPayload = function () {
+    const result = {};
+    const services = this.app && this.app.services ? this.app.services : null;
+    if (!services) {
+        return result;
+    }
+
+    let authTokenService = null;
+    if (services.registry && services.registry.authToken) {
+        authTokenService = services.registry.authToken;
+    } else if (typeof services.get === 'function') {
+        try {
+            authTokenService = services.get('authToken');
+        } catch (error) {
+            authTokenService = null;
+        }
+    }
+
+    if (authTokenService && typeof authTokenService.getToken === 'function') {
+        const token = authTokenService.getToken();
+        if (typeof token === 'string' && token.length > 20) {
+            result.token = token;
+        }
+    }
+
+    let privyManager = null;
+    if (services.registry && services.registry.privyManager) {
+        privyManager = services.registry.privyManager;
+    } else if (typeof services.get === 'function') {
+        try {
+            privyManager = services.get('privyManager');
+        } catch (error) {
+            privyManager = null;
+        }
+    }
+
+    if (privyManager && typeof privyManager.getLatestPrivyToken === 'function') {
+        const privyToken = privyManager.getLatestPrivyToken();
+        if (typeof privyToken === 'string' && privyToken.length > 20) {
+            result.privyToken = privyToken;
+        }
+    }
+
+    return result;
+};
+
 MessageBroker.prototype.sendIfConnected = function (type, payload) {
     if (this.app.room) {
         this.app.room.send(type, payload);
@@ -114,7 +182,9 @@ MessageBroker.prototype.setupAppEventListeners = function () {
             console.warn('MessageBroker: Ignored booth claim request with invalid boothId.', data);
             return;
         }
-        this.sendIfConnected('claimBooth', { boothId: boothId });
+        const authPayload = this._collectAuthPayload();
+        const payload = Object.assign({ boothId: boothId }, authPayload);
+        this.sendIfConnected('claimBooth', payload);
     }, this);
     this.app.on('booth:unclaimRequest', () => {
         this.sendIfConnected('unclaimBooth');
@@ -134,6 +204,7 @@ MessageBroker.prototype.setupAppEventListeners = function () {
         this.lastUsernameSent = cleaned;
         this.sendIfConnected('setUsername', { username: cleaned });
     }, this);
+    this.app.on('coins:refresh', this.fetchCoinWallet, this);
     this.app.on('player:chat', (message) => {
         const raw = typeof message === 'string' ? message : (message && typeof message.content === 'string' ? message.content : '');
         const trimmed = typeof raw === 'string' ? raw.trim() : '';
@@ -215,6 +286,8 @@ MessageBroker.prototype.destroy = function () {
     this.app.off('colyseus:connected', this.onConnected, this);
     this.app.off('colyseus:disconnected', this.onDisconnected, this);
     this.app.off('player:move', this.handlePlayerMove, this);
+    this.app.off('coins:refresh', this.fetchCoinWallet, this);
+    this.clearCoinSchedule();
     this.currentRoom = null;
 };
 
@@ -317,5 +390,92 @@ MessageBroker.prototype.cleanUsername = function (raw) {
         return '';
     }
     return collapsedWhitespace.substring(0, 16);
+};
+
+MessageBroker.prototype.scheduleCoinFetch = function (immediate) {
+    this.clearCoinSchedule();
+    if (!this.app.room) {
+        return;
+    }
+    if (immediate) {
+        this.fetchCoinWallet();
+    }
+    this._coinTimer = setInterval(() => {
+        this.fetchCoinWallet();
+    }, this.coinFetchIntervalMs);
+};
+
+MessageBroker.prototype.clearCoinSchedule = function () {
+    if (this._coinTimer) {
+        clearInterval(this._coinTimer);
+        this._coinTimer = null;
+    }
+};
+
+MessageBroker.prototype.fetchCoinWallet = function () {
+    if (!this.app || !this.app.services || !this.app.services.get) {
+        return;
+    }
+    const services = this.app.services;
+    if (!services || typeof services.get !== 'function') {
+        return;
+    }
+    const authService = services.get('privyManager');
+    if (!authService || typeof authService.isAuthenticated !== 'function' || !authService.isAuthenticated()) {
+        return;
+    }
+    const tokenService = services.get('authToken');
+    if (!tokenService || typeof tokenService.getToken !== 'function') {
+        return;
+    }
+    const token = tokenService && typeof tokenService.getToken === 'function' ? tokenService.getToken() : null;
+    if (!token) {
+        return;
+    }
+    const now = Date.now();
+    if (now - this.lastCoinFetchAt < 5000) {
+        return;
+    }
+    this.lastCoinFetchAt = now;
+    const url = this.resolveApiUrl('/coins/wallet');
+    fetch(url, {
+        method: 'GET',
+        headers: {
+            'Authorization': `Bearer ${token}`,
+        },
+        credentials: 'include',
+    })
+        .then((response) => {
+            if (response.status === 401 && tokenService && typeof tokenService.clearToken === 'function') {
+                tokenService.clearToken();
+            }
+            if (!response.ok) {
+                throw new Error(`Coin fetch failed with status ${response.status}`);
+            }
+            return response.json();
+        })
+        .then((data) => {
+            if (!data || typeof data.balance !== 'number') {
+                return;
+            }
+            this.coinBalance = data.balance;
+            this.coinLifetime = typeof data.lifetimeEarned === 'number' ? data.lifetimeEarned : this.coinLifetime;
+            this.app.fire('coins:update', {
+                balance: this.coinBalance,
+                lifetimeEarned: this.coinLifetime,
+            });
+        })
+        .catch((error) => {
+            console.warn('MessageBroker: Failed to fetch coin wallet.', error);
+        });
+};
+
+MessageBroker.prototype.resolveApiUrl = function (path) {
+    const config = this.app.services && this.app.services.get ? this.app.services.get('configLoader') : null;
+    const base = config && typeof config.get === 'function' ? config.get('apiBaseUrl') : null;
+    if (base && typeof base === 'string' && base.length) {
+        return base.replace(/\/+$/, '') + path;
+    }
+    return path;
 };
 

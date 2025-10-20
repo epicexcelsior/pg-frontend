@@ -4,22 +4,33 @@ var BoothController = pc.createScript("boothController");
 BoothController.prototype.initialize = function () {
     console.log("BoothController initializing as the orchestrator...");
     this.currentZoneScript = null;
-    this.pendingClaimBoothId = null;
     this.isNetworkConnected = false;
     this.boothEntitiesById = new Map();
     this.boothsByOwner = new Map();
     this.boothDescriptions = new Map();
+    this._claimInFlight = false;
+    this._claimInFlightBoothId = null;
+    this._claimInFlightTimer = null;
+    this.claimTimeoutMs = 15000;
+    this._claimRetryTimer = null;
+    this.claimRetryDelayMs = 450;
+    this._lastClaimAttempt = 0;
+    this._lastClaimBoothId = null;
 
     this.app.on('colyseus:connected', this.onNetworkConnected, this);
+    this.app.on('colyseus:disconnected', this.onNetworkDisconnected, this);
     this.app.on("booth:entered", this.onEnterZone, this);
     this.app.on("booth:left", this.onLeaveZone, this);
     this.app.on("booth:added", this.onBoothAdded, this);
     this.app.on("booth:updated", this.onBoothUpdated, this);
     this.app.on("booth:removed", this.onBoothRemoved, this);
+    this.app.on("booth:unclaimed", this.onBoothUnclaimed, this);
     this.app.on("auth:stateChanged", this.onAuthStateChanged, this);
     this.app.on("player:data:changed", this.onLocalPlayerDataChanged, this);
     this.app.on("booth:claim:request", this.handleClaimRequest, this);
     this.app.on("booth:claimSuccess", this.onClaimSuccess, this);
+    this.app.on("booth:authRequired", this.onBoothAuthRequired, this);
+    this.app.on("booth:claimError", this.onClaimError, this);
     this.app.on("effects:donation", this.onDonationEffect, this);
     this.app.on("booth:description:ok", this.onBoothDescriptionSaved, this);
     this.app.on("booth:description:error", this.onBoothDescriptionError, this);
@@ -58,6 +69,76 @@ BoothController.prototype.getLocalPlayerData = function () {
     return null;
 };
 
+BoothController.prototype._clearClaimInFlight = function (reason) {
+    if (this._claimInFlightTimer) {
+        clearTimeout(this._claimInFlightTimer);
+        this._claimInFlightTimer = null;
+    }
+    this._cancelClaimRetry(reason || 'clear');
+    this._claimInFlight = false;
+    this._claimInFlightBoothId = null;
+    this._lastClaimAttempt = 0;
+};
+
+BoothController.prototype._cancelClaimRetry = function (reason) {
+    if (this._claimRetryTimer) {
+        clearTimeout(this._claimRetryTimer);
+        this._claimRetryTimer = null;
+        if (reason && typeof console !== 'undefined' && typeof console.debug === 'function') {
+            console.debug('BoothController: Claim retry cancelled.', { reason });
+        }
+    }
+};
+
+BoothController.prototype._scheduleClaimRetry = function (boothId, reason, delayMs) {
+    if (!boothId) {
+        return;
+    }
+    this.pendingClaimBoothId = boothId;
+    this._cancelClaimRetry('reschedule:' + (reason || 'unknown'));
+    var retryDelay = typeof delayMs === 'number' && delayMs >= 0 ? delayMs : this.claimRetryDelayMs;
+    if (retryDelay < 0) {
+        retryDelay = 0;
+    }
+    this._claimRetryTimer = setTimeout(() => {
+        this._claimRetryTimer = null;
+        this._lastClaimAttempt = 0;
+        this.attemptPendingClaim();
+    }, retryDelay);
+    if (typeof console !== 'undefined' && typeof console.debug === 'function') {
+        console.debug('BoothController: Scheduled claim retry.', {
+            boothId,
+            reason: reason || 'unspecified',
+            delayMs: retryDelay,
+        });
+    }
+};
+
+BoothController.prototype._setClaimInFlight = function (active, boothId, reason) {
+    if (!active) {
+        this._clearClaimInFlight(reason || 'explicit-clear');
+        return;
+    }
+    if (this._claimInFlightTimer) {
+        clearTimeout(this._claimInFlightTimer);
+        this._claimInFlightTimer = null;
+    }
+    this._cancelClaimRetry('new-attempt');
+    this._claimInFlight = true;
+    this._claimInFlightBoothId = boothId || null;
+    var timeout = typeof this.claimTimeoutMs === 'number' && this.claimTimeoutMs > 0 ? this.claimTimeoutMs : 15000;
+    this._claimInFlightTimer = setTimeout(() => {
+        console.warn('BoothController: Claim attempt timed out.', {
+            boothId: this._claimInFlightBoothId,
+        });
+        const stalledBoothId = this._claimInFlightBoothId;
+        this._clearClaimInFlight('timeout');
+        if (stalledBoothId) {
+            this._scheduleClaimRetry(stalledBoothId, 'timeout', this.claimRetryDelayMs);
+        }
+    }, timeout);
+};
+
 BoothController.prototype.handleClaimRequest = function(boothId) {
     const privyManager = this.getPrivyManager();
     const targetBoothId = typeof boothId === 'string' ? boothId : (boothId && boothId.boothId ? boothId.boothId : null);
@@ -72,13 +153,55 @@ BoothController.prototype.handleClaimRequest = function(boothId) {
         return;
     }
 
-    if (privyManager.isAuthenticated() && privyManager.getWalletAddress()) {
-        this.app.fire('booth:claimRequest', targetBoothId);
+    this._cancelClaimRetry('incoming-request');
+
+    if (this._claimInFlight) {
+        if (this._claimInFlightBoothId === targetBoothId) {
+            console.log('BoothController: Claim already in flight for booth.', { boothId: targetBoothId });
+        } else {
+            console.log('BoothController: Claim in flight for different booth, queueing new target.', {
+                activeBoothId: this._claimInFlightBoothId,
+                requestedBoothId: targetBoothId,
+            });
+            this.pendingClaimBoothId = targetBoothId;
+        }
+        return;
+    }
+
+    const playerData = this.getLocalPlayerData();
+    const claimedBooth = playerData && typeof playerData.getClaimedBoothId === 'function'
+        ? playerData.getClaimedBoothId()
+        : '';
+
+    if (claimedBooth && claimedBooth === targetBoothId) {
+        console.log('BoothController: Claim request ignored; booth already owned by local player.', { boothId: targetBoothId });
         this.pendingClaimBoothId = null;
+        this.decideAndShowPrompt();
+        return;
+    }
+
+    this.pendingClaimBoothId = targetBoothId;
+
+    const isAuthed = typeof privyManager.isAuthenticated === 'function'
+        ? privyManager.isAuthenticated()
+        : Boolean(privyManager.isAuthenticated);
+
+    if (isAuthed && typeof privyManager.getWalletAddress === 'function' && privyManager.getWalletAddress()) {
+        this._lastClaimAttempt = 0;
+        this.attemptPendingClaim();
+        return;
+    }
+
+    if (typeof privyManager.isLoginInProgress === 'function' && privyManager.isLoginInProgress()) {
+        console.log('BoothController: Waiting for existing Privy login to complete before retrying claim.');
     } else {
-        this.pendingClaimBoothId = targetBoothId;
         privyManager.login();
     }
+
+    this.app.fire('ui:showClaimAuthPrompt', {
+        boothId: targetBoothId,
+        reason: 'Please complete authentication to claim this booth.',
+    });
 };
 
 BoothController.prototype.onBoothAdded = function (boothData) {
@@ -104,6 +227,45 @@ BoothController.prototype.onBoothRemoved = function (boothData) {
         if (info.boothId === boothId) {
             this.boothsByOwner.delete(wallet);
         }
+    }
+};
+
+BoothController.prototype.onBoothUnclaimed = function (payload) {
+    const boothId = payload && typeof payload.boothId === 'string' ? payload.boothId : null;
+    if (!boothId) {
+        return;
+    }
+
+    const previousOwner = payload && typeof payload.previousOwner === 'string' ? payload.previousOwner : null;
+    if (previousOwner && this.boothsByOwner.has(previousOwner)) {
+        this.boothsByOwner.delete(previousOwner);
+    }
+
+    const boothEntity = this.app.root.findByName(boothId) || this.boothEntitiesById.get(boothId) || null;
+    if (boothEntity) {
+        this.boothEntitiesById.set(boothId, boothEntity);
+        if (boothEntity.script && boothEntity.script.boothClaimZone) {
+            boothEntity.script.boothClaimZone.claimedBy = '';
+        }
+    }
+
+    this.boothDescriptions.set(boothId, '');
+
+    this.refreshBoothOwnership({
+        boothId: boothId,
+        claimedBy: '',
+        claimedByUsername: '',
+        claimedByTwitterHandle: '',
+        claimedByTwitterId: '',
+        description: '',
+    }, boothEntity);
+
+    if (this.pendingClaimBoothId === boothId && !this._claimInFlight) {
+        this.pendingClaimBoothId = null;
+    }
+
+    if (this.currentZoneScript && this.currentZoneScript.boothId === boothId) {
+        this.decideAndShowPrompt();
     }
 };
 
@@ -135,25 +297,37 @@ BoothController.prototype.getBoothDescription = function (boothId) {
     return this.boothDescriptions.get(boothId) || '';
 };
 
-// FIX: This function no longer fires the claim. It just sets up the expectation.
 BoothController.prototype.onAuthStateChanged = function (authStateData) {
-    if (this.pendingClaimBoothId && authStateData.isAuthenticated && authStateData.address) {
-        console.log("BoothController: Auth complete. Waiting for PlayerData to confirm address sync.");
-        // We now wait for onLocalPlayerDataChanged to fire the pending claim.
+    if (!authStateData || !authStateData.isAuthenticated || !authStateData.address) {
+        this.pendingClaimBoothId = null;
+        this._cancelClaimRetry('auth-reset');
+        this._setClaimInFlight(false, null, 'auth-reset');
+        this._lastClaimBoothId = null;
+        this._lastClaimAttempt = 0;
+        if (this.currentZoneScript) {
+            this.decideAndShowPrompt();
+        }
+        return;
     }
+
+    if (this.pendingClaimBoothId) {
+        console.log("BoothController: Auth complete. Waiting for PlayerData to confirm address sync.");
+        this._scheduleClaimRetry(this.pendingClaimBoothId, 'auth-complete', this.claimRetryDelayMs);
+    }
+
     if (this.currentZoneScript) {
         this.decideAndShowPrompt();
     }
 };
 
-// FIX: This is the new final step in the claim flow.
 BoothController.prototype.onLocalPlayerDataChanged = function() {
     const playerData = this.getLocalPlayerData();
-    if (this.pendingClaimBoothId && this.isNetworkConnected && playerData && typeof playerData.getWalletAddress === 'function' && playerData.getWalletAddress()) {
-        this.app.fire('booth:claimRequest', this.pendingClaimBoothId);
-        this.pendingClaimBoothId = null;
+    if (!playerData || typeof playerData.getWalletAddress !== 'function' || !playerData.getWalletAddress()) {
+        this._setClaimInFlight(false, null, 'player-data-missing-wallet');
+        this._cancelClaimRetry('player-data-missing-wallet');
+    } else if (this.pendingClaimBoothId && !this._claimInFlight) {
+        this._scheduleClaimRetry(this.pendingClaimBoothId, 'player-data-sync', 0);
     }
-
     if (this.currentZoneScript) {
         this.decideAndShowPrompt();
     }
@@ -263,11 +437,94 @@ BoothController.prototype.onBoothDescriptionError = function (payload) {
     this.app.fire('ui:boothDescription:error', payload || {});
 };
 
+
+BoothController.prototype.onBoothAuthRequired = function (payload) {
+    const privyManager = this.getPrivyManager();
+    this._setClaimInFlight(false, null, 'auth-required');
+    const boothId = payload && payload.boothId ? payload.boothId : this.currentZoneScript?.boothId || null;
+    if (privyManager && typeof privyManager.login === 'function') {
+        if (typeof privyManager.isLoginInProgress === 'function' && privyManager.isLoginInProgress()) {
+            console.log('BoothController: Auth required; awaiting existing Privy login.');
+        } else {
+            privyManager.login({ force: true });
+        }
+    }
+    if (boothId) {
+        this._scheduleClaimRetry(boothId, 'auth-required', this.claimRetryDelayMs);
+    }
+    this.app.fire('ui:showClaimAuthPrompt', {
+        boothId: boothId,
+        reason: (payload && payload.reason) || 'Authentication required to claim this booth.',
+    });
+};
+
 BoothController.prototype.onClaimSuccess = function (data) {
     const boothEntity = this.app.root.findByName(data.boothId);
     boothEntity?.findByName("BoothClaimEffect")?.particlesystem.play();
     boothEntity?.sound?.play("claimSound");
+    if (this.pendingClaimBoothId === data.boothId) {
+        this.pendingClaimBoothId = null;
+    }
+    this._lastClaimBoothId = data.boothId || null;
+    this._clearClaimInFlight('claim-success');
+    this._cancelClaimRetry('claim-success');
 };
+
+BoothController.prototype.onClaimError = function (payload) {
+    const boothId = payload && payload.boothId ? payload.boothId : this.pendingClaimBoothId;
+    const code = typeof payload?.code === 'string' ? payload.code : 'UNKNOWN';
+    if (typeof console !== 'undefined' && typeof console.warn === 'function') {
+        console.warn('BoothController: Claim error received.', { boothId, code, reason: payload?.reason || null });
+    }
+    const privyManager = this.getPrivyManager();
+    const isAuthRetry = code === 'AUTH_REQUIRED' || code === 'WALLET_REQUIRED';
+    const isServerRetry = code === 'SERVER_ERROR';
+
+    if (!isAuthRetry && !isServerRetry && boothId && this.pendingClaimBoothId === boothId) {
+        this.pendingClaimBoothId = null;
+    }
+
+    if (this._claimInFlight && (!boothId || this._claimInFlightBoothId === boothId)) {
+        this._clearClaimInFlight('claim-error:' + code);
+    }
+
+    if (isAuthRetry && boothId) {
+        if (code === 'AUTH_REQUIRED' && privyManager && typeof privyManager.login === 'function') {
+            const loginInProgress = typeof privyManager.isLoginInProgress === 'function'
+                ? privyManager.isLoginInProgress()
+                : false;
+            if (!loginInProgress) {
+                privyManager.login({ force: true });
+            }
+        }
+        var retryDelay = code === 'WALLET_REQUIRED' ? this.claimRetryDelayMs + 300 : this.claimRetryDelayMs;
+        this._scheduleClaimRetry(boothId, 'retry:' + code.toLowerCase(), retryDelay);
+        return;
+    }
+
+    if (isServerRetry && boothId) {
+        this.pendingClaimBoothId = boothId;
+        var serverRetryDelay = typeof payload?.retryAfterMs === 'number' && payload.retryAfterMs >= 0
+            ? payload.retryAfterMs
+            : Math.max(this.claimRetryDelayMs * 2, 1000);
+        this._scheduleClaimRetry(boothId, 'retry:server-error', serverRetryDelay);
+        this.app.fire('ui:boothClaim:error', payload || {});
+        return;
+    }
+
+    if (code === 'TAKEN') {
+        const playerData = this.getLocalPlayerData();
+        const claimedBooth = playerData && typeof playerData.getClaimedBoothId === 'function'
+            ? playerData.getClaimedBoothId()
+            : '';
+        if (claimedBooth === boothId) {
+            this.decideAndShowPrompt();
+        }
+    }
+
+    this.app.fire('ui:boothClaim:error', payload || {});
+};
+
 
 BoothController.prototype.onDonationEffect = function (data) {
     if (!data || !data.recipient) {
@@ -292,30 +549,81 @@ BoothController.prototype.playDonationEffect = function (boothEntity) {
     boothEntity?.sound?.play("donationSound");
 };
 
+BoothController.prototype.onNetworkDisconnected = function () {
+    this.isNetworkConnected = false;
+    this._cancelClaimRetry('network-disconnected');
+    this._clearClaimInFlight('network-disconnected');
+};
+
 BoothController.prototype.onNetworkConnected = function () {
     this.isNetworkConnected = true;
-    const playerData = this.getLocalPlayerData();
-    if (this.pendingClaimBoothId && playerData && typeof playerData.getWalletAddress === 'function' && playerData.getWalletAddress()) {
-        this.app.fire('booth:claimRequest', this.pendingClaimBoothId);
-        this.pendingClaimBoothId = null;
+    if (this.pendingClaimBoothId) {
+        this._scheduleClaimRetry(this.pendingClaimBoothId, 'network-connected', 0);
     }
+};
+
+BoothController.prototype.attemptPendingClaim = function () {
+    if (!this.pendingClaimBoothId || !this.isNetworkConnected) {
+        return;
+    }
+    const playerData = this.getLocalPlayerData();
+    if (!playerData || typeof playerData.getWalletAddress !== 'function') {
+        return;
+    }
+    const wallet = playerData.getWalletAddress();
+    if (!wallet) {
+        return;
+    }
+    const boothId = this.pendingClaimBoothId;
+    const now = Date.now();
+    if (this._lastClaimAttempt && now - this._lastClaimAttempt < 500) {
+        return;
+    }
+    if (this._claimInFlight) {
+        return;
+    }
+    const claimedBooth = typeof playerData.getClaimedBoothId === 'function'
+        ? playerData.getClaimedBoothId()
+        : '';
+    if (claimedBooth === boothId) {
+        this.pendingClaimBoothId = null;
+        return;
+    }
+    if (wallet && this.boothsByOwner.get(wallet)?.boothId === boothId) {
+        this.pendingClaimBoothId = null;
+        return;
+    }
+    console.log("BoothController: Attempting pending booth claim after auth.", { boothId });
+    this._lastClaimAttempt = now;
+    this._lastClaimBoothId = boothId;
+    this._setClaimInFlight(true, boothId, 'attempt-pending');
+    this.pendingClaimBoothId = null;
+    this.app.fire('booth:claimRequest', boothId);
 };
 
 BoothController.prototype.destroy = function () {
     this.app.off('colyseus:connected', this.onNetworkConnected, this);
+    this.app.off('colyseus:disconnected', this.onNetworkDisconnected, this);
     this.app.off("booth:entered", this.onEnterZone, this);
     this.app.off("booth:left", this.onLeaveZone, this);
     this.app.off("booth:added", this.onBoothAdded, this);
     this.app.off("booth:updated", this.onBoothUpdated, this);
     this.app.off("booth:removed", this.onBoothRemoved, this);
+    this.app.off("booth:unclaimed", this.onBoothUnclaimed, this);
     this.app.off("auth:stateChanged", this.onAuthStateChanged, this);
     this.app.off("player:data:changed", this.onLocalPlayerDataChanged, this);
     this.app.off("booth:claim:request", this.handleClaimRequest, this);
     this.app.off("booth:claimSuccess", this.onClaimSuccess, this);
+    this.app.off("booth:authRequired", this.onBoothAuthRequired, this);
+    this.app.off("booth:claimError", this.onClaimError, this);
     this.app.off("effects:donation", this.onDonationEffect, this);
     this.app.off("booth:description:ok", this.onBoothDescriptionSaved, this);
     this.app.off("booth:description:error", this.onBoothDescriptionError, this);
     this.boothEntitiesById.clear();
     this.boothDescriptions.clear();
     this.boothsByOwner.clear();
+    this.isNetworkConnected = false;
+    this.pendingClaimBoothId = null;
+    this._cancelClaimRetry('destroy');
+    this._clearClaimInFlight('destroy');
 };

@@ -9,10 +9,21 @@ PlayerData.prototype.initialize = function() {
     this.twitterUserId = "";
     this.privyDid = "";
 
+    // Register this instance as a service
+    if (this.app.services) {
+        this.app.services.register('playerData', this);
+    } else {
+        // If services aren't initialized yet, wait for them to be ready
+        this.app.once('services:initialized', function() {
+            this.app.services.register('playerData', this);
+        }, this);
+    }
+
     this.app.on('auth:stateChanged', this.onAuthStateChanged, this);
     this.app.on('booth:claimSuccess', this.handleBoothClaimSuccess, this);
     this.app.on('booth:updated', this.handleBoothStateChange, this);
     this.app.on('booth:added', this.handleBoothStateChange, this);
+    this.app.on('booth:unclaimed', this.handleBoothUnclaimed, this);
     this.app.on('player:username:localUpdate', this.handleLocalUsernameUpdate, this);
     this.app.on('player:data:update', this.handleServerDataUpdate, this);
     this.app.on('user:setname', this.handleLegacySetName, this);
@@ -58,7 +69,8 @@ PlayerData.prototype.onAuthStateChanged = function (event) {
         this.privyDid = normalizedPrivyDid;
     }
 
-    if (walletChanged || twitterHandleChanged || twitterUserIdChanged || privyDidChanged) {
+    const shouldSync = isConnected && (walletChanged || twitterHandleChanged || twitterUserIdChanged || privyDidChanged);
+    if (shouldSync) {
         // Inform the server of the new address / social state
         this.app.fire('network:send', 'updateAddress', {
             walletAddress: this.walletAddress || '',
@@ -107,6 +119,18 @@ PlayerData.prototype.handleBoothStateChange = function(data) {
     }
 };
 
+PlayerData.prototype.handleBoothUnclaimed = function(eventData) {
+    if (!eventData || typeof eventData.boothId !== 'string') {
+        return;
+    }
+    const matchesWallet = this.walletAddress && eventData.previousOwner === this.walletAddress;
+    const matchesClaim = this.claimedBoothId && this.claimedBoothId === eventData.boothId;
+    if (!matchesWallet && !matchesClaim) {
+        return;
+    }
+    this.clearClaimedBooth('network:booth_unclaimed');
+};
+
 PlayerData.prototype.clearClaimedBooth = function(reason) {
     if (!this.claimedBoothId) {
         return;
@@ -122,6 +146,7 @@ PlayerData.prototype.destroy = function() {
     this.app.off('booth:claimSuccess', this.handleBoothClaimSuccess, this);
     this.app.off('booth:updated', this.handleBoothStateChange, this);
     this.app.off('booth:added', this.handleBoothStateChange, this);
+    this.app.off('booth:unclaimed', this.handleBoothUnclaimed, this);
     this.app.off('player:username:localUpdate', this.handleLocalUsernameUpdate, this);
     this.app.off('player:data:update', this.handleServerDataUpdate, this);
     this.app.off('user:setname', this.handleLegacySetName, this);
