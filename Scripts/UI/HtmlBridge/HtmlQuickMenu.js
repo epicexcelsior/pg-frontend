@@ -21,10 +21,10 @@ HtmlQuickMenu.prototype.initialize = function () {
         multiplier: 1,
         lowPerformanceMultiplier: 0.75
     };
-    this.state = {
-        masterVolume: 1,
-        effectsEnabled: true,
-        animationsEnabled: true
+    this.state = { 
+        scrollTop: 0,
+        animationsEnabled: true,
+        hasClaimedBooth: false
     };
     this.isOpen = false;
     this.toggleButton = null;
@@ -36,61 +36,32 @@ HtmlQuickMenu.prototype.initialize = function () {
     this._handlers = {};
 
     this._storage = {
-        volume: 'pg:ui:masterVolume',
-        effects: 'pg:ui:effectsEnabled',
         animations: 'pg:ui:animationsEnabled'
     };
-
-    this._restoreStoredSettings();
     this._prepareHandlers();
     this._loadAssets();
+    this._initializeAnimationPreference();
 
     this._handlers.onPlayerDataChanged = this._updateUsername.bind(this);
+    this._handlers.onBoothClaimed = this._handleBoothClaim.bind(this);
+    this._handlers.onBoothUnclaimed = this._handleBoothUnclaim.bind(this);
+    
     this.app.on('player:data:changed', this._handlers.onPlayerDataChanged, this);
-    this.app.on('player:spawned', this._handlers.onPlayerDataChanged, this);
-    this.app.on('sound:masterVolume:updated', this._handleVolumeBroadcast, this);
-    this.app.on('sound:effects:state', this._handleEffectsBroadcast, this);
-
-    if (this.app.uiManager && this.app.uiManager.registerComponent) {
-        this.app.uiManager.registerComponent(this);
-    }
+    this.app.on('booth:claimed', this._handlers.onBoothClaimed, this);
+    this.app.on('booth:unclaimed', this._handlers.onBoothUnclaimed, this);
 };
 
 HtmlQuickMenu.prototype._prepareHandlers = function () {
     this._handlers.onToggleClick = this.toggleMenu.bind(this);
     this._handlers.onHover = this._playHoverSound.bind(this);
     this._handlers.onClose = this.closeMenu.bind(this);
-    this._handlers.onVolumeInput = this._handleVolumeInput.bind(this);
-    this._handlers.onVolumeCommit = this._handleVolumeCommit.bind(this);
-    this._handlers.onSfxToggle = this._handleSfxToggle.bind(this);
     this._handlers.onAnimationsToggle = this._handleAnimationToggle.bind(this);
-    this._handlers.onEditUsername = this._handleEditUsername.bind(this);
+    this._handlers.onNavClick = this._handleTileNavigation.bind(this);
     this._handlers.onGlobalPointer = this._handleGlobalPointer.bind(this);
     this._handlers.onEscape = this._handleEscape.bind(this);
+    this._handlers.onScrollFocus = this._handleScrollFocus.bind(this);
 };
 
-HtmlQuickMenu.prototype._restoreStoredSettings = function () {
-    try {
-        var storedVolume = localStorage.getItem(this._storage.volume);
-        if (storedVolume !== null) {
-            var volume = parseFloat(storedVolume);
-            if (!isNaN(volume)) {
-                this.state.masterVolume = pc.math.clamp(volume, 0, 1);
-            }
-        }
-        var storedEffects = localStorage.getItem(this._storage.effects);
-        if (storedEffects !== null) {
-            this.state.effectsEnabled = storedEffects === 'true';
-        }
-        var storedAnimations = localStorage.getItem(this._storage.animations);
-        if (storedAnimations !== null) {
-            this.state.animationsEnabled = storedAnimations === 'true';
-        this._broadcastAnimationPreference();
-        }
-    } catch (err) {
-        console.warn('HtmlQuickMenu: Unable to restore UI preferences.', err);
-    }
-};
 
 HtmlQuickMenu.prototype._loadAssets = function () {
     var self = this;
@@ -102,7 +73,6 @@ HtmlQuickMenu.prototype._loadAssets = function () {
             self._buildDom();
             self._createToggleButton();
             self._applyThemeStyles();
-            self._syncSoundState();
             self._syncAnimationToggle();
             self._updateUsername();
         }
@@ -128,7 +98,6 @@ HtmlQuickMenu.prototype._loadAssets = function () {
         this._buildDom();
         this._createToggleButton();
         this._applyThemeStyles();
-        this._syncSoundState();
         this._syncAnimationToggle();
         this._updateUsername();
     }
@@ -173,46 +142,41 @@ HtmlQuickMenu.prototype._buildDom = function () {
 
     this.rootEl = this._containerEl.querySelector('#quick-menu-root');
     this._panelEl = this._containerEl.querySelector('[data-quick-menu-panel]');
+    this._elements.scrollRegion = this._containerEl.querySelector('[data-quick-menu-scroll-region]');
     this._elements.closeButton = this._containerEl.querySelector('[data-quick-menu-close]');
-    this._elements.volumeSlider = this._containerEl.querySelector('[data-quick-menu-volume]');
-    this._elements.volumeValue = this._containerEl.querySelector('[data-quick-menu-volume-value]');
-    this._elements.sfxToggle = this._containerEl.querySelector('[data-quick-menu-sfx]');
     this._elements.animationsToggle = this._containerEl.querySelector('[data-quick-menu-animations]');
     this._elements.usernameLabel = this._containerEl.querySelector('[data-quick-menu-username]');
-    this._elements.editUsernameBtn = this._containerEl.querySelector('[data-quick-menu-edit-username]');
+    this._elements.boothSection = this._containerEl.querySelector('[data-booth-section]');
+    this._elements.tiles = Array.prototype.slice.call(this._containerEl.querySelectorAll('[data-quick-menu-nav]'));
 
     if (this._elements.closeButton) {
         this._elements.closeButton.addEventListener('click', this._handlers.onClose);
-        this._elements.closeButton.addEventListener('mouseenter', this._handlers.onHover);
-    }
-
-    if (this._elements.volumeSlider) {
-        this._elements.volumeSlider.addEventListener('input', this._handlers.onVolumeInput);
-        this._elements.volumeSlider.addEventListener('change', this._handlers.onVolumeCommit);
-    }
-
-    if (this._elements.sfxToggle) {
-        this._elements.sfxToggle.addEventListener('change', this._handlers.onSfxToggle);
     }
 
     if (this._elements.animationsToggle) {
         this._elements.animationsToggle.addEventListener('change', this._handlers.onAnimationsToggle);
     }
 
-    if (this._elements.editUsernameBtn) {
-        this._elements.editUsernameBtn.addEventListener('click', this._handlers.onEditUsername);
-        this._elements.editUsernameBtn.addEventListener('mouseenter', this._handlers.onHover);
+    if (this._elements.tiles && this._elements.tiles.length) {
+        var self = this;
+        this._elements.tiles.forEach(function (tile) {
+            tile.addEventListener('click', self._handlers.onNavClick);
+            tile.addEventListener('mouseenter', self._handlers.onHover);
+        });
+    }
+
+    if (this._elements.scrollRegion) {
+        this._elements.scrollRegion.addEventListener('focusin', this._handlers.onScrollFocus);
     }
 
     this._applyThemeStyles();
+    this._checkBoothStatus();
 };
 
 HtmlQuickMenu.prototype._createToggleButton = function () {
     if (this.toggleButton) {
         return;
     }
-
-    var dock = this._ensureActionDock();
 
     this.toggleButton = document.createElement('button');
     this.toggleButton.className = 'ui-action-button quick-menu-toggle';
@@ -224,19 +188,16 @@ HtmlQuickMenu.prototype._createToggleButton = function () {
     this.toggleButton.addEventListener('click', this._handlers.onToggleClick);
     this.toggleButton.addEventListener('mouseenter', this._handlers.onHover);
 
-    dock.appendChild(this.toggleButton);
+    var buttonContainer = document.getElementById('ui-button-container');
+    if (!buttonContainer) {
+        buttonContainer = document.createElement('div');
+        buttonContainer.id = 'ui-button-container';
+        document.body.appendChild(buttonContainer);
+    }
+    
+    buttonContainer.appendChild(this.toggleButton);
 };
 
-HtmlQuickMenu.prototype._ensureActionDock = function () {
-    var dock = document.getElementById('ui-button-container');
-    if (!dock) {
-        dock = document.createElement('div');
-        dock.id = 'ui-button-container';
-        document.body.appendChild(dock);
-        this.app.fire('ui:button-container:ready');
-    }
-    return dock;
-};
 
 HtmlQuickMenu.prototype._applyThemeStyles = function () {
     if (!this.rootEl) {
@@ -256,21 +217,12 @@ HtmlQuickMenu.prototype._applyThemeStyles = function () {
     this.rootEl.style.setProperty('--quick-menu-border', 'rgba(255,255,255,0.08)');
 };
 
-HtmlQuickMenu.prototype.setTheme = function (theme) {
-    this.theme = theme;
-    this._applyThemeStyles();
-};
 
 HtmlQuickMenu.prototype.setAnimationConfig = function (config) {
     if (!config) {
         return;
     }
     this.animationConfig = Object.assign({}, this.animationConfig, config);
-    if (typeof this.animationConfig.enabled === 'boolean') {
-        this.state.animationsEnabled = this.animationConfig.enabled;
-        this._syncAnimationToggle();
-        this._persistPreference(this._storage.animations, String(this.state.animationsEnabled));
-    }
 };
 
 HtmlQuickMenu.prototype.toggleMenu = function () {
@@ -279,6 +231,7 @@ HtmlQuickMenu.prototype.toggleMenu = function () {
     } else {
         this.openMenu();
     }
+    this._playClickSound();
 };
 
 HtmlQuickMenu.prototype.openMenu = function () {
@@ -292,15 +245,13 @@ HtmlQuickMenu.prototype.openMenu = function () {
     if (this.toggleButton) {
         this.toggleButton.classList.add('is-open');
         this.toggleButton.setAttribute('aria-expanded', 'true');
-        this.toggleButton.setAttribute('aria-label', 'Close quick menu');
     }
 
     this._bindGlobalEvents();
-    this._syncSoundState();
     this._updateUsername();
     this._syncAnimationToggle();
-
-    this._playClickSound();
+    this._checkBoothStatus();
+    this._restoreScrollPosition();
 
     var duration = (this.animationConfig.durations && this.animationConfig.durations.standard) || 0.26;
     duration *= this.animationConfig.multiplier || 1;
@@ -309,10 +260,10 @@ HtmlQuickMenu.prototype.openMenu = function () {
     if (window.gsap && this.animationConfig.enabled !== false) {
         gsap.killTweensOf(this._panelEl);
         gsap.fromTo(this._panelEl,
-            { opacity: 0, y: 28, scale: 0.94 },
+            { opacity: 0, x: -28, scale: 0.94 },
             {
                 opacity: 1,
-                y: 0,
+                x: 0,
                 scale: 1,
                 duration: Math.max(0.12, duration),
                 ease: easeIn
@@ -329,17 +280,16 @@ HtmlQuickMenu.prototype.closeMenu = function () {
         return;
     }
 
+    this._storeScrollPosition();
     this.isOpen = false;
     this.rootEl.classList.remove('is-open');
     this.rootEl.setAttribute('aria-hidden', 'true');
     if (this.toggleButton) {
         this.toggleButton.classList.remove('is-open');
         this.toggleButton.setAttribute('aria-expanded', 'false');
-        this.toggleButton.setAttribute('aria-label', 'Open quick menu');
     }
 
     this._unbindGlobalEvents();
-    this._playClickSound();
 
     var duration = (this.animationConfig.durations && this.animationConfig.durations.quick) || 0.18;
     duration *= this.animationConfig.multiplier || 1;
@@ -349,7 +299,7 @@ HtmlQuickMenu.prototype.closeMenu = function () {
         gsap.killTweensOf(this._panelEl);
         gsap.to(this._panelEl, {
             opacity: 0,
-            y: 24,
+            x: -24,
             scale: 0.96,
             duration: Math.max(0.1, duration),
             ease: easeOut,
@@ -361,7 +311,7 @@ HtmlQuickMenu.prototype.closeMenu = function () {
         });
     } else {
         this._panelEl.style.opacity = '0';
-        this._panelEl.style.transform = 'translateY(24px) scale(0.96)';
+        this._panelEl.style.transform = 'translateX(-24px) scale(0.96)';
     }
 };
 
@@ -394,85 +344,52 @@ HtmlQuickMenu.prototype._handleEscape = function (event) {
     }
 };
 
-HtmlQuickMenu.prototype._handleVolumeInput = function (event) {
-    var value = parseFloat(event.target.value);
-    if (isNaN(value)) {
-        return;
-    }
-    this.state.masterVolume = pc.math.clamp(value, 0, 1);
-    this._updateVolumeLabel();
-    this.app.fire('ui:sound:setMasterVolume', this.state.masterVolume);
-};
-
-HtmlQuickMenu.prototype._handleVolumeCommit = function () {
-    this._persistPreference(this._storage.volume, this.state.masterVolume.toFixed(2));
-};
-
-HtmlQuickMenu.prototype._handleSfxToggle = function (event) {
-    this.state.effectsEnabled = !!event.target.checked;
-    this.app.fire('ui:sound:setEffectsEnabled', this.state.effectsEnabled);
-    this._persistPreference(this._storage.effects, String(this.state.effectsEnabled));
-    this._playClickSound();
-};
-
 HtmlQuickMenu.prototype._handleAnimationToggle = function (event) {
     this.state.animationsEnabled = !!event.target.checked;
     this._broadcastAnimationPreference();
     this._persistPreference(this._storage.animations, String(this.state.animationsEnabled));
     this._playClickSound();
 };
-
-HtmlQuickMenu.prototype._handleEditUsername = function () {
-    this.app.fire('ui:usernamePanel:open');
+HtmlQuickMenu.prototype._handleTileNavigation = function (event) {
+    var target = event.currentTarget;
+    if (!target) {
+        return;
+    }
+    var navKey = target.getAttribute('data-quick-menu-nav');
+    if (!navKey) {
+        return;
+    }
     this._playClickSound();
+    switch (navKey) {
+        case 'username':
+            this.closeMenu();
+            this.app.fire('ui:usernamePanel:open');
+            break;
+        case 'booth':
+            if (this.state.hasClaimedBooth) {
+                this.closeMenu();
+                var boothId = this.state.claimedBoothId || this._resolveClaimedBoothId();
+                this.app.fire('ui:showBoothDescriptionEditor', { boothId: boothId });
+            }
+            break;
+        case 'referrals':
+            this.closeMenu();
+            this.app.fire('ui:referralPanel:toggle', { open: true });
+            break;
+        default:
+            break;
+    }
 };
 
-HtmlQuickMenu.prototype._updateVolumeLabel = function () {
-    if (this._elements.volumeValue) {
-        var pct = Math.round(this.state.masterVolume * 100);
-        this._elements.volumeValue.textContent = pct + '%';
-    }
-    if (this._elements.volumeSlider && this._elements.volumeSlider.value !== String(this.state.masterVolume)) {
-        this._elements.volumeSlider.value = this.state.masterVolume;
-    }
-};
 
-HtmlQuickMenu.prototype._syncSoundState = function () {
-    if (this.app.soundManager) {
-        this.state.masterVolume = typeof this.app.soundManager.masterVolume === 'number'
-            ? pc.math.clamp(this.app.soundManager.masterVolume, 0, 1)
-            : this.state.masterVolume;
-        if (typeof this.app.soundManager.effectsEnabled === 'boolean') {
-            this.state.effectsEnabled = this.app.soundManager.effectsEnabled;
+HtmlQuickMenu.prototype._initializeAnimationPreference = function () {
+    try {
+        var stored = localStorage.getItem(this._storage.animations);
+        if (stored !== null) {
+            this.state.animationsEnabled = stored === 'true';
         }
-    }
-    if (this._elements.volumeSlider) {
-        this._elements.volumeSlider.value = this.state.masterVolume;
-    }
-    if (this._elements.sfxToggle) {
-        this._elements.sfxToggle.checked = this.state.effectsEnabled;
-    }
-    this._updateVolumeLabel();
-};
-
-HtmlQuickMenu.prototype._handleVolumeBroadcast = function (value) {
-    if (typeof value !== 'number') {
-        return;
-    }
-    this.state.masterVolume = pc.math.clamp(value, 0, 1);
-    if (this._elements.volumeSlider && this._elements.volumeSlider !== document.activeElement) {
-        this._elements.volumeSlider.value = this.state.masterVolume;
-    }
-    this._updateVolumeLabel();
-};
-
-HtmlQuickMenu.prototype._handleEffectsBroadcast = function (state) {
-    if (typeof state !== 'boolean') {
-        return;
-    }
-    this.state.effectsEnabled = state;
-    if (this._elements.sfxToggle) {
-        this._elements.sfxToggle.checked = state;
+    } catch (err) {
+        console.warn('HtmlQuickMenu: Failed to read animation preference.', err);
     }
 };
 
@@ -481,6 +398,95 @@ HtmlQuickMenu.prototype._syncAnimationToggle = function () {
         return;
     }
     this._elements.animationsToggle.checked = this.state.animationsEnabled !== false;
+};
+
+HtmlQuickMenu.prototype._handleBoothClaim = function (data) {
+    this.state.hasClaimedBooth = true;
+    this.state.claimedBoothId = data && data.boothId ? data.boothId : this._resolveClaimedBoothId();
+    this._updateBoothVisibility();
+};
+
+HtmlQuickMenu.prototype._handleBoothUnclaim = function () {
+    this.state.hasClaimedBooth = false;
+    this.state.claimedBoothId = null;
+    this._updateBoothVisibility();
+};
+
+HtmlQuickMenu.prototype._updateBoothVisibility = function () {
+    if (!this._elements.boothSection) {
+        return;
+    }
+    this._elements.boothSection.style.display = this.state.hasClaimedBooth ? '' : 'none';
+};
+
+HtmlQuickMenu.prototype._resolveClaimedBoothId = function () {
+    try {
+        if (this.app.services && typeof this.app.services.get === 'function') {
+            var playerDataService = this.app.services.get('playerData');
+            if (playerDataService && typeof playerDataService.getClaimedBoothId === 'function') {
+                var boothId = playerDataService.getClaimedBoothId();
+                if (boothId) {
+                    return boothId;
+                }
+            }
+        }
+        if (this.app.localPlayer && this.app.localPlayer.script && this.app.localPlayer.script.playerData) {
+            var scriptData = this.app.localPlayer.script.playerData;
+            if (typeof scriptData.getClaimedBoothId === 'function') {
+                return scriptData.getClaimedBoothId();
+            }
+        }
+    } catch (err) {
+        console.warn('HtmlQuickMenu: Failed to resolve claimed booth ID.', err);
+    }
+    return null;
+};
+
+HtmlQuickMenu.prototype._checkBoothStatus = function () {
+    try {
+        var boothId = this._resolveClaimedBoothId();
+        this.state.hasClaimedBooth = !!boothId;
+        this.state.claimedBoothId = boothId;
+        this._updateBoothVisibility();
+    } catch (err) {
+        console.warn('HtmlQuickMenu: Failed to check booth status.', err);
+    }
+};
+
+HtmlQuickMenu.prototype._storeScrollPosition = function () {
+    if (!this._elements.scrollRegion) {
+        return;
+    }
+    this.state.scrollTop = this._elements.scrollRegion.scrollTop || 0;
+};
+
+HtmlQuickMenu.prototype._restoreScrollPosition = function () {
+    if (!this._elements.scrollRegion) {
+        return;
+    }
+    var top = this.state.scrollTop || 0;
+    if (Math.abs(top - this._elements.scrollRegion.scrollTop) < 3) {
+        return;
+    }
+    this._elements.scrollRegion.scrollTop = top;
+};
+
+HtmlQuickMenu.prototype._handleScrollFocus = function (event) {
+    if (!this._elements.scrollRegion) {
+        return;
+    }
+    var region = this._elements.scrollRegion;
+    var target = event.target;
+    if (!target || !region.contains(target)) {
+        return;
+    }
+    var bounds = region.getBoundingClientRect();
+    var targetBounds = target.getBoundingClientRect();
+    if (targetBounds.top < bounds.top) {
+        region.scrollTop -= (bounds.top - targetBounds.top) + 12;
+    } else if (targetBounds.bottom > bounds.bottom) {
+        region.scrollTop += (targetBounds.bottom - bounds.bottom) + 12;
+    }
 };
 
 HtmlQuickMenu.prototype._broadcastAnimationPreference = function () {
@@ -547,19 +553,13 @@ HtmlQuickMenu.prototype._playClickSound = function () {
     this.app.fire('ui:playSound', 'ui_click_default');
 };
 
-HtmlQuickMenu.prototype.swap = function (old) {
-    this.theme = old.theme;
-    this.animationConfig = old.animationConfig;
-    this.state = old.state;
-};
 
 HtmlQuickMenu.prototype.destroy = function () {
     this._unbindGlobalEvents();
 
     this.app.off('player:data:changed', this._handlers.onPlayerDataChanged, this);
-    this.app.off('player:spawned', this._handlers.onPlayerDataChanged, this);
-    this.app.off('sound:masterVolume:updated', this._handleVolumeBroadcast, this);
-    this.app.off('sound:effects:state', this._handleEffectsBroadcast, this);
+    this.app.off('booth:claimed', this._handlers.onBoothClaimed, this);
+    this.app.off('booth:unclaimed', this._handlers.onBoothUnclaimed, this);
 
     if (this.toggleButton) {
         this.toggleButton.removeEventListener('click', this._handlers.onToggleClick);
@@ -573,19 +573,17 @@ HtmlQuickMenu.prototype.destroy = function () {
         this._elements.closeButton.removeEventListener('click', this._handlers.onClose);
         this._elements.closeButton.removeEventListener('mouseenter', this._handlers.onHover);
     }
-    if (this._elements.volumeSlider) {
-        this._elements.volumeSlider.removeEventListener('input', this._handlers.onVolumeInput);
-        this._elements.volumeSlider.removeEventListener('change', this._handlers.onVolumeCommit);
-    }
-    if (this._elements.sfxToggle) {
-        this._elements.sfxToggle.removeEventListener('change', this._handlers.onSfxToggle);
-    }
     if (this._elements.animationsToggle) {
         this._elements.animationsToggle.removeEventListener('change', this._handlers.onAnimationsToggle);
     }
-    if (this._elements.editUsernameBtn) {
-        this._elements.editUsernameBtn.removeEventListener('click', this._handlers.onEditUsername);
-        this._elements.editUsernameBtn.removeEventListener('mouseenter', this._handlers.onHover);
+    if (this._elements.tiles && this._elements.tiles.length) {
+        this._elements.tiles.forEach(function (tile) {
+            tile.removeEventListener('click', this._handlers.onNavClick);
+            tile.removeEventListener('mouseenter', this._handlers.onHover);
+        }, this);
+    }
+    if (this._elements.scrollRegion) {
+        this._elements.scrollRegion.removeEventListener('focusin', this._handlers.onScrollFocus);
     }
 
     if (this._containerEl && this._containerEl.parentNode) {

@@ -14,6 +14,7 @@ ReferralPanel.prototype.initialize = function () {
 
     this.app.on('auth:stateChanged', this.onAuthStateChanged, this);
     this.app.on('auth:gameToken', this.onGameTokenReceived, this);
+    this.app.on('ui:referralPanel:toggle', this.onToggleRequest, this);
 
     try {
         const tokenService = this.app.services && typeof this.app.services.get === 'function'
@@ -51,16 +52,23 @@ ReferralPanel.prototype.createUi = function () {
     document.head.appendChild(style);
 
     this.container = document.createElement('div');
-    this.container.className = 'referral-widget';
-
-    this.toggleButton = document.createElement('button');
-    this.toggleButton.className = 'referral-toggle';
-    this.toggleButton.textContent = 'Referral Rewards';
-    this.toggleButton.setAttribute('data-sound', 'ui_click_default');
-    this.toggleButton.addEventListener('click', this.togglePanel.bind(this));
+    this.container.className = 'referral-overlay referral-hidden';
+    this.container.setAttribute('role', 'dialog');
+    this.container.setAttribute('aria-modal', 'true');
+    this.container.addEventListener('click', function (e) {
+        if (e.target === this.container) {
+            this.togglePanel(false);
+        }
+    }.bind(this));
 
     this.card = document.createElement('div');
-    this.card.className = 'referral-card referral-hidden';
+    this.card.className = 'referral-card';
+
+    var closeButton = document.createElement('button');
+    closeButton.type = 'button';
+    closeButton.className = 'referral-close-btn';
+    closeButton.setAttribute('aria-label', 'Close');
+    closeButton.addEventListener('click', this.togglePanel.bind(this, false));
 
     var heading = document.createElement('h3');
     heading.className = 'referral-heading';
@@ -109,64 +117,89 @@ ReferralPanel.prototype.createUi = function () {
     this.feedback = document.createElement('div');
     this.feedback.className = 'referral-feedback';
 
+    this.card.appendChild(closeButton);
     this.card.appendChild(heading);
     this.card.appendChild(this.statusLabel);
     this.card.appendChild(this.codeRow);
     this.card.appendChild(this.form);
     this.card.appendChild(this.feedback);
 
-    this.container.appendChild(this.toggleButton);
     this.container.appendChild(this.card);
-
     document.body.appendChild(this.container);
 
     this.updateUiState(false);
 };
 
+ReferralPanel.prototype.onToggleRequest = function (payload) {
+    var forceOpen = payload && typeof payload.open === 'boolean' ? payload.open : undefined;
+    this.togglePanel(forceOpen);
+};
+
 ReferralPanel.prototype.buildStyles = function () {
     return `
-      .referral-widget {
+      .referral-overlay {
         position: fixed;
-        bottom: 24px;
-        right: 24px;
-        z-index: 900;
+        inset: 0;
+        background: rgba(10, 10, 10, 0.7);
+        backdrop-filter: blur(8px);
+        z-index: 6000;
         display: flex;
-        flex-direction: column;
-        align-items: flex-end;
-        gap: 12px;
-        font-family: var(--font-family, 'Segoe UI');
+        align-items: center;
+        justify-content: center;
+        opacity: 0;
+        pointer-events: none;
+        transition: opacity 0.2s ease;
+        padding: 16px;
       }
-
-      .referral-toggle {
-        background: var(--surface-color, rgba(17, 17, 17, 0.92));
-        color: var(--text-color, #fff);
-        border: 1px solid rgba(255, 255, 255, 0.12);
-        border-radius: var(--border-radius, 12px);
-        padding: 10px 18px;
-        cursor: pointer;
-        transition: transform 0.15s ease, box-shadow 0.15s ease;
+      .referral-overlay:not(.referral-hidden) {
+        opacity: 1;
+        pointer-events: auto;
       }
-
-      .referral-toggle:hover {
-        transform: translateY(-1px);
-        box-shadow: 0 12px 24px rgba(0, 0, 0, 0.25);
-      }
-
       .referral-card {
-        width: min(320px, 90vw);
+        position: relative;
+        width: min(380px, calc(100% - 32px));
+        max-width: 100%;
         background: var(--surface2-color, rgba(34, 34, 34, 0.95));
         color: var(--text-color, #fff);
         border-radius: var(--border-radius, 16px);
         border: 1px solid rgba(255, 255, 255, 0.08);
         box-shadow: 0 18px 36px rgba(0, 0, 0, 0.35);
-        padding: 20px;
+        padding: 24px;
         display: flex;
         flex-direction: column;
-        gap: 12px;
+        gap: 14px;
+        transform: scale(0.95);
+        transition: transform 0.2s ease;
       }
-
+      .referral-overlay:not(.referral-hidden) .referral-card {
+        transform: scale(1);
+      }
       .referral-hidden {
-        display: none;
+        display: none !important;
+      }
+      .referral-close-btn {
+        position: absolute;
+        top: 12px;
+        right: 12px;
+        width: 32px;
+        height: 32px;
+        border: none;
+        background: rgba(255, 255, 255, 0.1);
+        color: white;
+        border-radius: 50%;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        transition: background 120ms ease;
+      }
+      .referral-close-btn:hover {
+        background: rgba(255, 255, 255, 0.16);
+      }
+      .referral-close-btn::before {
+        content: '×';
+        font-size: 24px;
+        line-height: 1;
       }
 
       .referral-heading {
@@ -178,6 +211,7 @@ ReferralPanel.prototype.buildStyles = function () {
 
       .referral-status {
         font-size: 14px;
+        line-height: 1.4;
         color: var(--text-muted-color, rgba(255, 255, 255, 0.8));
       }
 
@@ -185,9 +219,10 @@ ReferralPanel.prototype.buildStyles = function () {
         display: flex;
         align-items: center;
         justify-content: space-between;
+        gap: 12px;
         background: rgba(255, 255, 255, 0.06);
         border-radius: 12px;
-        padding: 8px 12px;
+        padding: 12px;
         font-family: 'Roboto Mono', monospace;
         font-size: 15px;
       }
@@ -196,36 +231,59 @@ ReferralPanel.prototype.buildStyles = function () {
         overflow: hidden;
         text-overflow: ellipsis;
         white-space: nowrap;
-        max-width: 200px;
+        flex: 1;
+        min-width: 0;
       }
 
       .referral-copy-btn {
         background: rgba(255, 255, 255, 0.08);
         color: var(--text-color, #fff);
         border: none;
-        padding: 4px 10px;
+        padding: 8px 14px;
         border-radius: 8px;
         cursor: pointer;
         font-size: 12px;
+        font-weight: 500;
+        white-space: nowrap;
+        transition: background 120ms ease;
       }
 
-      .referral-copy-btn:hover {
+      .referral-copy-btn:hover:not(:disabled) {
         background: rgba(255, 255, 255, 0.14);
+      }
+
+      .referral-copy-btn:disabled {
+        opacity: 0.6;
+        cursor: default;
       }
 
       .referral-form {
         display: flex;
-        gap: 8px;
+        gap: 12px;
+        flex-wrap: wrap;
       }
 
       .referral-form input {
         flex: 1;
-        padding: 10px;
+        min-width: 120px;
+        padding: 12px 14px;
         border-radius: 10px;
         border: 1px solid rgba(255, 255, 255, 0.12);
         background: rgba(255, 255, 255, 0.05);
         color: var(--text-color, #fff);
         font-size: 14px;
+        font-family: inherit;
+        transition: border-color 120ms ease, box-shadow 120ms ease;
+      }
+
+      .referral-form input:focus {
+        outline: none;
+        border-color: rgba(255, 255, 255, 0.24);
+        box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.08);
+      }
+
+      .referral-form input::placeholder {
+        color: rgba(255, 255, 255, 0.5);
       }
 
       .referral-submit {
@@ -233,9 +291,17 @@ ReferralPanel.prototype.buildStyles = function () {
         color: #fff;
         border: none;
         border-radius: 10px;
-        padding: 10px 16px;
+        padding: 12px 20px;
         cursor: pointer;
         font-weight: 600;
+        font-size: 14px;
+        white-space: nowrap;
+        transition: transform 120ms ease, box-shadow 120ms ease, opacity 160ms ease;
+      }
+
+      .referral-submit:hover:not(:disabled) {
+        transform: translateY(-1px);
+        box-shadow: 0 4px 12px rgba(29, 155, 240, 0.32);
       }
 
       .referral-submit:disabled {
@@ -246,26 +312,61 @@ ReferralPanel.prototype.buildStyles = function () {
       .referral-feedback {
         font-size: 13px;
         min-height: 18px;
+        line-height: 1.3;
         color: var(--text-muted-color, rgba(255, 255, 255, 0.75));
+        transition: color 120ms ease;
       }
 
-      @media (max-width: 540px) {
-        .referral-widget {
-          right: 12px;
-          bottom: 12px;
+      @media (max-width: 480px) {
+        .referral-card {
+          padding: 20px;
+          gap: 12px;
+        }
+
+        .referral-heading {
+          font-size: 16px;
+        }
+
+        .referral-status {
+          font-size: 13px;
+        }
+
+        .referral-code-row {
+          font-size: 13px;
+          padding: 10px;
+        }
+
+        .referral-form {
+          flex-direction: column;
+        }
+
+        .referral-form input {
+          width: 100%;
+          min-width: unset;
+        }
+
+        .referral-submit {
+          width: 100%;
         }
       }
     `;
 };
 
-ReferralPanel.prototype.togglePanel = function () {
-    if (!this.card) {
+ReferralPanel.prototype.togglePanel = function (forceOpen) {
+    if (!this.container) {
         return;
     }
-    const hidden = this.card.classList.contains('referral-hidden');
-    this.card.classList.toggle('referral-hidden', !hidden);
-    if (hidden && !this.profile) {
-        this.refreshProfile();
+    var open = typeof forceOpen === 'boolean' ? forceOpen : this.container.classList.contains('referral-hidden');
+
+    if (open) {
+        this.container.classList.remove('referral-hidden');
+        this.container.setAttribute('aria-hidden', 'false');
+        if (!this.profile) {
+            this.refreshProfile();
+        }
+    } else {
+        this.container.classList.add('referral-hidden');
+        this.container.setAttribute('aria-hidden', 'true');
     }
 };
 
@@ -525,6 +626,7 @@ ReferralPanel.prototype.handleUnauthorized = function () {
 ReferralPanel.prototype.destroy = function () {
     this.app.off('auth:stateChanged', this.onAuthStateChanged, this);
     this.app.off('auth:gameToken', this.onGameTokenReceived, this);
+    this.app.off('ui:referralPanel:toggle', this.onToggleRequest, this);
     if (this.container && this.container.parentNode) {
         this.container.parentNode.removeChild(this.container);
     }

@@ -188,13 +188,25 @@ HtmlAvatarCustomizer.prototype._buildDom = function () {
   if (this.openOnStart) this.open();
   else this.close();
 
+  this._handlers = this._handlers || {};
+  this._handlers.toggleRequest = function () {
+    if (self.isOpen) self.close();
+    else self.open();
+  };
+  this._handlers.openRequest = function () { self.open(); };
+  this._handlers.closeRequest = function () { self.close(); };
+
+  this.app.on("htmlAvatarCustomizer:toggle", this._handlers.toggleRequest, this);
+  this.app.on("htmlAvatarCustomizer:open", this._handlers.openRequest, this);
+  this.app.on("htmlAvatarCustomizer:close", this._handlers.closeRequest, this);
+
   this.app.fire("avatar:uiReady", this.bridge);
 };
 
 HtmlAvatarCustomizer.prototype._createButtonsContainerAndToggle = function () {
   var self = this;
 
-  // Create the shared bottom-right container if missing
+  // Create the shared ui-button-container if missing (positioned left-center)
   var buttonContainer = document.getElementById("ui-button-container");
   if (!buttonContainer) {
     buttonContainer = document.createElement("div");
@@ -202,60 +214,40 @@ HtmlAvatarCustomizer.prototype._createButtonsContainerAndToggle = function () {
     document.body.appendChild(buttonContainer);
   }
 
+  // Create the avatar customizer toggle button
+  if (!this.toggleButton) {
+    this.toggleButton = document.createElement('button');
+    this.toggleButton.className = 'ui-action-button avatar-customizer-toggle';
+    this.toggleButton.type = 'button';
+    this.toggleButton.setAttribute('aria-label', 'Customize avatar');
+    this.toggleButton.setAttribute('aria-pressed', 'false');
+    this.toggleButton.innerHTML = '<span class="icon" aria-hidden="true">🎨</span>';
+
+    this._handlers = this._handlers || {};
+    this._handlers.toggleButton = function () {
+      self.app.fire('ui:playSound', 'ui_click_default');
+      if (self.isOpen) self.close();
+      else self.open();
+    };
+    this._handlers.hoverButton = function () {
+      self.app.fire('ui:playSound', 'ui_hover_default');
+    };
+
+    this.toggleButton.addEventListener('click', this._handlers.toggleButton);
+    this.toggleButton.addEventListener('mouseenter', this._handlers.hoverButton);
+
+    buttonContainer.appendChild(this.toggleButton);
+  }
+
   // Signal other scripts (WaveButton) that container is ready
   this.app.fire("ui:button-container:ready");
 
-  // Listen for the wave button and add it to the container (Wave should appear first)
+  // Listen for the wave button and insert it before avatar button
   this.app.on("ui:wavebutton:create", function (waveButton) {
-    if (!waveButton) return;
-    // Insert as first child to enforce order: [Wave][Avatar]
-    if (buttonContainer.firstChild !== waveButton) {
-      buttonContainer.insertBefore(waveButton, buttonContainer.firstChild);
-    }
+    if (!waveButton || !self.toggleButton) return;
+    if (buttonContainer.contains(waveButton)) return;
+    buttonContainer.insertBefore(waveButton, self.toggleButton);
   });
-
-  // Create the avatar toggle button (will sit to the RIGHT of wave)
-  var btn = document.createElement("button");
-  btn.id = "avatar-toggle-button";
-  btn.className = "ui-action-button avatar-toggle-button";
-  btn.type = "button";
-  btn.setAttribute("aria-label", "Open avatar customization");
-
-  var iconSpan = document.createElement("span");
-  iconSpan.className = "icon";
-
-  function setIcon(url) {
-    if (url) iconSpan.style.backgroundImage = "url(" + url + ")";
-  }
-  if (this.iconAsset) {
-    this._ensureTextureAsset(this.iconAsset, function (asset) {
-      setIcon(asset.getFileUrl());
-    });
-  }
-
-  var labelSpan = document.createElement("span");
-  labelSpan.className = "label";
-  labelSpan.textContent = "Avatar";
-
-  btn.appendChild(iconSpan);
-  btn.appendChild(labelSpan);
-
-  btn.addEventListener("click", function () {
-    if (self.isOpen) self.close();
-    else self.open();
-  });
-
-  btn.addEventListener("mouseenter", function () {
-    self.app.fire("ui:playSound", "ui_hover_default");
-  });
-
-  // Append AFTER Wave for correct order
-  buttonContainer.appendChild(btn);
-
-  this.toggleButton = btn;
-  this.toggleButton.setAttribute("aria-pressed", "false");
-
-  // if (this.openOnStart) this.toggleButton.style.display = "none";
 
   var themeToApply = this.theme;
   if (!themeToApply && this.app.uiManager && typeof this.app.uiManager.getTheme === "function") {
@@ -409,6 +401,8 @@ HtmlAvatarCustomizer.prototype.setAnimationConfig = function (config) {
 HtmlAvatarCustomizer.prototype.open = function () {
   if (!this.root || this.isOpen) return;
   this.isOpen = true;
+  this.root.style.display = 'block';
+  this.root.style.display = 'block';
   this.root.classList.remove("is-closed");
   this.root.classList.add("is-open");
   this.root.style.pointerEvents = "auto";
@@ -504,10 +498,30 @@ HtmlAvatarCustomizer.prototype._animatePanel = function (isOpening) {
 
 HtmlAvatarCustomizer.prototype.destroy = function () {
   clearTimeout(this._rateLimitTimer);
-  this.app.off("ui:wavebutton:create"); // clean up listener
+  this.app.off("ui:wavebutton:create");
+  if (this._handlers) {
+    if (this._handlers.toggleRequest) {
+      this.app.off("htmlAvatarCustomizer:toggle", this._handlers.toggleRequest, this);
+    }
+    if (this._handlers.openRequest) {
+      this.app.off("htmlAvatarCustomizer:open", this._handlers.openRequest, this);
+    }
+    if (this._handlers.closeRequest) {
+      this.app.off("htmlAvatarCustomizer:close", this._handlers.closeRequest, this);
+    }
+  }
+  if (this.toggleButton) {
+    if (this._handlers.toggleButton) {
+      this.toggleButton.removeEventListener('click', this._handlers.toggleButton);
+    }
+    if (this._handlers.hoverButton) {
+      this.toggleButton.removeEventListener('mouseenter', this._handlers.hoverButton);
+    }
+    if (this.toggleButton.parentNode) {
+      this.toggleButton.parentNode.removeChild(this.toggleButton);
+    }
+    this.toggleButton = null;
+  }
   if (this.container && this.container.parentNode)
     this.container.parentNode.removeChild(this.container);
-  if (this.toggleButton && this.toggleButton.parentNode)
-    this.toggleButton.parentNode.removeChild(this.toggleButton);
-  this.toggleButton = null;
 };

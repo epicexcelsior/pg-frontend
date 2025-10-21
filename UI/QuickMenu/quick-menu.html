@@ -1,55 +1,65 @@
 <div id="quick-menu-root" class="quick-menu" aria-hidden="true" role="dialog">
   <div class="quick-menu__panel" data-quick-menu-panel>
     <div class="quick-menu__header">
-      <div class="quick-menu__title">Control Center</div>
+      <div class="quick-menu__title">Quick Menu</div>
       <button type="button" class="quick-menu__close" data-quick-menu-close aria-label="Close menu"></button>
     </div>
-    <div class="quick-menu__content">
-      <section class="quick-menu__section" aria-label="Profile controls">
+    <div class="quick-menu__content" data-quick-menu-scroll-region>
+      
+      <!-- Profile Section -->
+      <section class="quick-menu__section" aria-label="Profile">
         <div class="quick-menu__section-title">Profile</div>
-        <div class="quick-menu__row">
-          <div class="quick-menu__label">Username</div>
-          <div class="quick-menu__value" data-quick-menu-username>—</div>
-          <button type="button" class="quick-menu__pill" data-quick-menu-edit-username>Edit</button>
-        </div>
-        <div class="quick-menu__hint">Update your display name via the full profile editor.</div>
+        <button type="button" class="quick-menu__tile" data-quick-menu-nav="username">
+          <div class="quick-menu__tile-icon">👤</div>
+          <div class="quick-menu__tile-content">
+            <div class="quick-menu__tile-label">Username</div>
+            <div class="quick-menu__tile-value" data-quick-menu-username>—</div>
+          </div>
+          <div class="quick-menu__tile-arrow">›</div>
+        </button>
       </section>
 
-      <section class="quick-menu__section" aria-label="Audio controls">
-        <div class="quick-menu__section-title">Audio</div>
-        <label class="quick-menu__slider">
-          <span>Master volume</span>
-          <div class="quick-menu__slider-track">
-            <input type="range" min="0" max="1" step="0.01" value="1" data-quick-menu-volume>
-            <span class="quick-menu__slider-value" data-quick-menu-volume-value>100%</span>
+      <!-- Booth Section (visibility controlled by script) -->
+      <section class="quick-menu__section quick-menu__section--booth" data-booth-section aria-label="Booth" style="display: none;">
+        <div class="quick-menu__section-title">Booth</div>
+        <button type="button" class="quick-menu__tile" data-quick-menu-nav="booth">
+          <div class="quick-menu__tile-icon">🏠</div>
+          <div class="quick-menu__tile-content">
+            <div class="quick-menu__tile-label">Edit Description</div>
+            <div class="quick-menu__tile-hint">Manage your booth info</div>
           </div>
-        </label>
-        <div class="quick-menu__toggle">
-          <div class="quick-menu__toggle-info">
-            <span>Sound effects</span>
-            <span class="quick-menu__hint">Toggles UI and interaction sounds.</span>
-          </div>
-          <label class="quick-menu__switch">
-            <input type="checkbox" checked data-quick-menu-sfx>
-            <span class="quick-menu__switch-slider"></span>
-          </label>
-        </div>
+          <div class="quick-menu__tile-arrow">›</div>
+        </button>
       </section>
 
-      <section class="quick-menu__section" aria-label="Visual settings">
-        <div class="quick-menu__section-title">Visuals</div>
+      <!-- Community Section -->
+      <section class="quick-menu__section" aria-label="Community">
+        <div class="quick-menu__section-title">Community</div>
+        <button type="button" class="quick-menu__tile" data-quick-menu-nav="referrals">
+          <div class="quick-menu__tile-icon">🎁</div>
+          <div class="quick-menu__tile-content">
+            <div class="quick-menu__tile-label">Referrals</div>
+            <div class="quick-menu__tile-hint">Invite friends, earn rewards</div>
+          </div>
+          <div class="quick-menu__tile-arrow">›</div>
+        </button>
+      </section>
+
+      <!-- Settings Section -->
+      <section class="quick-menu__section" aria-label="Settings">
+        <div class="quick-menu__section-title">Settings</div>
         <div class="quick-menu__toggle">
           <div class="quick-menu__toggle-info">
             <span>Enhanced animations</span>
-            <span class="quick-menu__hint">Disable for lower power devices.</span>
+            <span class="quick-menu__hint">Disable for lower power devices</span>
           </div>
           <label class="quick-menu__switch">
             <input type="checkbox" checked data-quick-menu-animations>
             <span class="quick-menu__switch-slider"></span>
           </label>
         </div>
-        <div class="quick-menu__placeholder">More controls coming soon.</div>
       </section>
+
     </div>
   </div>
 </div>

@@ -1,7 +1,8 @@
 ﻿#avatar-customizer {
   position: fixed;
-  bottom: calc(var(--action-dock-offset-bottom) + 8px);
-  left: 24px;
+  top: 50%;
+  left: calc(18px + var(--action-dock-button-size) + 18px);
+  transform: translateY(-50%);
   width: min(var(--avatar-panel-width, 360px), calc(100vw - 48px));
   max-height: calc(100vh - 120px);
   display: flex;
@@ -16,7 +17,7 @@
   color: var(--text-color, #ffffff);
   font-family: var(--font-family, 'Segoe UI', sans-serif);
   z-index: 5000;
-  transform-origin: bottom left;
+  transform-origin: center left;
   overflow: hidden;
   transition: opacity var(--animation-duration-standard, 0.28s) ease, transform var(--animation-duration-standard, 0.28s) ease;
 }
@@ -24,13 +25,13 @@
 #avatar-customizer.is-closed {
   pointer-events: none;
   opacity: 0;
-  transform: translate3d(-18px, 32px, 0) scale(0.94);
+  transform: translate3d(-24px, -50%, 0) scale(0.94);
 }
 
 #avatar-customizer.is-open {
   pointer-events: auto;
   opacity: 1;
-  transform: none;
+  transform: translateY(-50%);
 }
 
 #avatar-customizer .avatar-header {

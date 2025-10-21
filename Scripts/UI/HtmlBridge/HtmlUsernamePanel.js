@@ -40,7 +40,6 @@ HtmlUsernamePanel.prototype._injectAssets = function () {
 
 HtmlUsernamePanel.prototype._bindDom = function () {
     this.rootEl = this._container ? this._container.querySelector('#username-panel-root') : null;
-    this.openButton = this._container ? this._container.querySelector('#username-open-btn') : null;
     this.modalEl = this._container ? this._container.querySelector('#username-modal') : null;
     this.closeButton = this._container ? this._container.querySelector('#username-close-btn') : null;
     this.cancelButton = this._container ? this._container.querySelector('#username-cancel-btn') : null;
@@ -56,12 +55,7 @@ HtmlUsernamePanel.prototype._bindDom = function () {
     this._boundSubmit = this.handleSubmit.bind(this);
     this._boundBackdropClick = this.handleBackdropClick.bind(this);
     this._boundKeyDown = this.handleGlobalKeyDown.bind(this);
-    this._boundHover = this.handleOpenHover.bind(this);
 
-    if (this.openButton) {
-        this.openButton.addEventListener('click', this._boundOpen);
-        this.openButton.addEventListener('mouseenter', this._boundHover);
-    }
     if (this.closeButton) {
         this.closeButton.addEventListener('click', this._boundClose);
     }
@@ -92,12 +86,6 @@ HtmlUsernamePanel.prototype.destroy = function () {
     this.app.off('ui:usernamePanel:open', this.openPanel, this);
     this.app.off('ui:usernamePanel:close', this.closePanel, this);
 
-    if (this.openButton && this._boundOpen) {
-        this.openButton.removeEventListener('click', this._boundOpen);
-    }
-    if (this.openButton && this._boundHover) {
-        this.openButton.removeEventListener('mouseenter', this._boundHover);
-    }
     if (this.closeButton && this._boundClose) {
         this.closeButton.removeEventListener('click', this._boundClose);
     }
@@ -118,10 +106,6 @@ HtmlUsernamePanel.prototype.destroy = function () {
     if (this._styleEl && this._styleEl.parentNode) {
         this._styleEl.parentNode.removeChild(this._styleEl);
     }
-};
-
-HtmlUsernamePanel.prototype.handleOpenHover = function () {
-    this.app.fire('ui:playSound', 'ui_hover_default');
 };
 
 HtmlUsernamePanel.prototype.handleBackdropClick = function (event) {
@@ -149,6 +133,7 @@ HtmlUsernamePanel.prototype.openPanel = function () {
         return;
     }
     this._visible = true;
+    this.rootEl.style.display = 'block';
     this.modalEl.classList.add('visible');
     this.modalEl.setAttribute('aria-hidden', 'false');
     this._pendingUsername = null;

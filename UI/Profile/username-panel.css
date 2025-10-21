@@ -1,66 +1,4 @@
 /* Username Panel UI */
-#username-panel-root {
-    position: fixed;
-    bottom: 32px;
-    right: 32px;
-    z-index: 900;
-    display: flex;
-    flex-direction: column;
-    align-items: flex-end;
-    gap: 12px;
-    font-family: var(--font-family, "Inter", sans-serif);
-}
-
-.username-floating-btn {
-    pointer-events: auto;
-    display: flex;
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 2px;
-    padding: 10px 16px;
-    min-width: 168px;
-    border: none;
-    border-radius: var(--border-radius, 12px);
-    background: linear-gradient(140deg, var(--primary-color, #5d3fd3), var(--accent-color, #14f195));
-    color: #ffffff;
-    font-size: 14px;
-    font-weight: 600;
-    cursor: pointer;
-    box-shadow: 0 12px 32px rgba(20, 241, 149, 0.18);
-    transition: transform 120ms ease, box-shadow 160ms ease, opacity 160ms ease;
-}
-
-.username-floating-btn:focus-visible {
-    outline: 2px solid rgba(255, 255, 255, 0.6);
-    outline-offset: 3px;
-}
-
-.username-floating-btn:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 16px 40px rgba(20, 241, 149, 0.26);
-}
-
-.username-floating-btn:active {
-    transform: translateY(0);
-}
-
-.username-btn-label {
-    font-size: 14px;
-    letter-spacing: 0.15em;
-    text-transform: uppercase;
-    opacity: 0.9;
-}
-
-.username-btn-current {
-    font-size: 16px;
-    letter-spacing: 0.02em;
-    opacity: 0.85;
-}
-
-.username-btn-current.is-empty {
-    opacity: 0.65;
-}
-
 .username-modal {
     position: fixed;
     inset: 0;
@@ -73,6 +11,7 @@
     backdrop-filter: blur(12px);
     transition: opacity 200ms ease;
     z-index: 1100;
+    padding: 16px;
 }
 
 .username-modal.visible {
@@ -81,7 +20,8 @@
 }
 
 .username-modal__card {
-    width: min(360px, calc(100% - 40px));
+    width: min(360px, calc(100% - 32px));
+    max-width: 100%;
     padding: 24px;
     border-radius: calc(var(--border-radius, 14px) + 2px);
     background: linear-gradient(180deg, rgba(18, 24, 43, 0.92), rgba(8, 12, 24, 0.96));
@@ -139,6 +79,7 @@
     font-size: 13px;
     letter-spacing: 0.08em;
     text-transform: uppercase;
+    font-weight: 500;
     color: var(--text-muted-color, rgba(235, 235, 255, 0.72));
 }
 
@@ -151,17 +92,23 @@
     color: var(--text-color, #ffffff);
     font-size: 16px;
     font-family: inherit;
+    line-height: 1.5;
     transition: border-color 120ms ease, box-shadow 120ms ease;
 }
 
+.username-form__input::placeholder {
+    color: rgba(235, 235, 255, 0.45);
+}
+
 .username-form__input:focus {
+    outline: none;
     border-color: rgba(20, 241, 149, 0.65);
     box-shadow: 0 0 0 3px rgba(20, 241, 149, 0.25);
-    outline: none;
 }
 
 .username-form__hint {
     font-size: 12px;
+    line-height: 1.3;
     color: var(--text-muted-color, rgba(235, 235, 255, 0.6));
 }
 
@@ -174,12 +121,13 @@
 
 .username-btn {
     min-width: 110px;
-    padding: 10px 16px;
+    padding: 12px 18px;
     border-radius: var(--border-radius, 12px);
     border: none;
     font-size: 14px;
     font-weight: 600;
     cursor: pointer;
+    white-space: nowrap;
     transition: transform 120ms ease, box-shadow 160ms ease, opacity 160ms ease;
 }
 
@@ -204,6 +152,7 @@
 .username-btn--secondary {
     background: rgba(255, 255, 255, 0.08);
     color: var(--text-color, #f2f4ff);
+    transition: transform 120ms ease, background 120ms ease;
 }
 
 .username-btn--secondary:hover:not(:disabled) {
@@ -232,17 +181,70 @@
 }
 
 @media (max-width: 640px) {
-    #username-panel-root {
-        bottom: 20px;
-        right: 20px;
-    }
-
-    .username-floating-btn {
-        min-width: 0;
-        padding: 10px 14px;
-    }
-
     .username-modal__card {
         padding: 20px;
+        gap: 14px;
+    }
+
+    .username-modal__header h2 {
+        font-size: 18px;
+    }
+
+    .username-modal__description {
+        font-size: 13px;
+        line-height: 1.4;
+    }
+
+    .username-form__input {
+        font-size: 16px;
+        padding: 11px 12px;
+    }
+
+    .username-form__label {
+        font-size: 12px;
+    }
+
+    .username-form__hint {
+        font-size: 11px;
+    }
+
+    .username-actions {
+        justify-content: stretch;
+    }
+
+    .username-btn {
+        flex: 1;
+        min-width: auto;
+        padding: 11px 14px;
+        font-size: 13px;
+    }
+}
+
+@media (max-width: 380px) {
+    .username-modal__card {
+        padding: 16px;
+        gap: 12px;
+    }
+
+    .username-modal__header h2 {
+        font-size: 16px;
+    }
+
+    .username-modal__description {
+        font-size: 12px;
+    }
+
+    .username-form__input {
+        font-size: 15px;
+        padding: 10px 11px;
+    }
+
+    .username-form__hint {
+        font-size: 10px;
+    }
+
+    .username-btn {
+        padding: 10px 12px;
+        font-size: 12px;
     }
 }

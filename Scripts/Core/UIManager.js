@@ -118,11 +118,12 @@ UIManager.prototype.injectGlobalStyles = function () {
         }
         #ui-button-container {
             position: fixed;
-            bottom: var(--action-dock-offset-bottom);
-            right: var(--action-dock-offset-right);
+            left: 24px;
+            top: 50%;
+            transform: translateY(-50%);
             display: flex;
-            flex-direction: row;
-            align-items: center;
+            flex-direction: column;
+            align-items: flex-start;
             gap: var(--action-dock-gap);
             z-index: 5002;
             pointer-events: none;
@@ -172,56 +173,106 @@ UIManager.prototype.injectGlobalStyles = function () {
             background: var(--accent-color);
             color: var(--text-dark-color);
         }
-        .wave-action-wrapper {
+        .wave-action-wrapper,
+        .quick-menu-toggle {
             position: relative;
         }
         .fanout-menu {
             position: absolute;
-            bottom: calc(var(--action-dock-button-size) + 14px);
-            right: 0;
-            display: flex;
-            flex-direction: column;
-            align-items: flex-end;
-            gap: 10px;
+            top: 50%;
+            left: calc(100% + 16px);
+            transform: translateY(-50%);
             pointer-events: none;
             z-index: 5001;
-            opacity: 0;
-            transition: opacity var(--animation-duration-quick) ease;
+            min-width: 1px;
+            min-height: 1px;
         }
         .fanout-menu.is-open {
             pointer-events: auto;
-            opacity: 1;
         }
         .fanout-menu__button {
-            pointer-events: auto;
-            width: 46px;
-            height: 46px;
-            border-radius: 12px;
-            background: rgba(24, 30, 44, 0.92);
-            color: var(--text-color);
+            pointer-events: none;
+            position: absolute;
+            inset: 0 auto auto 0;
+            min-width: auto;
+            width: 64px;
+            height: 72px;
+            padding: 10px 8px;
+            border-radius: 16px;
+            background: rgba(26, 32, 46, 0.92);
             border: 1px solid rgba(255, 255, 255, 0.08);
+            color: var(--text-color);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 6px;
+            font-size: 12px;
+            font-weight: 500;
+            line-height: 1.2;
+            cursor: pointer;
+            box-shadow: 0 12px 28px rgba(0, 0, 0, 0.28);
+            transform-origin: left center;
+            opacity: 0;
+            transform: translate3d(0, 0, 0) scale(0.75);
+            visibility: hidden;
+            transition: all var(--animation-duration-quick) ease;
+        }
+        .fanout-menu.is-open .fanout-menu__button {
+            pointer-events: auto;
+            visibility: visible;
+        }
+        .fanout-menu__button:hover:not(:disabled),
+        .fanout-menu__button:not(.is-disabled):hover {
+            background: rgba(36, 44, 62, 0.96);
+            box-shadow: 0 16px 36px rgba(0, 0, 0, 0.36);
+            transform: translate3d(0, 0, 0) scale(1.08);
+            transition: all 120ms cubic-bezier(0.34, 1.56, 0.64, 1);
+        }
+        .fanout-menu__button:focus-visible {
+            outline: 2px solid rgba(29, 242, 164, 0.5);
+            outline-offset: 2px;
+        }
+        .fanout-menu__button:disabled,
+        .fanout-menu__button.is-disabled {
+            pointer-events: none;
+            opacity: 0.48;
+            cursor: not-allowed;
+        }
+        .fanout-menu__button:disabled:hover,
+        .fanout-menu__button.is-disabled:hover {
+            background: rgba(26, 32, 46, 0.92);
+            box-shadow: 0 12px 28px rgba(0, 0, 0, 0.28);
+            transform: translate3d(0, 0, 0) scale(0.85);
+        }
+        .fanout-menu__glyph {
+            width: 36px;
+            height: 36px;
+            border-radius: 12px;
+            background: rgba(255, 255, 255, 0.1);
             display: inline-flex;
             align-items: center;
             justify-content: center;
-            font-size: 22px;
-            box-shadow: 0 14px 30px rgba(0, 0, 0, 0.28);
-            transform-origin: bottom right;
-            opacity: 0;
-            transform: translateY(12px) scale(0.9);
-            transition: opacity var(--animation-duration-quick) ease, transform var(--animation-duration-quick) ease;
+            font-size: 20px;
+            line-height: 1;
+            box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.06);
+            flex-shrink: 0;
         }
-        .fanout-menu.is-open .fanout-menu__button {
-            opacity: 1;
-            transform: none;
-        }
-        .fanout-menu__button.placeholder {
-            opacity: 0.75;
+        .fanout-menu__label {
+            font-size: 12px;
+            font-weight: 500;
+            letter-spacing: 0.02em;
+            text-align: center;
+            width: 100%;
+            word-break: break-word;
         }
         @media (max-width: 768px) {
             #ui-button-container {
-                bottom: var(--action-dock-offset-bottom);
-                right: var(--action-dock-offset-right);
-                gap: 12px;
+                left: 20px;
+                top: 50%;
+                bottom: auto;
+                right: auto;
+                transform: translateY(-50%);
             }
         }
         #ui-transition-overlay {

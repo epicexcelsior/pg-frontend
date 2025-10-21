@@ -129,6 +129,7 @@ HtmlBoothDescription.prototype._bindHandlers = function () {
     this._onTextareaFocus = this.handleFocus.bind(this);
     this._onTextareaBlur = this.handleBlur.bind(this);
     this._onSaveClick = this.onSubmit.bind(this);
+    this._onCloseClick = this.hideEditor.bind(this);
 };
 
 HtmlBoothDescription.prototype._ensureStyles = function () {
@@ -143,6 +144,7 @@ HtmlBoothDescription.prototype._ensureStyles = function () {
         bottom: var(--booth-bottom-offset, 96px);
         right: var(--booth-right-offset, 32px);
         width: var(--booth-panel-width, 320px);
+        max-width: calc(100vw - 32px);
         display: flex;
         flex-direction: column;
         gap: 16px;
@@ -178,6 +180,26 @@ HtmlBoothDescription.prototype._ensureStyles = function () {
         text-transform: uppercase;
         font-weight: 600;
         color: var(--booth-text-muted, rgba(255, 255, 255, 0.76));
+        flex: 1;
+    }
+    .booth-description-close {
+        background: rgba(255, 255, 255, 0.08);
+        color: var(--booth-text, #ffffff);
+        border: none;
+        width: 32px;
+        height: 32px;
+        border-radius: 8px;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 20px;
+        line-height: 1;
+        transition: background 120ms ease;
+        flex-shrink: 0;
+    }
+    .booth-description-close:hover {
+        background: rgba(255, 255, 255, 0.14);
     }
     .booth-description-meta {
         display: flex;
@@ -198,6 +220,7 @@ HtmlBoothDescription.prototype._ensureStyles = function () {
     .booth-description-textarea {
         width: 100%;
         min-height: 120px;
+        max-height: 240px;
         border-radius: 16px;
         border: 1px solid var(--booth-input-border, rgba(255, 255, 255, 0.12));
         background: var(--booth-input-surface, rgba(12, 16, 28, 0.82));
@@ -205,9 +228,13 @@ HtmlBoothDescription.prototype._ensureStyles = function () {
         padding: 14px;
         font-size: 14px;
         line-height: 1.45;
+        font-family: inherit;
         resize: none;
         box-shadow: 0 18px 38px rgba(0, 0, 0, 0.18);
         transition: border var(--animation-duration-quick, 0.18s) ease, box-shadow var(--animation-duration-quick, 0.18s) ease;
+    }
+    .booth-description-textarea::placeholder {
+        color: rgba(255, 255, 255, 0.45);
     }
     .booth-description-textarea:focus {
         outline: none;
@@ -231,7 +258,7 @@ HtmlBoothDescription.prototype._ensureStyles = function () {
         box-shadow: 0 16px 32px rgba(29, 242, 164, 0.28);
         transition: transform var(--animation-duration-quick, 0.18s) ease, box-shadow var(--animation-duration-quick, 0.18s) ease;
     }
-    .booth-description-save:hover {
+    .booth-description-save:hover:not(:disabled) {
         transform: translateY(-1px);
         box-shadow: 0 18px 42px rgba(29, 242, 164, 0.32);
     }
@@ -282,9 +309,69 @@ HtmlBoothDescription.prototype._ensureStyles = function () {
     }
     @media (max-width: 720px) {
         .booth-description-editor {
-            right: max(16px, env(safe-area-inset-right));
-            left: max(16px, env(safe-area-inset-left));
+            position: fixed;
+            bottom: 16px;
+            right: 16px;
+            left: 16px;
             width: auto;
+            max-width: calc(100vw - 32px);
+            padding: 18px;
+            gap: 14px;
+        }
+        .booth-description-title {
+            font-size: 14px;
+        }
+        .booth-description-textarea {
+            min-height: 100px;
+            max-height: 200px;
+            font-size: 13px;
+            padding: 12px;
+        }
+        .booth-description-meta {
+            font-size: 11px;
+        }
+        .booth-description-counter {
+            font-size: 11px;
+        }
+        .booth-description-save {
+            padding: 12px 16px;
+            font-size: 13px;
+        }
+    }
+    @media (max-width: 480px) {
+        .booth-description-editor {
+            bottom: 12px;
+            right: 12px;
+            left: 12px;
+            max-width: calc(100vw - 24px);
+            padding: 16px;
+            gap: 12px;
+        }
+        .booth-description-header {
+            gap: 8px;
+        }
+        .booth-description-title {
+            font-size: 13px;
+            letter-spacing: 0.04em;
+        }
+        .booth-description-close {
+            width: 28px;
+            height: 28px;
+            font-size: 18px;
+        }
+        .booth-description-textarea {
+            min-height: 90px;
+            max-height: 180px;
+            font-size: 13px;
+            padding: 10px;
+        }
+        .booth-description-save {
+            padding: 11px 14px;
+            font-size: 12px;
+        }
+        .booth-description-future {
+            padding: 10px;
+            gap: 8px;
         }
     }
     `;
@@ -300,6 +387,7 @@ HtmlBoothDescription.prototype.createDom = function () {
     this.container.setAttribute('role', 'dialog');
     this.container.setAttribute('aria-modal', 'true');
     this.container.setAttribute('aria-hidden', 'true');
+    this.container.style.display = 'none';
     this.container.style.setProperty('--booth-panel-width', this.config.panel.width + 'px');
     this.container.style.setProperty('--booth-bottom-offset', this.config.panel.bottom + 'px');
     this.container.style.setProperty('--booth-right-offset', this.config.panel.right + 'px');
@@ -311,6 +399,14 @@ HtmlBoothDescription.prototype.createDom = function () {
     this.titleLabel.className = 'booth-description-title';
     this.titleLabel.textContent = 'Your Booth Message';
     titleRow.appendChild(this.titleLabel);
+
+    this.closeButton = document.createElement('button');
+    this.closeButton.type = 'button';
+    this.closeButton.className = 'booth-description-close';
+    this.closeButton.setAttribute('aria-label', 'Close booth description editor');
+    this.closeButton.innerHTML = '×';
+    this.closeButton.addEventListener('click', this._onCloseClick);
+    titleRow.appendChild(this.closeButton);
 
     this.container.appendChild(titleRow);
 
@@ -464,17 +560,33 @@ HtmlBoothDescription.prototype.updateCounter = function () {
 };
 
 HtmlBoothDescription.prototype.showEditor = function (payload) {
-    if (!payload || !payload.boothId) {
-        return;
+    if (payload && payload.boothId) {
+        this.currentBoothId = payload.boothId;
+        this.textarea.value = payload.description || '';
+    } else if (!this.currentBoothId) {
+        try {
+            var boothController = this.app.boothController || (this.app.services && this.app.services.get && this.app.services.get('boothController'));
+            var currentZone = boothController && boothController.currentZoneScript;
+            if (currentZone && currentZone.boothId) {
+                this.currentBoothId = currentZone.boothId;
+                if (typeof boothController.getBoothDescription === 'function') {
+                    this.textarea.value = boothController.getBoothDescription(currentZone.boothId) || '';
+                }
+            } else {
+                return;
+            }
+        } catch (err) {
+            console.warn('HtmlBoothDescription: Unable to resolve current booth context.', err);
+            return;
+        }
     }
-    this.currentBoothId = payload.boothId;
-    this.textarea.value = payload.description || '';
     this.updateCounter();
     this.feedback.textContent = '';
     if (this.feedback && this.theme) {
         this.feedback.style.color = (this.theme.colors && this.theme.colors.textMuted) || '#aeb3d6';
     }
     this.setPending(false);
+    this.container.style.display = 'flex';
     this.container.classList.add('is-visible');
     this.container.setAttribute('aria-hidden', 'false');
     this._animatePanel(true);
@@ -491,6 +603,7 @@ HtmlBoothDescription.prototype.hideEditor = function () {
         }
         self.container.classList.remove('is-visible');
         self.container.setAttribute('aria-hidden', 'true');
+        self.container.style.display = 'none';
     };
     if (duration > 0 && window.gsap && this._shouldAnimate()) {
         gsap.delayedCall(duration, finalize);
@@ -575,6 +688,7 @@ HtmlBoothDescription.prototype._animatePanel = function (isOpening) {
         if (!isOpening) {
             this.container.style.opacity = '';
             this.container.style.transform = '';
+            this.container.style.display = 'none';
         }
         return 0;
     }
@@ -613,6 +727,7 @@ HtmlBoothDescription.prototype._animatePanel = function (isOpening) {
         onComplete: function (target) {
             target.style.opacity = '';
             target.style.transform = '';
+            target.style.display = 'none';
         },
         onCompleteParams: [this.container]
     });
@@ -636,6 +751,9 @@ HtmlBoothDescription.prototype.destroy = function () {
     }
     if (this.saveButton) {
         this.saveButton.removeEventListener('click', this._onSaveClick);
+    }
+    if (this.closeButton) {
+        this.closeButton.removeEventListener('click', this._onCloseClick);
     }
     if (this.container && this.container.parentNode) {
         this.container.parentNode.removeChild(this.container);
