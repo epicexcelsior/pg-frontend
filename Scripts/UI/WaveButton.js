@@ -3,11 +3,15 @@ var WaveButton = pc.createScript('waveButton');
 WaveButton.prototype.initialize = function () {
     this.menuOpen = false;
     this.menuButtons = [];
-    this.animationConfig = {
+    this.animationConfig = AnimationUtils && AnimationUtils.mergeConfig ? AnimationUtils.mergeConfig((window.Theme && window.Theme.animations), {
+        durations: { standard: 0.20, quick: 0.14 },
+        easings: { emphasize: 'power4.out' },
+        stagger: 0.025
+    }) : {
         enabled: true,
-        durations: { standard: 0.26, quick: 0.18 },
-        easings: { entrance: 'power3.out', exit: 'power2.in' },
-        stagger: 0.06,
+        durations: { standard: 0.20, quick: 0.14 },
+        easings: { entrance: 'power4.out', exit: 'power3.in', emphasize: 'power4.out' },
+        stagger: 0.025,
         multiplier: 1
     };
     this.actions = this._buildActions();
@@ -43,6 +47,7 @@ WaveButton.prototype.initialize = function () {
     this.menuContainer.setAttribute('role', 'menu');
     this.menuContainer.setAttribute('aria-hidden', 'true');
     this.menuContainer.id = 'wave-menu';
+    this.menuContainer.style.visibility = 'hidden';
     this.button.setAttribute('aria-controls', this.menuContainer.id);
     this.wrapper.appendChild(this.menuContainer);
 
@@ -57,6 +62,7 @@ WaveButton.prototype.initialize = function () {
     if (this.app.soundManager && this.app.soundManager.preloadSound) {
         this.app.soundManager.preloadSound('ui_hover_default');
         this.app.soundManager.preloadSound('ui_click_default');
+        this.app.soundManager.preloadSound('ui_toggle_emphasize');
     }
 
     if (this.app.uiManager && this.app.uiManager.registerComponent) {
@@ -65,23 +71,83 @@ WaveButton.prototype.initialize = function () {
 };
 
 WaveButton.prototype._buildActions = function () {
+    var resolved = this._resolveConfiguredActions();
+    if (resolved && resolved.length) {
+        return resolved;
+    }
     return [
         { id: 'wave', label: 'Wave', icon: '👋', payload: { name: 'wave' } },
-        { id: 'spark', label: 'Spark', icon: '✨', placeholder: true, message: 'Spark animation is on the way.' },
-        { id: 'cheer', label: 'Cheer', icon: '🎉', placeholder: true, message: 'Cheer animation coming soon.' }
+        { id: 'dance', label: 'Dance', icon: '💃', payload: { name: 'dance' }, disabled: true },
+        { id: 'jump', label: 'Jump', icon: '🤸', payload: { name: 'jump' }, disabled: true },
+        { id: 'cheer', label: 'Cheer', icon: '🎉', payload: { name: 'cheer' }, disabled: true }
     ];
+};
+
+WaveButton.prototype._resolveConfiguredActions = function () {
+    var themeEmotes = window.Theme && Array.isArray(window.Theme.emotes) ? window.Theme.emotes : null;
+    if (!themeEmotes || !themeEmotes.length) {
+        return null;
+    }
+    var self = this;
+    var actions = themeEmotes.map(function (entry, index) {
+        if (!entry) {
+            return null;
+        }
+        if (typeof entry === 'string') {
+            var name = entry.trim();
+            if (!name) {
+                return null;
+            }
+            return {
+                id: name,
+                label: self._formatActionLabel(name),
+                icon: '👋',
+                payload: { name: name }
+            };
+        }
+        var actionName = typeof entry.name === 'string' ? entry.name.trim() : '';
+        if (!actionName) {
+            return null;
+        }
+        return {
+            id: entry.id || actionName || ('emote-' + index),
+            label: entry.label || self._formatActionLabel(actionName),
+            icon: entry.icon,
+            payload: { name: actionName },
+            description: entry.description || ''
+        };
+    }).filter(Boolean);
+    return actions.length ? actions : null;
+};
+
+WaveButton.prototype._formatActionLabel = function (name) {
+    return name.replace(/[_-]+/g, ' ').replace(/^[a-z]|\s[a-z]/g, function (match) {
+        return match.toUpperCase();
+    });
 };
 
 WaveButton.prototype._createFanoutButtons = function () {
     var self = this;
     this.actions.forEach(function (action) {
         var btn = document.createElement('button');
-        btn.className = 'fanout-menu__button' + (action.placeholder ? ' placeholder' : '');
+        btn.className = 'fanout-menu__button';
         btn.type = 'button';
         btn.setAttribute('role', 'menuitem');
         btn.setAttribute('tabindex', '-1');
-        btn.setAttribute('aria-label', action.placeholder ? action.label + ' (coming soon)' : action.label);
-        btn.textContent = action.icon;
+        
+        if (action.disabled) {
+            btn.disabled = true;
+            btn.classList.add('is-disabled');
+            btn.setAttribute('aria-disabled', 'true');
+        }
+
+        var label = action.label || 'Action';
+        var iconGlyph = (typeof action.icon === 'string' && action.icon.trim()) ? action.icon.trim() : '';
+
+        btn.setAttribute('aria-label', label);
+        btn.innerHTML =
+            '<span class="fanout-menu__glyph" aria-hidden="true">' + iconGlyph + '</span>' +
+            '<span class="fanout-menu__label">' + label + '</span>';
 
         var clickHandler = self._handleActionClick.bind(self, action);
         btn.addEventListener('click', clickHandler);
@@ -91,6 +157,33 @@ WaveButton.prototype._createFanoutButtons = function () {
         self.menuButtons.push(btn);
         self.menuContainer.appendChild(btn);
     });
+};
+
+WaveButton.prototype._calculateRadialPositions = function (count, radius, startAngle) {
+    if (window.AnimationUtils && AnimationUtils.calculateRadialPositions) {
+        return AnimationUtils.calculateRadialPositions(count, radius, Math.min(160, 80 + count * 28), (typeof startAngle === 'number' ? startAngle : 0));
+    }
+
+    var positions = [];
+    var arcSpread = Math.min(120, 40 + count * 22);
+    var baseAngle = typeof startAngle === 'number' ? startAngle : 0;
+    var start = baseAngle - arcSpread / 2;
+    var step = count > 1 ? arcSpread / (count - 1) : 0;
+
+    for (var i = 0; i < count; i++) {
+        var angleDeg = start + step * i;
+        var angleRad = angleDeg * (Math.PI / 180);
+        var cos = Math.cos(angleRad);
+        var sin = Math.sin(angleRad);
+        positions.push({
+            x: cos * radius,
+            y: sin * radius,
+            fromX: cos * (radius * 0.35),
+            fromY: sin * (radius * 0.35)
+        });
+    }
+
+    return positions;
 };
 
 WaveButton.prototype._ensureInContainer = function () {
@@ -118,10 +211,10 @@ WaveButton.prototype._openMenu = function () {
     this.menuOpen = true;
     this.button.classList.add('is-open');
     this.button.setAttribute('aria-expanded', 'true');
+    this.menuContainer.style.visibility = 'visible';
     this.menuContainer.classList.add('is-open');
     this.menuContainer.setAttribute('aria-hidden', 'false');
-    this.menuContainer.style.pointerEvents = 'auto';
-    this.app.fire('ui:playSound', 'ui_click_default');
+    this.app.fire('ui:playSound', 'ui_toggle_emphasize');
     this._bindGlobalEvents();
     this._animateMenu(true);
 };
@@ -135,19 +228,18 @@ WaveButton.prototype._closeMenu = function () {
     this.button.setAttribute('aria-expanded', 'false');
     this._unbindGlobalEvents();
     this.app.fire('ui:playSound', 'ui_click_default');
-    this.menuContainer.style.pointerEvents = 'none';
     var duration = this._animateMenu(false);
     if (duration > 0 && window.gsap) {
         var self = this;
         gsap.delayedCall(duration, function () {
             self.menuContainer.classList.remove('is-open');
             self.menuContainer.setAttribute('aria-hidden', 'true');
-            self.menuContainer.style.pointerEvents = '';
+            self.menuContainer.style.visibility = 'hidden';
         });
     } else {
         this.menuContainer.classList.remove('is-open');
         this.menuContainer.setAttribute('aria-hidden', 'true');
-        this.menuContainer.style.pointerEvents = '';
+        this.menuContainer.style.visibility = 'hidden';
     }
 };
 
@@ -157,47 +249,112 @@ WaveButton.prototype._animateMenu = function (isOpening) {
             this.menuButtons.forEach(function (btn) {
                 btn.style.opacity = '';
                 btn.style.transform = '';
+                btn.style.willChange = '';
             });
         }
         return 0;
     }
 
-    var base = (this.animationConfig.durations && (isOpening ? this.animationConfig.durations.standard : this.animationConfig.durations.quick)) || 0.2;
-    var duration = Math.max(0.12, base * (this.animationConfig.multiplier || 1));
-    var ease = this.animationConfig.easings ? (isOpening ? this.animationConfig.easings.entrance : this.animationConfig.easings.exit) : (isOpening ? 'power3.out' : 'power2.in');
-    var stagger = this.animationConfig.stagger || 0.06;
     var buttons = this.menuButtons;
-
     gsap.killTweensOf(buttons);
-    if (isOpening) {
-        gsap.set(buttons, { opacity: 0, scale: 0.6, y: 14 });
-        gsap.to(buttons, {
-            opacity: 1,
-            scale: 1,
-            y: 0,
-            duration: duration,
-            ease: ease,
-            stagger: stagger
-        });
-        return duration + stagger * (buttons.length - 1);
-    }
 
-    gsap.to(buttons, {
-        opacity: 0,
-        scale: 0.7,
-        y: 10,
-        duration: duration * 0.85,
-        ease: ease,
-        stagger: { each: stagger, from: 'end' },
-        onComplete: function () {
-            buttons.forEach(function (btn) {
-                btn.style.opacity = '';
-                btn.style.transform = '';
+    var positions = this._calculateRadialPositions(buttons.length, 112, 0);
+    var getPosition = function (idx) {
+        return positions[idx] || { x: 0, y: 0, fromX: 0, fromY: 0 };
+    };
+
+    if (isOpening) {
+        buttons.forEach(function (btn) {
+            btn.style.willChange = 'transform, opacity';
+        });
+
+        var openDuration = 0.35;
+        var staggerAmount = 0.025;
+
+        if (window.AnimationUtils && AnimationUtils.applyEntrance) {
+            AnimationUtils.applyEntrance(buttons, {
+                fromOpacity: 0,
+                fromScale: 0.3,
+                fromX: function (idx) { return getPosition(idx).fromX; },
+                fromY: function (idx) { return getPosition(idx).fromY; },
+                opacity: 1,
+                scale: 1,
+                x: function (idx) { return getPosition(idx).x; },
+                y: function (idx) { return getPosition(idx).y; },
+                duration: openDuration,
+                ease: 'back.out',
+                stagger: staggerAmount
+            });
+        } else {
+            gsap.set(buttons, {
+                opacity: 0,
+                scale: 0.3,
+                rotation: -12,
+                x: function (_, idx) { return getPosition(idx).fromX; },
+                y: function (_, idx) { return getPosition(idx).fromY; }
+            });
+            gsap.to(buttons, {
+                opacity: 1,
+                scale: 1,
+                rotation: 0,
+                x: function (_, idx) { return getPosition(idx).x; },
+                y: function (_, idx) { return getPosition(idx).y; },
+                duration: openDuration,
+                ease: 'back.out',
+                stagger: {
+                    each: staggerAmount,
+                    ease: 'sine.out'
+                }
             });
         }
+        return openDuration + staggerAmount * (buttons.length - 1);
+    }
+
+    buttons.forEach(function (btn) {
+        btn.style.willChange = 'transform, opacity';
     });
 
-    return (duration * 0.85) + stagger * (buttons.length - 1);
+    var closeDuration = 0.22;
+    var staggerAmount = 0.015;
+
+    if (window.AnimationUtils && AnimationUtils.applyExit) {
+        AnimationUtils.applyExit(buttons, {
+            toOpacity: 0,
+            toScale: 0.2,
+            toX: function (idx) { return getPosition(idx).fromX; },
+            toY: function (idx) { return getPosition(idx).fromY; },
+            duration: closeDuration,
+            ease: 'back.in',
+            stagger: { each: staggerAmount, from: 'end' },
+            onComplete: function () {
+                buttons.forEach(function (btn) {
+                    btn.style.opacity = '';
+                    btn.style.transform = '';
+                    btn.style.willChange = '';
+                });
+            }
+        });
+    } else {
+        gsap.to(buttons, {
+            opacity: 0,
+            scale: 0.2,
+            rotation: 12,
+            x: function (idx) { return getPosition(idx).fromX; },
+            y: function (idx) { return getPosition(idx).fromY; },
+            duration: closeDuration,
+            ease: 'back.in',
+            stagger: { each: staggerAmount, from: 'end' },
+            onComplete: function () {
+                buttons.forEach(function (btn) {
+                    btn.style.opacity = '';
+                    btn.style.transform = '';
+                    btn.style.willChange = '';
+                });
+            }
+        });
+    }
+
+    return closeDuration + staggerAmount * (buttons.length - 1);
 };
 
 WaveButton.prototype._handleHover = function () {
@@ -206,22 +363,14 @@ WaveButton.prototype._handleHover = function () {
 
 WaveButton.prototype._handleActionClick = function (action, event) {
     event.preventDefault();
-    if (action.placeholder) {
-        this._showPlaceholderNotice(action);
-    } else {
+    if (!action || action.disabled) {
+        return;
+    }
+    if (action.payload && action.payload.name) {
         this.app.fire('animation:play:local', { name: action.payload.name });
+        this.app.fire('player:animation:play', { name: action.payload.name });
     }
     this._closeMenu();
-};
-
-WaveButton.prototype._showPlaceholderNotice = function (action) {
-    var message = action.message || (action.label + ' animation coming soon.');
-    var feedbackService = (this.app.services && typeof this.app.services.get === 'function') ? this.app.services.get('feedbackService') : null;
-    if (feedbackService && typeof feedbackService.showInfo === 'function') {
-        feedbackService.showInfo(message, 3200);
-    } else {
-        console.info(message);
-    }
 };
 
 WaveButton.prototype._bindGlobalEvents = function () {

@@ -78,8 +78,8 @@ const Theme = {
       maxWidthMobile: 320
     },
     quickMenu: {
-      maxHeight: 420,
-      width: 320
+      maxHeight: 520,
+      width: 340
     }
   },
   animations: {

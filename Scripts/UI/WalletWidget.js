@@ -66,6 +66,8 @@ WalletWidget.prototype.initialize = function () {
     this.app.on('donation:stateChanged', this.onDonationStateChanged, this);
     this.app.on('wallet:refreshBalance', this.onWalletRefreshRequest, this);
     this.app.on('effects:donation', this.onIncomingDonation, this);
+
+    this.app.fire('wallet:ready', { element: this.walletWidgetEl });
 };
 
 WalletWidget.prototype.setupEventListeners = function () {
@@ -344,6 +346,7 @@ WalletWidget.prototype.destroy = function () {
     this.app.off('donation:stateChanged', this.onDonationStateChanged, this);
     this.app.off('wallet:refreshBalance', this.onWalletRefreshRequest, this);
     this.app.off('effects:donation', this.onIncomingDonation, this);
+    this.app.fire('wallet:destroyed');
 
     if (this.walletAddressEl) {
         this.walletAddressEl.removeEventListener('click', this.boundOnAddressClick);
