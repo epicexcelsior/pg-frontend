@@ -218,7 +218,11 @@ PlayerMovement.prototype.update = function (dt) {
   );
 
   var blend = clamp01(this.acceleration * dt);
-  var next = new pc.Vec3().lerp(currentVelocity, targetVelocity, blend);
+  var next = new pc.Vec3(
+    currentVelocity.x + (targetVelocity.x - currentVelocity.x) * blend,
+    currentVelocity.y + (targetVelocity.y - currentVelocity.y) * blend,
+    currentVelocity.z + (targetVelocity.z - currentVelocity.z) * blend
+  );
 
   var speedXZ = Math.hypot(next.x, next.z);
   if (speedXZ < this.stopSpeed && this._inputMag === 0) {

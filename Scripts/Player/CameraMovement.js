@@ -101,7 +101,11 @@ CameraMovement.prototype.postUpdate = function(dt){
     desired.y += this.height;
     const cur = this.entity.getPosition().clone();
     const a = pc.math.clamp(this.followSpeed * dt, 0, 1);
-    this.entity.setPosition(new pc.Vec3().lerp(cur, desired, a));
+    this.entity.setPosition(new pc.Vec3(
+      cur.x + (desired.x - cur.x) * a,
+      cur.y + (desired.y - cur.y) * a,
+      cur.z + (desired.z - cur.z) * a
+    ));
 
     // (B) Keep camera generally behind player
     const pm = this._target.script && this._target.script.playerMovement ? this._target.script.playerMovement : null;
