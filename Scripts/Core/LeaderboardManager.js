@@ -2,13 +2,26 @@
 var LeaderboardManager = pc.createScript('leaderboardManager');
 
 LeaderboardManager.prototype.initialize = function () {
-    this.pollIntervalMs = 1000;
+    this.pollIntervalMs = 10000;
     this.pollTimer = null;
     this.latestData = null;
+    this._visible = !document.hidden;
+    this._panelOpen = false;
 
     this.app.on('colyseus:connected', this.onConnected, this);
     this.app.on('colyseus:disconnected', this.onDisconnected, this);
     this.app.on('leaderboard:data', this.onLeaderboardData, this);
+    this.app.on('leaderboard:panel:opened', () => { this._panelOpen = true; this.startPolling(); }, this);
+    this.app.on('leaderboard:panel:closed', () => { this._panelOpen = false; this.stopPolling(); }, this);
+
+    document.addEventListener('visibilitychange', () => {
+        this._visible = !document.hidden;
+        if (!this._visible) {
+            this.stopPolling();
+        } else if (this._panelOpen) {
+            this.startPolling();
+        }
+    }, { passive: true });
 
     if (this.app.room) {
         this.onConnected();
@@ -17,7 +30,9 @@ LeaderboardManager.prototype.initialize = function () {
 
 LeaderboardManager.prototype.onConnected = function () {
     this.requestLeaderboard(10);
-    this.startPolling();
+    if (this._visible && this._panelOpen) {
+        this.startPolling();
+    }
 };
 
 LeaderboardManager.prototype.onDisconnected = function () {

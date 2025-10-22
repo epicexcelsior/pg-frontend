@@ -42,20 +42,6 @@ BoothSync.prototype.onConnected = function(room) {
         this.handleBoothRemove(boothId);
     });
 
-    // --- Initial Population ---
-    // Process booths already in the room when we join
-    console.debug && console.debug("BoothSync: Processing existing booths...");
-    this.room.state.booths.forEach((booth, boothId) => {
-        console.debug && console.debug(`BoothSync: Processing existing booth: ${boothId}`);
-        this.handleBoothUpdate(booth, boothId, true); // Fire initial add event
-
-        // Attach onChange listener for existing booths too
-         booth.onChange(() => {
-            console.debug && console.debug(`BoothSync: Existing Booth changed: ${boothId}, Claimed by: ${booth.claimedBy || 'None'}`);
-            this.handleBoothUpdate(booth, boothId, false); // Fire update event
-        });
-    });
-
     console.debug && console.debug("BoothSync: Booth listeners initialized.");
 };
 

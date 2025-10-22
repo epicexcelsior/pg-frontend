@@ -397,6 +397,15 @@ MessageBroker.prototype.scheduleCoinFetch = function (immediate) {
     if (!this.app.room) {
         return;
     }
+    const onVis = () => {
+        if (document.hidden) {
+            this.clearCoinSchedule();
+        } else if (!this._coinTimer && this.app.room) {
+            this.scheduleCoinFetch(false);
+        }
+    };
+    document.addEventListener('visibilitychange', onVis, { passive: true });
+    this._onVisCoins = onVis;
     if (immediate) {
         this.fetchCoinWallet();
     }
@@ -409,6 +418,10 @@ MessageBroker.prototype.clearCoinSchedule = function () {
     if (this._coinTimer) {
         clearInterval(this._coinTimer);
         this._coinTimer = null;
+    }
+    if (this._onVisCoins) {
+        document.removeEventListener('visibilitychange', this._onVisCoins);
+        this._onVisCoins = null;
     }
 };
 
