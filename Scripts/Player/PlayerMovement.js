@@ -67,6 +67,9 @@ PlayerMovement.prototype.initialize = function () {
   this.baseLocalRot = this.visualRoot.getLocalRotation().clone();
   this.lastMoveDir = new pc.Vec3();
   this._tmpTargetVelocity = new pc.Vec3();
+  this._tempMoveDir = new pc.Vec3();
+  this._tempBasisForward = new pc.Vec3();
+  this._tempBasisRight = new pc.Vec3();
   var initialEuler = this.visualRoot.getEulerAngles
     ? this.visualRoot.getEulerAngles()
     : null;
@@ -154,9 +157,9 @@ PlayerMovement.prototype._cameraBasisXZ = function () {
       ? this.cameraScript.yaw
       : 0;
   var y = yaw * pc.math.DEG_TO_RAD;
-  var f = new pc.Vec3(-Math.sin(y), 0, -Math.cos(y)).normalize();
-  var r = new pc.Vec3(Math.cos(y), 0, -Math.sin(y)).normalize();
-  return { forward: f, right: r };
+  this._tempBasisForward.set(-Math.sin(y), 0, -Math.cos(y)).normalize();
+  this._tempBasisRight.set(Math.cos(y), 0, -Math.sin(y)).normalize();
+  return { forward: this._tempBasisForward, right: this._tempBasisRight };
 };
 
 PlayerMovement.prototype._gatherInput = function () {
@@ -197,11 +200,11 @@ PlayerMovement.prototype.update = function (dt) {
   this._inputMag = Math.hypot(this.inX, this.inZ);
 
   var basis = this._cameraBasisXZ();
-  var moveDir = new pc.Vec3(0, 0, 0);
+  this._tempMoveDir.set(0, 0, 0);
   if (this._inputMag > 0) {
-    moveDir.add(basis.forward.clone().scale(this.inZ));
-    moveDir.add(basis.right.clone().scale(this.inX));
-    moveDir.normalize();
+    this._tempMoveDir.add(basis.forward.clone().scale(this.inZ));
+    this._tempMoveDir.add(basis.right.clone().scale(this.inX));
+    this._tempMoveDir.normalize();
   }
 
   // physics vel
@@ -209,9 +212,9 @@ PlayerMovement.prototype.update = function (dt) {
   var currentVelocity = rb.linearVelocity.clone();
   var targetVelocity = this._tmpTargetVelocity;
   targetVelocity.set(
-    moveDir.x * this.maxSpeed,
+    this._tempMoveDir.x * this.maxSpeed,
     currentVelocity.y,
-    moveDir.z * this.maxSpeed
+    this._tempMoveDir.z * this.maxSpeed
   );
 
   var blend = clamp01(this.acceleration * dt);
@@ -238,7 +241,7 @@ PlayerMovement.prototype.update = function (dt) {
     var tgt = this.baseLocalRot.clone().mul(q);
     var cur = this.visualRoot.getLocalRotation().clone();
     var s = clamp01(this.turnSpeed * dt);
-    this.visualRoot.setLocalRotation(new pc.Quat().slerp(cur, tgt, s));
+    this.visualRoot.setLocalRotation(cur.slerp(tgt, s));
     this._currentYaw = yawDeg;
   }
 

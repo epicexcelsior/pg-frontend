@@ -64,6 +64,8 @@ PlayerSync.prototype.initialize = function () {
     this.room = null;
     this.localSessionId = null;
     this._loggedMissingNameplate = false;
+    this._tempLerpPos = new pc.Vec3();
+    this._tempQuat = new pc.Quat();
     this.app.on('colyseus:connected', this.onConnected, this);
     this.app.on('colyseus:disconnected', this.onDisconnected, this);
 };
@@ -263,17 +265,14 @@ PlayerSync.prototype.update = function (dt) {
         const currentPos = entity.getPosition();
         const targetPos = entity.syncTargetPos;
         const posBlend = frameBlend(this.positionLerpFactor, dt);
-        const lerpedPos = new pc.Vec3().lerp(currentPos, targetPos, posBlend);
+        this._tempLerpPos.lerp(currentPos, targetPos, posBlend);
 
         if (entity.rigidbody) {
-            // Teleport the physics body for position, but do not rotate it here.
-            // The visual rotation is handled separately by applyRemoteYaw.
-            entity.rigidbody.teleport(lerpedPos, pc.Quat.IDENTITY);
+            entity.rigidbody.teleport(this._tempLerpPos, pc.Quat.IDENTITY);
         } else {
-            entity.setPosition(lerpedPos);
+            entity.setPosition(this._tempLerpPos);
         }
 
-        // Apply the visual rotation to the model. This is the single source of truth for rotation.
         applyRemoteYaw(entity, entity.syncCurrentYaw);
 
         if (typeof entity.syncTargetSpeed === 'number') {
