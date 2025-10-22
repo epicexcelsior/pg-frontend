@@ -150,6 +150,7 @@ ReferralPanel.prototype.buildStyles = function () {
         pointer-events: none;
         transition: opacity 0.2s ease;
         padding: 16px;
+        box-sizing: border-box;
       }
       .referral-overlay:not(.referral-hidden) {
         opacity: 1;
@@ -157,8 +158,8 @@ ReferralPanel.prototype.buildStyles = function () {
       }
       .referral-card {
         position: relative;
-        width: min(380px, calc(100% - 32px));
-        max-width: 100%;
+        width: min(400px, calc(100vw - 48px));
+        max-width: calc(100vw - 48px);
         background: var(--surface2-color, rgba(34, 34, 34, 0.95));
         color: var(--text-color, #fff);
         border-radius: var(--border-radius, 16px);
@@ -170,6 +171,7 @@ ReferralPanel.prototype.buildStyles = function () {
         gap: 14px;
         transform: scale(0.95);
         transition: transform 0.2s ease;
+        box-sizing: border-box;
       }
       .referral-overlay:not(.referral-hidden) .referral-card {
         transform: scale(1);
@@ -265,7 +267,8 @@ ReferralPanel.prototype.buildStyles = function () {
 
       .referral-form input {
         flex: 1;
-        min-width: 120px;
+        min-width: 100px;
+        max-width: 100%;
         padding: 12px 14px;
         border-radius: 10px;
         border: 1px solid rgba(255, 255, 255, 0.12);
@@ -273,6 +276,7 @@ ReferralPanel.prototype.buildStyles = function () {
         color: var(--text-color, #fff);
         font-size: 14px;
         font-family: inherit;
+        box-sizing: border-box;
         transition: border-color 120ms ease, box-shadow 120ms ease;
       }
 
@@ -287,8 +291,8 @@ ReferralPanel.prototype.buildStyles = function () {
       }
 
       .referral-submit {
-        background: var(--primary-color, #1d9bf0);
-        color: #fff;
+        background: linear-gradient(135deg, var(--accent-color, #1df2a4), var(--accent2-color, #1de8f2));
+        color: var(--text-dark-color, #10151f);
         border: none;
         border-radius: 10px;
         padding: 12px 20px;
@@ -297,11 +301,12 @@ ReferralPanel.prototype.buildStyles = function () {
         font-size: 14px;
         white-space: nowrap;
         transition: transform 120ms ease, box-shadow 120ms ease, opacity 160ms ease;
+        box-sizing: border-box;
       }
 
       .referral-submit:hover:not(:disabled) {
         transform: translateY(-1px);
-        box-shadow: 0 4px 12px rgba(29, 155, 240, 0.32);
+        box-shadow: 0 8px 24px rgba(29, 240, 164, 0.28);
       }
 
       .referral-submit:disabled {
@@ -317,10 +322,27 @@ ReferralPanel.prototype.buildStyles = function () {
         transition: color 120ms ease;
       }
 
+      @media (max-width: 600px) {
+        .referral-form {
+          flex-direction: column;
+          gap: 10px;
+        }
+
+        .referral-form input {
+          width: 100%;
+          min-width: unset;
+        }
+
+        .referral-submit {
+          width: 100%;
+        }
+      }
+
       @media (max-width: 480px) {
         .referral-card {
           padding: 20px;
           gap: 12px;
+          width: min(360px, calc(100% - 24px));
         }
 
         .referral-heading {
@@ -334,19 +356,59 @@ ReferralPanel.prototype.buildStyles = function () {
         .referral-code-row {
           font-size: 13px;
           padding: 10px;
+          gap: 8px;
         }
 
-        .referral-form {
-          flex-direction: column;
+        .referral-copy-btn {
+          padding: 8px 12px;
+          font-size: 11px;
         }
 
         .referral-form input {
-          width: 100%;
-          min-width: unset;
+          font-size: 15px;
+          padding: 11px 12px;
         }
 
         .referral-submit {
+          padding: 11px 16px;
+          font-size: 13px;
+        }
+      }
+
+      @media (max-width: 360px) {
+        .referral-card {
+          padding: 16px;
+          gap: 10px;
           width: 100%;
+          max-width: none;
+        }
+
+        .referral-heading {
+          font-size: 15px;
+        }
+
+        .referral-status {
+          font-size: 12px;
+          line-height: 1.3;
+        }
+
+        .referral-code-row {
+          flex-wrap: wrap;
+        }
+
+        .referral-copy-btn {
+          padding: 6px 10px;
+          font-size: 10px;
+        }
+
+        .referral-form input {
+          font-size: 15px;
+          padding: 10px 11px;
+        }
+
+        .referral-submit {
+          padding: 10px 14px;
+          font-size: 12px;
         }
       }
     `;

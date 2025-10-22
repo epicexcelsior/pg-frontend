@@ -172,8 +172,8 @@ HtmlLeaderboard.prototype.buildStyles = function () {
 }
 
 .leaderboard-row:hover {
-  background: rgba(255, 255, 255, 0.08);
-  transform: translateX(4px);
+  background: rgba(255, 255, 255, 0.12);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
 }
 
 .leaderboard-row:nth-child(even) {
@@ -181,7 +181,8 @@ HtmlLeaderboard.prototype.buildStyles = function () {
 }
 
 .leaderboard-row:nth-child(even):hover {
-  background: rgba(255, 255, 255, 0.06);
+  background: rgba(255, 255, 255, 0.14);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
 }
 
 .leaderboard-rank {
@@ -221,13 +222,24 @@ HtmlLeaderboard.prototype.buildStyles = function () {
   min-width: 0;
 }
 
-.leaderboard-address {
+.leaderboard-name {
   font-weight: 600;
   font-size: 13px;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
   letter-spacing: 0.01em;
+  color: var(--text-color, #ffffff);
+}
+
+.leaderboard-address {
+  font-weight: 500;
+  font-size: 12px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  letter-spacing: 0.01em;
+  color: rgba(255, 255, 255, 0.5);
 }
 
 .leaderboard-amount {
@@ -473,9 +485,14 @@ HtmlLeaderboard.prototype.render = function (items, meta) {
         var identity = document.createElement('div');
         identity.className = 'leaderboard-identity';
 
+        var name = document.createElement('div');
+        name.className = 'leaderboard-name';
+        name.textContent = item.name || HtmlLeaderboard.prototype.formatAddress(item.wallet);
+        identity.appendChild(name);
+
         var address = document.createElement('div');
         address.className = 'leaderboard-address';
-        address.textContent = HtmlLeaderboard.prototype.formatAddress(item.wallet);
+        address.textContent = item.wallet_short || HtmlLeaderboard.prototype.formatAddress(item.wallet);
         identity.appendChild(address);
 
         row.appendChild(identity);
