@@ -4,6 +4,7 @@ var HtmlLeaderboard = pc.createScript('htmlLeaderboard');
 HtmlLeaderboard.prototype.initialize = function () {
     this.isCollapsed = false;
     this.isRefreshing = false;
+    this.isAnimating = false;
 
     this.injectStyles();
     this.createPanel();
@@ -12,6 +13,22 @@ HtmlLeaderboard.prototype.initialize = function () {
 
     this.app.on('ui:leaderboard:data', this.onLeaderboardData, this);
     this.app.on('colyseus:disconnected', this.onDisconnected, this);
+    this.app.on('ui:player-list:opened', this.onPlayerListOpened, this);
+    
+    var self = this;
+    setTimeout(function() {
+        self.app.fire('ui:leaderboard:opened', {});
+        self.broadcastHeight();
+    }, 50);
+};
+
+HtmlLeaderboard.prototype.broadcastHeight = function () {
+    if (this.panelElement) {
+        this.app.fire('ui:leaderboard:height-changed', {
+            height: this.panelElement.offsetHeight,
+            top: this.panelElement.offsetTop
+        });
+    }
 };
 
 HtmlLeaderboard.prototype.injectStyles = function () {
@@ -29,7 +46,7 @@ HtmlLeaderboard.prototype.buildStyles = function () {
     return `
 #leaderboard-panel {
   position: fixed;
-  top: 96px;
+  top: 16px;
   right: 32px;
   width: 340px;
   max-height: 520px;
@@ -282,7 +299,7 @@ HtmlLeaderboard.prototype.buildStyles = function () {
 
 @media (max-width: 768px) {
   #leaderboard-panel {
-    top: 80px;
+    top: 16px;
     right: 16px;
     width: 320px;
     max-height: 480px;
@@ -398,6 +415,14 @@ HtmlLeaderboard.prototype.createPanel = function () {
 
     if (this.panelElement) {
         document.body.appendChild(this.panelElement);
+        
+        var self = this;
+        setTimeout(function() {
+            self.app.fire('ui:leaderboard:height-changed', {
+                height: self.panelElement.offsetHeight,
+                top: self.panelElement.offsetTop
+            });
+        }, 100);
     }
 
     if (this.refreshBtn) {
@@ -417,36 +442,102 @@ HtmlLeaderboard.prototype.createPanel = function () {
 };
 
 HtmlLeaderboard.prototype.toggleCollapse = function () {
-    this.isCollapsed = !this.isCollapsed;
+    if (this.isAnimating) return;
+    
+    if (this.isCollapsed) {
+        this.expand();
+        this.app.fire('ui:leaderboard:opened', {});
+    } else {
+        this.collapse();
+        this.app.fire('ui:leaderboard:closed', {});
+    }
+};
+
+HtmlLeaderboard.prototype.expand = function () {
+    if (this.isCollapsed) {
+        this.isCollapsed = false;
+    }
 
     if (this.panelElement) {
+        this.isAnimating = true;
         gsap.killTweensOf(this.panelElement);
-
-        if (this.isCollapsed) {
-            gsap.to(this.panelElement, {
-                maxHeight: 56,
-                duration: 0.16,
-                ease: 'back.out'
-            });
-            this.panelElement.classList.add('leaderboard-collapsed');
-        } else {
-            gsap.to(this.panelElement, {
-                maxHeight: 520,
-                duration: 0.18,
-                ease: 'back.out'
-            });
-            this.panelElement.classList.remove('leaderboard-collapsed');
-        }
+        gsap.to(this.panelElement, {
+            maxHeight: 520,
+            duration: 0.5,
+            ease: 'power2.inOut',
+            onUpdate: () => {
+                this.app.fire('ui:leaderboard:height-changed', {
+                    height: this.panelElement.offsetHeight,
+                    top: this.panelElement.offsetTop
+                });
+            },
+            onComplete: () => { 
+                this.isAnimating = false;
+                this.app.fire('ui:leaderboard:height-changed', {
+                    height: this.panelElement.offsetHeight,
+                    top: this.panelElement.offsetTop
+                });
+            }
+        });
+        this.panelElement.classList.remove('leaderboard-collapsed');
     }
 
     if (this.toggleBtn) {
-        gsap.killTweensOf(this.toggleBtn.querySelector('.leaderboard-toggle-icon') || this.toggleBtn);
-        gsap.to(this.toggleBtn.querySelector('.leaderboard-toggle-icon') || this.toggleBtn, {
-            rotation: this.isCollapsed ? 180 : 0,
-            duration: 0.16,
-            ease: 'back.out'
+        var icon = this.toggleBtn.querySelector('.leaderboard-toggle-icon');
+        gsap.killTweensOf(icon);
+        gsap.to(icon, {
+            rotation: 0,
+            duration: 0.5,
+            ease: 'power2.inOut'
         });
-        this.toggleBtn.setAttribute('aria-expanded', !this.isCollapsed);
+        this.toggleBtn.setAttribute('aria-expanded', true);
+    }
+};
+
+HtmlLeaderboard.prototype.collapse = function () {
+    if (!this.isCollapsed) {
+        this.isCollapsed = true;
+    }
+
+    if (this.panelElement) {
+        this.isAnimating = true;
+        gsap.killTweensOf(this.panelElement);
+        gsap.to(this.panelElement, {
+            maxHeight: 56,
+            duration: 0.5,
+            ease: 'power2.inOut',
+            onUpdate: () => {
+                this.app.fire('ui:leaderboard:height-changed', {
+                    height: this.panelElement.offsetHeight,
+                    top: this.panelElement.offsetTop
+                });
+            },
+            onComplete: () => { 
+                this.isAnimating = false;
+                this.app.fire('ui:leaderboard:height-changed', {
+                    height: this.panelElement.offsetHeight,
+                    top: this.panelElement.offsetTop
+                });
+            }
+        });
+        this.panelElement.classList.add('leaderboard-collapsed');
+    }
+
+    if (this.toggleBtn) {
+        var icon = this.toggleBtn.querySelector('.leaderboard-toggle-icon');
+        gsap.killTweensOf(icon);
+        gsap.to(icon, {
+            rotation: 180,
+            duration: 0.5,
+            ease: 'power2.inOut'
+        });
+        this.toggleBtn.setAttribute('aria-expanded', false);
+    }
+};
+
+HtmlLeaderboard.prototype.onPlayerListOpened = function () {
+    if (!this.isCollapsed && !this.isAnimating) {
+        this.collapse();
     }
 };
 
@@ -543,6 +634,12 @@ HtmlLeaderboard.prototype.requestRefresh = function () {
 HtmlLeaderboard.prototype.destroy = function () {
     this.app.off('ui:leaderboard:data', this.onLeaderboardData, this);
     this.app.off('colyseus:disconnected', this.onDisconnected, this);
+    this.app.off('ui:player-list:opened', this.onPlayerListOpened, this);
+    
+    gsap.killTweensOf(this.panelElement);
+    if (this.toggleBtn) {
+        gsap.killTweensOf(this.toggleBtn.querySelector('.leaderboard-toggle-icon'));
+    }
 
     if (this.refreshBtn) {
         this.refreshBtn.removeEventListener('click', this.requestRefresh.bind(this));
