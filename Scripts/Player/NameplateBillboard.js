@@ -68,13 +68,14 @@ NameplateBillboard.prototype.update = function (dt) {
     this._camPos.copy(cam.getPosition());
     this._myPos.copy(this.entity.getPosition());
 
+    this._v.copy(this._camPos).sub(this._myPos);
+    var distSq = this._v.lengthSq();
+
     if (this.cullingEnabled) {
-        var distSq = this._camPos.distanceSq(this._myPos);
         if (distSq > this.cullingDistance * this.cullingDistance) return;
     }
 
-    this._v.copy(this._camPos).sub(this._myPos);
-    if (this._v.lengthSq() < 1e-8) return;
+    if (distSq < 1e-8) return;
 
     if (this.yawOnly) {
         this._v.y = 0;
@@ -89,7 +90,7 @@ NameplateBillboard.prototype.update = function (dt) {
     }
 
     if (this.useDistanceScale) {
-        var d = Math.sqrt(this._camPos.distanceSq(this._myPos));
+        var d = Math.sqrt(distSq);
         var t = pc.math.clamp((d - this.near) * this._invRange, 0, 1);
         var s = pc.math.lerp(this.minScale, this.maxScale, t);
         this.entity.setLocalScale(this._baseScale.x * s, this._baseScale.y * s, this._baseScale.z * s);
