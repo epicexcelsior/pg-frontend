@@ -91,16 +91,16 @@ DonationPromptHtml.prototype.setupEventListeners = function (goButton) {
 
     var formatAmount = function (value) {
         if (!isFinite(value)) {
-            return '0.005';
+            return '0.001';
         }
         var num = Number(value);
-        if (num < 0.005) return '0.005';
+        if (num < 0.001) return '0.001';
         return num.toFixed(3);
     };
 
     var clampAmount = function (value) {
-        var num = parseFloat(value) || 0.005;
-        if (num < 0.005) num = 0.005;
+        var num = parseFloat(value) || 0.001;
+        if (num < 0.001) num = 0.001;
         if (num > 69.42) num = 69.42;
         return num;
     };
