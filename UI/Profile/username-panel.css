@@ -1,0 +1,289 @@
+/* Username Panel UI */
+.username-modal {
+    position: fixed;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    opacity: 0;
+    pointer-events: none;
+    background: rgba(6, 10, 24, 0.52);
+    backdrop-filter: blur(12px);
+    transition: opacity 200ms ease;
+    z-index: 1100;
+    padding: 16px;
+}
+
+.username-modal.visible {
+    opacity: 1;
+    pointer-events: auto;
+}
+
+.username-modal__card {
+    width: min(400px, calc(100vw - 48px));
+    max-width: calc(100vw - 48px);
+    padding: 24px;
+    border-radius: calc(var(--border-radius, 14px) + 2px);
+    background: var(--surface2-color, rgba(34, 34, 34, 0.95));
+    border: 1px solid rgba(255, 255, 255, 0.06);
+    box-shadow: 0 26px 64px rgba(0, 0, 0, 0.45);
+    color: var(--text-color, #ffffff);
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
+    box-sizing: border-box;
+}
+
+.username-modal__header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+}
+
+.username-modal__header h2 {
+    margin: 0;
+    font-size: 20px;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+}
+
+.username-modal__description {
+    margin: 0;
+    font-size: 14px;
+    line-height: 1.5;
+    color: var(--text-muted-color, rgba(235, 235, 255, 0.72));
+}
+
+.username-modal__close {
+    background: transparent;
+    border: none;
+    color: rgba(255, 255, 255, 0.7);
+    font-size: 22px;
+    cursor: pointer;
+    padding: 4px;
+    line-height: 1;
+    transition: color 120ms ease;
+}
+
+.username-modal__close:hover {
+    color: rgba(255, 255, 255, 0.9);
+}
+
+.username-form {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.username-form__label {
+    font-size: 13px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    font-weight: 500;
+    color: var(--text-muted-color, rgba(235, 235, 255, 0.72));
+}
+
+.username-form__input {
+    width: 100%;
+    padding: 12px 14px;
+    border-radius: var(--border-radius, 12px);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    background: rgba(6, 10, 24, 0.86);
+    color: var(--text-color, #ffffff);
+    font-size: 16px;
+    font-family: inherit;
+    line-height: 1.5;
+    box-sizing: border-box;
+    transition: border-color 120ms ease, box-shadow 120ms ease;
+}
+
+.username-form__input::placeholder {
+    color: rgba(235, 235, 255, 0.45);
+}
+
+.username-form__input:focus {
+    outline: none;
+    border-color: rgba(20, 241, 149, 0.65);
+    box-shadow: 0 0 0 3px rgba(20, 241, 149, 0.25);
+}
+
+.username-form__hint {
+    font-size: 12px;
+    line-height: 1.3;
+    color: var(--text-muted-color, rgba(235, 235, 255, 0.6));
+}
+
+.username-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    justify-content: flex-end;
+}
+
+.username-btn {
+    min-width: 110px;
+    padding: 12px 18px;
+    border-radius: var(--border-radius, 12px);
+    border: none;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: transform 120ms ease, box-shadow 160ms ease, opacity 160ms ease;
+}
+
+.username-btn:disabled {
+    opacity: 0.5;
+    cursor: default;
+    transform: none;
+    box-shadow: none;
+}
+
+.username-btn--primary {
+    background: linear-gradient(135deg, var(--accent-color, #1df2a4), var(--accent2-color, #1de8f2));
+    color: var(--text-dark-color, #10151f);
+    box-shadow: 0 10px 24px rgba(29, 240, 164, 0.28);
+}
+
+.username-btn--primary:hover:not(:disabled) {
+    transform: translateY(-1px);
+    box-shadow: 0 14px 32px rgba(29, 240, 164, 0.36);
+}
+
+.username-btn--secondary {
+    background: rgba(255, 255, 255, 0.08);
+    color: var(--text-color, #f2f4ff);
+    transition: transform 120ms ease, background 120ms ease;
+}
+
+.username-btn--secondary:hover:not(:disabled) {
+    transform: translateY(-1px);
+    background: rgba(255, 255, 255, 0.12);
+}
+
+.username-feedback {
+    min-height: 18px;
+    font-size: 13px;
+    letter-spacing: 0.01em;
+    color: var(--text-muted-color, rgba(235, 235, 255, 0.72));
+    transition: color 120ms ease, opacity 160ms ease;
+}
+
+.username-feedback[data-variant="success"] {
+    color: rgba(20, 241, 149, 0.85);
+}
+
+.username-feedback[data-variant="error"] {
+    color: rgba(255, 86, 110, 0.9);
+}
+
+.username-feedback[data-variant="info"] {
+    color: rgba(164, 230, 255, 0.9);
+}
+
+@media (max-width: 640px) {
+    .username-modal__card {
+        padding: 20px;
+        gap: 14px;
+    }
+
+    .username-modal__header h2 {
+        font-size: 18px;
+    }
+
+    .username-modal__description {
+        font-size: 13px;
+        line-height: 1.4;
+    }
+
+    .username-form__input {
+        font-size: 16px;
+        padding: 11px 12px;
+    }
+
+    .username-form__label {
+        font-size: 12px;
+    }
+
+    .username-form__hint {
+        font-size: 11px;
+    }
+
+    .username-actions {
+        justify-content: stretch;
+    }
+
+    .username-btn {
+        flex: 1;
+        min-width: auto;
+        padding: 11px 14px;
+        font-size: 13px;
+    }
+}
+
+@media (max-width: 480px) {
+    .username-modal__card {
+        padding: 20px;
+        gap: 14px;
+        width: min(360px, calc(100vw - 24px));
+    }
+
+    .username-modal__header h2 {
+        font-size: 17px;
+    }
+
+    .username-modal__description {
+        font-size: 13px;
+    }
+
+    .username-form__input {
+        font-size: 15px;
+        padding: 11px 12px;
+    }
+
+    .username-form__hint {
+        font-size: 11px;
+    }
+
+    .username-btn {
+        padding: 11px 14px;
+        font-size: 13px;
+    }
+}
+
+@media (max-width: 360px) {
+    .username-modal__card {
+        padding: 16px;
+        gap: 12px;
+        width: 100%;
+        max-width: none;
+    }
+
+    .username-modal__header h2 {
+        font-size: 15px;
+    }
+
+    .username-modal__description {
+        font-size: 12px;
+        line-height: 1.3;
+    }
+
+    .username-form__input {
+        font-size: 15px;
+        padding: 10px 11px;
+    }
+
+    .username-form__label {
+        font-size: 11px;
+    }
+
+    .username-form__hint {
+        font-size: 10px;
+    }
+
+    .username-btn {
+        padding: 10px 12px;
+        font-size: 12px;
+    }
+}

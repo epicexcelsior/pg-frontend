@@ -52,9 +52,17 @@ function yawFromDirXZ(vx, vz) {
   return Math.atan2(-vx, -vz) * pc.math.RAD_TO_DEG;
 }
 
+function sanitizeVec3(vec) {
+  if (!Number.isFinite(vec.x)) vec.x = 0;
+  if (!Number.isFinite(vec.y)) vec.y = 0;
+  if (!Number.isFinite(vec.z)) vec.z = 0;
+  return vec;
+}
+
 PlayerMovement.prototype.initialize = function () {
   this.isMobile = pc.platform.touch;
   this.chatFocused = false; // Track if chat input is focused
+  this.activeInputLocks = new Set();
 
   var axis = this.entity.findByName("Camera Axis");
   this.cameraScript = axis && axis.script ? axis.script.cameraMovement : null;
@@ -66,6 +74,10 @@ PlayerMovement.prototype.initialize = function () {
   this.baseLocalRot = this.visualRoot.getLocalRotation().clone();
   this.lastMoveDir = new pc.Vec3();
   this._tmpTargetVelocity = new pc.Vec3();
+  this._tempMoveDir = new pc.Vec3();
+  this._tempBasisForward = new pc.Vec3();
+  this._tempBasisRight = new pc.Vec3();
+  this._tempQuat = new pc.Quat();
   var initialEuler = this.visualRoot.getEulerAngles
     ? this.visualRoot.getEulerAngles()
     : null;
@@ -143,25 +155,33 @@ PlayerMovement.prototype.initialize = function () {
   // Listen for chat focus/blur events to disable movement
   this.app.on('ui:chat:focus', this.onChatFocus, this);
   this.app.on('ui:chat:blur', this.onChatBlur, this);
+  this.app.on('ui:input:focus', this.onUiInputFocus, this);
+  this.app.on('ui:input:blur', this.onUiInputBlur, this);
 };
 
 PlayerMovement.prototype._cameraBasisXZ = function () {
   var yaw =
-    this.cameraScript && typeof this.cameraScript.yaw === "number"
+    this.cameraScript && Number.isFinite(this.cameraScript.yaw)
       ? this.cameraScript.yaw
       : 0;
   var y = yaw * pc.math.DEG_TO_RAD;
-  var f = new pc.Vec3(-Math.sin(y), 0, -Math.cos(y)).normalize();
-  var r = new pc.Vec3(Math.cos(y), 0, -Math.sin(y)).normalize();
-  return { forward: f, right: r };
+  this._tempBasisForward
+    .set(-Math.sin(y), 0, -Math.cos(y))
+    .normalize();
+  sanitizeVec3(this._tempBasisForward);
+  this._tempBasisRight
+    .set(Math.cos(y), 0, -Math.sin(y))
+    .normalize();
+  sanitizeVec3(this._tempBasisRight);
+  return { forward: this._tempBasisForward, right: this._tempBasisRight };
 };
 
 PlayerMovement.prototype._gatherInput = function () {
   this.inX = 0;
   this.inZ = 0;
   
-  // Don't gather input if chat is focused
-  if (this.chatFocused) return;
+  // Don't gather input if UI has locked controls
+  if (this.chatFocused || this._isInputLocked()) return;
   
   if (this.isMobile) {
     var s =
@@ -194,27 +214,35 @@ PlayerMovement.prototype.update = function (dt) {
   this._inputMag = Math.hypot(this.inX, this.inZ);
 
   var basis = this._cameraBasisXZ();
-  var moveDir = new pc.Vec3(0, 0, 0);
+  this._tempMoveDir.set(0, 0, 0);
   if (this._inputMag > 0) {
-    moveDir.add(basis.forward.clone().scale(this.inZ));
-    moveDir.add(basis.right.clone().scale(this.inX));
-    moveDir.normalize();
+    this._tempMoveDir.add(basis.forward.clone().scale(this.inZ));
+    this._tempMoveDir.add(basis.right.clone().scale(this.inX));
+    this._tempMoveDir.normalize();
+    sanitizeVec3(this._tempMoveDir);
   }
 
   // physics vel
   var rb = this.entity.rigidbody;
-  var currentVelocity = rb.linearVelocity.clone();
+  var currentVelocity = sanitizeVec3(rb.linearVelocity.clone());
   var targetVelocity = this._tmpTargetVelocity;
   targetVelocity.set(
-    moveDir.x * this.maxSpeed,
+    this._tempMoveDir.x * this.maxSpeed,
     currentVelocity.y,
-    moveDir.z * this.maxSpeed
+    this._tempMoveDir.z * this.maxSpeed
   );
+  sanitizeVec3(targetVelocity);
 
   var blend = clamp01(this.acceleration * dt);
-  var next = new pc.Vec3().lerp(currentVelocity, targetVelocity, blend);
+  var next = new pc.Vec3(
+    currentVelocity.x + (targetVelocity.x - currentVelocity.x) * blend,
+    currentVelocity.y + (targetVelocity.y - currentVelocity.y) * blend,
+    currentVelocity.z + (targetVelocity.z - currentVelocity.z) * blend
+  );
+  sanitizeVec3(next);
 
   var speedXZ = Math.hypot(next.x, next.z);
+  if (!Number.isFinite(speedXZ)) speedXZ = 0;
   if (speedXZ < this.stopSpeed && this._inputMag === 0) {
     next.x = 0;
     next.z = 0;
@@ -231,18 +259,24 @@ PlayerMovement.prototype.update = function (dt) {
 
   if (next.x * next.x + next.z * next.z > 1e-6) {
     var yawDeg = yawFromDirXZ(next.x, next.z) + this.modelForwardOffsetY;
-    var q = new pc.Quat().setFromEulerAngles(0, yawDeg, 0);
-    var tgt = this.baseLocalRot.clone().mul(q);
-    var cur = this.visualRoot.getLocalRotation().clone();
-    var s = clamp01(this.turnSpeed * dt);
-    this.visualRoot.setLocalRotation(new pc.Quat().slerp(cur, tgt, s));
-    this._currentYaw = yawDeg;
+    if (Number.isFinite(yawDeg)) {
+      var q = new pc.Quat().setFromEulerAngles(0, yawDeg, 0);
+      var tgt = this.baseLocalRot.clone().mul(q);
+      var cur = this.visualRoot.getLocalRotation().clone();
+      var s = clamp01(this.turnSpeed * dt);
+      var smoothed = this._tempQuat.slerp(cur, tgt, s);
+      if (Number.isFinite(smoothed.x) && Number.isFinite(smoothed.y) && Number.isFinite(smoothed.z) && Number.isFinite(smoothed.w)) {
+        this.visualRoot.setLocalRotation(smoothed);
+        this._currentYaw = yawDeg;
+      }
+    }
   }
 
   var speedNormalized = Math.min(
     1,
     speedXZ / Math.max(0.0001, this.maxSpeed)
   );
+  if (!Number.isFinite(speedNormalized)) speedNormalized = 0;
   if (this.animEnt && this.animEnt.anim) {
     this.animEnt.anim.setFloat("speed", speedNormalized);
   }
@@ -253,23 +287,53 @@ PlayerMovement.prototype.update = function (dt) {
     x: pos.x,
     y: pos.y,
     z: pos.z,
-    rotation: this._currentYaw,
+    rotation: Number.isFinite(this._currentYaw) ? this._currentYaw : 0,
     speed: speedNormalized,
   });
 };
 
 PlayerMovement.prototype.onChatFocus = function() {
   this.chatFocused = true;
+  this._applyInputLock('chat');
   console.log("PlayerMovement: Chat focused - movement disabled");
 };
 
 PlayerMovement.prototype.onChatBlur = function() {
   this.chatFocused = false;
+  this._releaseInputLock('chat');
   console.log("PlayerMovement: Chat blurred - movement enabled");
+};
+
+PlayerMovement.prototype.onUiInputFocus = function(payload) {
+  var reason = payload && payload.source ? String(payload.source) : 'ui-input';
+  this._applyInputLock(reason);
+};
+
+PlayerMovement.prototype.onUiInputBlur = function(payload) {
+  var reason = payload && payload.source ? String(payload.source) : 'ui-input';
+  this._releaseInputLock(reason);
+};
+
+PlayerMovement.prototype._applyInputLock = function(reason) {
+  this.activeInputLocks.add(reason || 'global');
+};
+
+PlayerMovement.prototype._releaseInputLock = function(reason) {
+  if (reason) {
+    this.activeInputLocks.delete(reason);
+  } else {
+    this.activeInputLocks.clear();
+  }
+};
+
+PlayerMovement.prototype._isInputLocked = function() {
+  return this.activeInputLocks.size > 0;
 };
 
 PlayerMovement.prototype.destroy = function() {
   // Clean up event listeners
   this.app.off('ui:chat:focus', this.onChatFocus, this);
   this.app.off('ui:chat:blur', this.onChatBlur, this);
+  this.app.off('ui:input:focus', this.onUiInputFocus, this);
+  this.app.off('ui:input:blur', this.onUiInputBlur, this);
 };

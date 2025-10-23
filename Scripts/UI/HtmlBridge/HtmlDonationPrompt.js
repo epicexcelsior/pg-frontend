@@ -89,20 +89,19 @@ DonationPromptHtml.prototype.setupEventListeners = function (goButton) {
         this.qrCancelBtn.addEventListener('click', () => this.hideQRView());
     }
 
-    var formatAmount = function (value, isManual) {
-        if (!isFinite(value) || value <= 0) {
-            return '0.005';
+    var formatAmount = function (value) {
+        if (!isFinite(value)) {
+            return '0.001';
         }
-        if (isManual) {
-            return Number(value).toFixed(3);
-        }
-        return value >= 1 ? (value % 1 === 0 ? value.toFixed(0) : value.toFixed(2)) : value.toFixed(2);
+        var num = Number(value);
+        if (num < 0.001) return '0.001';
+        return num.toFixed(3);
     };
 
     var clampAmount = function (value) {
-        var num = parseFloat(value) || 0.01;
-        if (num < 0.005) num = 0.005;
-        if (num > 69) num = 69;
+        var num = parseFloat(value) || 0.001;
+        if (num < 0.001) num = 0.001;
+        if (num > 69.42) num = 69.42;
         return num;
     };
 
@@ -112,7 +111,7 @@ DonationPromptHtml.prototype.setupEventListeners = function (goButton) {
     var syncControls = (rawAmount, isManual) => {
         if (!this.donationSlider || !this.donationNumber) return;
         var amount = clampAmount(rawAmount);
-        this.donationNumber.value = formatAmount(amount, isManual === true);
+        this.donationNumber.value = formatAmount(amount);
         this.donationSlider.value = linearToLog(amount);
     };
 
@@ -171,9 +170,20 @@ DonationPromptHtml.prototype.setupEventListeners = function (goButton) {
             this.donationNumber.value = formatAmount(sliderAmount);
             this.app.fire('ui:playSound', 'donation_slider_tick');
         });
-        this.donationNumber.addEventListener('input', () => {
+        this.donationNumber.addEventListener('input', (e) => {
+            var value = e.target.value;
+            if (value === '' || value.endsWith('.')) {
+                return;
+            }
+            var num = parseFloat(value);
+            if (!isNaN(num)) {
+                this.donationSlider.value = linearToLog(clampAmount(num));
+            }
+        });
+
+        this.donationNumber.addEventListener('blur', () => {
             var num = clampAmount(this.donationNumber.value);
-            this.donationNumber.value = formatAmount(num, true);
+            this.donationNumber.value = formatAmount(num);
             this.donationSlider.value = linearToLog(num);
         });
     }

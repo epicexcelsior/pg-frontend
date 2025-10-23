@@ -1,6 +1,7 @@
 {
-  "colyseusEndpoint": "ws://localhost:2567",
+  "colyseusEndpoint": "ws://localhost:3001",
   "privyHostOrigin": "https://localhost:5173",
+  "apiBaseUrl": "http://localhost:3001",
   "donationFeeRecipientAddress": "r1eKs83sknjVn8cSx5u7afNx8ykjoi1GWULwZvcaAio",
   "heliusRpcUrl": "https://helius.plsgive.com",
   "donationFeePercentage": 10

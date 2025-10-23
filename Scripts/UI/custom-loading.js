@@ -285,4 +285,33 @@ pc.script.createLoadingScreen((app) => {
           // or for the very initial phase where no major assets were preloaded.
           setTimeout(hide, 500); // A slightly longer delay just in case.
      });
+
+     app.on('load:stream:progress', (payload) => {
+          if (!screen || !screen.classList.contains('visible')) {
+               return;
+          }
+          const total = typeof payload.total === 'number' ? payload.total : 0;
+          const loaded = typeof payload.loaded === 'number' ? payload.loaded : 0;
+          if (total > 0) {
+               updateProgress(Math.min(1, loaded / total));
+               if (loadingTextElement) {
+                    loadingTextElement.textContent = `Streaming assets... ${Math.round((loaded / total) * 100)}%`;
+               }
+          }
+     });
+
+     app.on('transition:begin', (payload) => {
+          if (!loadingTextElement) {
+               return;
+          }
+          const message = payload && payload.message ? payload.message : 'Entering...';
+          loadingTextElement.textContent = message;
+     });
+
+     app.on('transition:end', () => {
+          if (!screen) return;
+          setTimeout(hide, 120);
+     });
 });
+
+

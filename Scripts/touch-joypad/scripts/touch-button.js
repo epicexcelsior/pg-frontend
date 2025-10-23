@@ -22,6 +22,7 @@ TouchButton.prototype.initialize = function() {
 
     this._canVibrate = !!navigator.vibrate;
     this._chatFocused = false; // Track chat focus state
+    this._uiLockedReasons = new Set();
 
     this._setState(false);
 
@@ -36,11 +37,15 @@ TouchButton.prototype.initialize = function() {
         // Clean up chat focus listeners
         this.app.off('ui:chat:focus', this.onChatFocus, this);
         this.app.off('ui:chat:blur', this.onChatBlur, this);
+        this.app.off('ui:input:focus', this.onUiInputFocus, this);
+        this.app.off('ui:input:blur', this.onUiInputBlur, this);
     });
 
     // Listen for chat focus/blur events
     this.app.on('ui:chat:focus', this.onChatFocus, this);
     this.app.on('ui:chat:blur', this.onChatBlur, this);
+    this.app.on('ui:input:focus', this.onUiInputFocus, this);
+    this.app.on('ui:input:blur', this.onUiInputBlur, this);
 
     this._setEvents('on');
 };
@@ -89,8 +94,8 @@ TouchButton.prototype._onTouchUp = function (e) {
 };
 
 TouchButton.prototype._onPointerDown = function () {
-    // Don't respond to input if chat is focused
-    if (this._chatFocused) return;
+    // Don't respond to input if UI has locked controls
+    if (this._isInputLocked()) return;
     
     if (this._canVibrate && this.vibration !== 0) {
         navigator.vibrate(this.vibration);
@@ -123,9 +128,29 @@ TouchButton.prototype.onChatBlur = function() {
     console.log("TouchButton: Chat blurred - input enabled");
 };
 
+TouchButton.prototype.onUiInputFocus = function(payload) {
+    const reason = payload && payload.source ? String(payload.source) : 'ui-input';
+    this._uiLockedReasons.add(reason);
+    this._setState(false);
+};
+
+TouchButton.prototype.onUiInputBlur = function(payload) {
+    const reason = payload && payload.source ? String(payload.source) : 'ui-input';
+    if (reason) {
+        this._uiLockedReasons.delete(reason);
+    } else {
+        this._uiLockedReasons.clear();
+    }
+};
+
+TouchButton.prototype._isInputLocked = function() {
+    return this._chatFocused || this._uiLockedReasons.size > 0;
+};
+
 // swap method called for script hot-reloading
 // inherit your script state here
 // TouchButton.prototype.swap = function(old) { };
 
 // to learn more about script anatomy, please read:
 // https://developer.playcanvas.com/en/user-manual/scripting/
+

@@ -31,6 +31,13 @@ HtmlAvatarCustomizer.prototype.initialize = function () {
   this._rateLimitTimer = null;
   this.isOpen = false;
   this.toggleButton = null;
+  this._requestedVariantStream = false;
+  this.animationConfig = {
+    enabled: true,
+    durations: { standard: 0.26, quick: 0.18 },
+    easings: { entrance: 'power3.out', exit: 'power2.in' },
+    multiplier: 1
+  };
 
   if (this.app.uiManager && this.app.uiManager.registerComponent) {
     this.app.uiManager.registerComponent(this);
@@ -181,13 +188,25 @@ HtmlAvatarCustomizer.prototype._buildDom = function () {
   if (this.openOnStart) this.open();
   else this.close();
 
+  this._handlers = this._handlers || {};
+  this._handlers.toggleRequest = function () {
+    if (self.isOpen) self.close();
+    else self.open();
+  };
+  this._handlers.openRequest = function () { self.open(); };
+  this._handlers.closeRequest = function () { self.close(); };
+
+  this.app.on("htmlAvatarCustomizer:toggle", this._handlers.toggleRequest, this);
+  this.app.on("htmlAvatarCustomizer:open", this._handlers.openRequest, this);
+  this.app.on("htmlAvatarCustomizer:close", this._handlers.closeRequest, this);
+
   this.app.fire("avatar:uiReady", this.bridge);
 };
 
 HtmlAvatarCustomizer.prototype._createButtonsContainerAndToggle = function () {
   var self = this;
 
-  // Create the shared bottom-right container if missing
+  // Create the shared ui-button-container if missing (positioned left-center)
   var buttonContainer = document.getElementById("ui-button-container");
   if (!buttonContainer) {
     buttonContainer = document.createElement("div");
@@ -195,60 +214,48 @@ HtmlAvatarCustomizer.prototype._createButtonsContainerAndToggle = function () {
     document.body.appendChild(buttonContainer);
   }
 
+  // Create the avatar customizer toggle button
+  if (!this.toggleButton) {
+    this.toggleButton = document.createElement('button');
+    this.toggleButton.className = 'ui-action-button avatar-customizer-toggle';
+    this.toggleButton.type = 'button';
+    this.toggleButton.setAttribute('aria-label', 'Customize avatar');
+    this.toggleButton.setAttribute('aria-pressed', 'false');
+    this.toggleButton.innerHTML = '<span class="icon" aria-hidden="true">🎨</span>';
+
+    this._handlers = this._handlers || {};
+    this._handlers.toggleButton = function () {
+      self.app.fire('ui:playSound', 'ui_click_default');
+      if (self.isOpen) self.close();
+      else self.open();
+    };
+    this._handlers.hoverButton = function () {
+      self.app.fire('ui:playSound', 'ui_hover_default');
+    };
+
+    this.toggleButton.addEventListener('click', this._handlers.toggleButton);
+    this.toggleButton.addEventListener('mouseenter', this._handlers.hoverButton);
+
+    buttonContainer.appendChild(this.toggleButton);
+  }
+
   // Signal other scripts (WaveButton) that container is ready
   this.app.fire("ui:button-container:ready");
 
-  // Listen for the wave button and add it to the container (Wave should appear first)
+  // Listen for the wave button and insert it before avatar button
   this.app.on("ui:wavebutton:create", function (waveButton) {
-    if (!waveButton) return;
-    // Insert as first child to enforce order: [Wave][Avatar]
-    if (buttonContainer.firstChild !== waveButton) {
-      buttonContainer.insertBefore(waveButton, buttonContainer.firstChild);
-    }
+    if (!waveButton || !self.toggleButton) return;
+    if (buttonContainer.contains(waveButton)) return;
+    buttonContainer.insertBefore(waveButton, self.toggleButton);
   });
 
-  // Create the avatar toggle button (will sit to the RIGHT of wave)
-  var btn = document.createElement("button");
-  btn.id = "avatar-toggle-button";
-  btn.className = "avatar-toggle-button";
-  btn.type = "button";
-  btn.setAttribute("aria-label", "Open avatar customization");
-
-  var iconSpan = document.createElement("span");
-  iconSpan.className = "icon";
-
-  function setIcon(url) {
-    if (url) iconSpan.style.backgroundImage = "url(" + url + ")";
+  var themeToApply = this.theme;
+  if (!themeToApply && this.app.uiManager && typeof this.app.uiManager.getTheme === "function") {
+    themeToApply = this.app.uiManager.getTheme();
   }
-  if (this.iconAsset) {
-    this._ensureTextureAsset(this.iconAsset, function (asset) {
-      setIcon(asset.getFileUrl());
-    });
+  if (themeToApply) {
+    this.setTheme(themeToApply);
   }
-
-  var labelSpan = document.createElement("span");
-  labelSpan.className = "label";
-  labelSpan.textContent = "Avatar";
-
-  btn.appendChild(iconSpan);
-  btn.appendChild(labelSpan);
-
-  btn.addEventListener("click", function () {
-    if (self.isOpen) self.close();
-    else self.open();
-  });
-
-  btn.addEventListener("mouseenter", function () {
-    self.app.fire("ui:playSound", "ui_hover_default");
-  });
-
-  // Append AFTER Wave for correct order
-  buttonContainer.appendChild(btn);
-
-  this.toggleButton = btn;
-  this.toggleButton.setAttribute("aria-pressed", "false");
-
-  // if (this.openOnStart) this.toggleButton.style.display = "none";
 };
 
 HtmlAvatarCustomizer.prototype._createBridge = function () {
@@ -360,9 +367,23 @@ HtmlAvatarCustomizer.prototype._showRateLimit = function (remainingMs) {
 };
 
 HtmlAvatarCustomizer.prototype.setTheme = function (theme) {
-  if (!this.root || !theme) return;
-  if (theme.colors && theme.colors.accent)
-    this.root.style.setProperty("--accent-color", theme.colors.accent);
+  this.theme = theme;
+  if (!theme) return;
+  if (this.root) {
+    var colors = theme.colors || {};
+    var layout = theme.layout && theme.layout.avatarPanel ? theme.layout.avatarPanel : null;
+
+    this.root.style.setProperty("--accent-color", colors.accent || "#1df2a4");
+    this.root.style.setProperty("--accent2-color", colors.accent2 || colors.primary || "#1de8f2");
+    this.root.style.setProperty("--avatar-surface", colors.surface2 || colors.surface || "rgba(17, 22, 34, 0.94)");
+    this.root.style.setProperty("--avatar-border", "rgba(255, 255, 255, 0.08)");
+    this.root.style.setProperty("--avatar-slot-surface", "rgba(255, 255, 255, 0.05)");
+    this.root.style.setProperty("--avatar-shadow", (theme.styles && theme.styles.boxShadow) || "0 28px 60px rgba(0, 0, 0, 0.45)");
+    this.root.style.setProperty("--text-muted-color", colors.textMuted || "rgba(255, 255, 255, 0.7)");
+    if (layout && layout.width) {
+      this.root.style.setProperty("--avatar-panel-width", layout.width + "px");
+    }
+  }
   if (this.toggleButton && theme.colors && theme.colors.surface)
     this.toggleButton.style.setProperty(
       "--toggle-surface",
@@ -370,27 +391,50 @@ HtmlAvatarCustomizer.prototype.setTheme = function (theme) {
     );
 };
 
+HtmlAvatarCustomizer.prototype.setAnimationConfig = function (config) {
+  if (!config) {
+    return;
+  }
+  this.animationConfig = Object.assign({}, this.animationConfig, config);
+};
+
 HtmlAvatarCustomizer.prototype.open = function () {
-  if (!this.root) return;
-  this.root.classList.add("is-open");
-  this.root.classList.remove("is-closed");
+  if (!this.root || this.isOpen) return;
   this.isOpen = true;
+  this.root.style.display = 'block';
+  this.root.style.display = 'block';
+  this.root.classList.remove("is-closed");
+  this.root.classList.add("is-open");
+  this.root.style.pointerEvents = "auto";
+  this._animatePanel(true);
+  this._requestVariantStreaming();
   if (this.toggleButton) {
     this.toggleButton.classList.add("is-open");
     this.toggleButton.setAttribute("aria-pressed", "true");
-    // this.toggleButton.style.display = "none";
   }
 };
 
 HtmlAvatarCustomizer.prototype.close = function () {
-  if (!this.root) return;
-  this.root.classList.add("is-closed");
-  this.root.classList.remove("is-open");
+  if (!this.root || !this.isOpen) return;
+  var self = this;
   this.isOpen = false;
+  this.root.style.pointerEvents = "none";
   if (this.toggleButton) {
     this.toggleButton.classList.remove("is-open");
     this.toggleButton.setAttribute("aria-pressed", "false");
-    // this.toggleButton.style.display = "";
+  }
+
+  var duration = this._animatePanel(false);
+  var finalize = function () {
+    if (!self.root) return;
+    self.root.classList.add("is-closed");
+    self.root.classList.remove("is-open");
+  };
+
+  if (duration > 0 && window.gsap && this._shouldAnimate()) {
+    gsap.delayedCall(duration, finalize);
+  } else {
+    finalize();
   }
 };
 
@@ -402,12 +446,82 @@ HtmlAvatarCustomizer.prototype._preloadSounds = function () {
   }
 };
 
+HtmlAvatarCustomizer.prototype._requestVariantStreaming = function () {
+  if (this._requestedVariantStream) {
+    return;
+  }
+  this._requestedVariantStream = true;
+  const queue = this.app && this.app.tagLoadQueue;
+  if (!queue || typeof queue.loadByTags !== 'function') {
+    return;
+  }
+  queue.loadByTags(['avatars-variants'], {
+    priority: 3,
+    phase: 'postSpawnStream'
+  }).catch(function (err) {
+    console.warn('HtmlAvatarCustomizer: Failed to stream avatar variants.', err);
+  });
+};
+
+HtmlAvatarCustomizer.prototype._shouldAnimate = function () {
+  return this.animationConfig && this.animationConfig.enabled !== false;
+};
+
+HtmlAvatarCustomizer.prototype._animatePanel = function (isOpening) {
+  if (!window.gsap || !this._shouldAnimate() || !this.root) {
+    return 0;
+  }
+  var baseDuration = (this.animationConfig.durations && this.animationConfig.durations.standard) || 0.26;
+  var duration = Math.max(0.16, baseDuration * (this.animationConfig.multiplier || 1));
+  var easeIn = (this.animationConfig.easings && this.animationConfig.easings.entrance) || 'power3.out';
+  var easeOut = (this.animationConfig.easings && this.animationConfig.easings.exit) || 'power2.in';
+
+  gsap.killTweensOf(this.root);
+  if (isOpening) {
+    gsap.fromTo(this.root,
+      { opacity: 0, y: 28, scale: 0.95 },
+      { opacity: 1, y: 0, scale: 1, duration: duration, ease: easeIn }
+    );
+    return duration;
+  }
+
+  var closingDuration = Math.max(0.14, duration * 0.85);
+  gsap.to(this.root, {
+    opacity: 0,
+    y: 24,
+    scale: 0.94,
+    duration: closingDuration,
+    ease: easeOut
+  });
+  return closingDuration;
+};
+
 HtmlAvatarCustomizer.prototype.destroy = function () {
   clearTimeout(this._rateLimitTimer);
-  this.app.off("ui:wavebutton:create"); // clean up listener
+  this.app.off("ui:wavebutton:create");
+  if (this._handlers) {
+    if (this._handlers.toggleRequest) {
+      this.app.off("htmlAvatarCustomizer:toggle", this._handlers.toggleRequest, this);
+    }
+    if (this._handlers.openRequest) {
+      this.app.off("htmlAvatarCustomizer:open", this._handlers.openRequest, this);
+    }
+    if (this._handlers.closeRequest) {
+      this.app.off("htmlAvatarCustomizer:close", this._handlers.closeRequest, this);
+    }
+  }
+  if (this.toggleButton) {
+    if (this._handlers.toggleButton) {
+      this.toggleButton.removeEventListener('click', this._handlers.toggleButton);
+    }
+    if (this._handlers.hoverButton) {
+      this.toggleButton.removeEventListener('mouseenter', this._handlers.hoverButton);
+    }
+    if (this.toggleButton.parentNode) {
+      this.toggleButton.parentNode.removeChild(this.toggleButton);
+    }
+    this.toggleButton = null;
+  }
   if (this.container && this.container.parentNode)
     this.container.parentNode.removeChild(this.container);
-  if (this.toggleButton && this.toggleButton.parentNode)
-    this.toggleButton.parentNode.removeChild(this.toggleButton);
-  this.toggleButton = null;
 };

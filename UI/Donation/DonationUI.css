@@ -24,19 +24,38 @@
 
 .donation-button {
     position: relative;
-    width: 80px;
+    width: 85px;
     height: 80px;
-    margin: 0 8px;
+    padding: 0;
+    margin: 0 5px;
     border: 2px solid var(--primary-color);
     border-radius: 10px;
     background-color: var(--surface-color);
     background-repeat: no-repeat;
-    background-position: center center;
+    background-position: center right 8px;
     background-size: 50px 50px;
     opacity: 0;
     transform: translateY(30px);
     transition: transform 0.3s, box-shadow 0.3s;
     cursor: pointer;
+    white-space: nowrap;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+}
+
+/* Smaller text for 0.001 and 0.005 */
+.donation-button[data-amount="0.001"]::before,
+.donation-button[data-amount="0.005"]::before {
+    font-size: clamp(14px, 3.5vw, 16px);
+}
+
+/* Larger text for 0.01, 0.05, 0.1 */
+.donation-button[data-amount="0.01"]::before,
+.donation-button[data-amount="0.05"]::before,
+.donation-button[data-amount="0.1"]::before {
+    font-size: clamp(16px, 4vw, 22px);
 }
 
 .donation-button:hover {
@@ -47,16 +66,11 @@
 /* Numeric label on each button */
 .donation-button::before {
     content: attr(data-amount);
-    position: absolute;
-    width: 100%;
-    text-align: center;
-    top: 50%;
-    left: 50%;
-    transform: translate(-50%, -50%);
+    position: relative;
     font-weight: 800;
-    font-size: 32px;
     color: var(--text-color);
     pointer-events: none;
+    line-height: 1;
 }
 
 /* Divider styling */

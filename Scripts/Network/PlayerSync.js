@@ -63,6 +63,9 @@ PlayerSync.prototype.initialize = function () {
     this.playerEntities = {};
     this.room = null;
     this.localSessionId = null;
+    this._loggedMissingNameplate = false;
+    this._tempLerpPos = new pc.Vec3();
+    this._tempQuat = new pc.Quat();
     this.app.on('colyseus:connected', this.onConnected, this);
     this.app.on('colyseus:disconnected', this.onDisconnected, this);
 };
@@ -83,18 +86,21 @@ PlayerSync.prototype.onConnected = function (room) {
     this.room = room;
     this.localSessionId = room.sessionId;
 
-    this.room.state.players.onAdd((playerState, sessionId) => {
-        this.spawnPlayer(playerState, sessionId);
-        playerState.onChange(() => this.handlePlayerChange(playerState, sessionId));
-    });
+    const handlePlayerAdded = (playerState, sessionId) => {
+        this.ensurePlayerBindings(playerState, sessionId);
+        if (!this.playerEntities[sessionId]) {
+            this.spawnPlayer(playerState, sessionId);
+        }
+    };
+
+    this.room.state.players.onAdd(handlePlayerAdded);
 
     this.room.state.players.onRemove((playerState, sessionId) => {
         this.removePlayer(sessionId);
     });
 
     this.room.state.players.forEach((playerState, sessionId) => {
-        this.spawnPlayer(playerState, sessionId);
-        playerState.onChange(() => this.handlePlayerChange(playerState, sessionId));
+        handlePlayerAdded(playerState, sessionId);
     });
 };
 
@@ -110,7 +116,6 @@ PlayerSync.prototype.onDisconnected = function () {
 
 PlayerSync.prototype.spawnPlayer = function (playerState, sessionId) {
     if (this.playerEntities[sessionId]) {
-        console.warn(`PlayerSync: Player entity for session ID ${sessionId} already exists. Aborting spawn.`);
         return;
     }
 
@@ -171,6 +176,7 @@ PlayerSync.prototype.spawnPlayer = function (playerState, sessionId) {
     this.app.root.addChild(playerEntity);
     this.playerEntities[sessionId] = playerEntity;
     this._syncAvatarRecipe(playerEntity, playerState, sessionId);
+    this._setupNameplate(playerEntity, isLocalPlayer, playerState.username);
     this.updateNameplate(playerEntity, playerState.username);
     this.app.fire('player:spawned', { entity: playerEntity, isLocal: isLocalPlayer, sessionId: sessionId, state: playerState });
 };
@@ -194,6 +200,7 @@ PlayerSync.prototype.handlePlayerChange = function (playerState, sessionId) {
         if (playerData && playerState.hasOwnProperty('username') && playerData.username !== playerState.username) {
             this.app.fire('player:data:update', { username: playerState.username });
         }
+        this.updateNameplate(entity, playerState.username);
     } else {
         this.updateRemotePlayerVisuals(entity, playerState);
         this._syncAvatarRecipe(entity, playerState, sessionId);
@@ -258,17 +265,14 @@ PlayerSync.prototype.update = function (dt) {
         const currentPos = entity.getPosition();
         const targetPos = entity.syncTargetPos;
         const posBlend = frameBlend(this.positionLerpFactor, dt);
-        const lerpedPos = new pc.Vec3().lerp(currentPos, targetPos, posBlend);
+        this._tempLerpPos.lerp(currentPos, targetPos, posBlend);
 
         if (entity.rigidbody) {
-            // Teleport the physics body for position, but do not rotate it here.
-            // The visual rotation is handled separately by applyRemoteYaw.
-            entity.rigidbody.teleport(lerpedPos, pc.Quat.IDENTITY);
+            entity.rigidbody.teleport(this._tempLerpPos, pc.Quat.IDENTITY);
         } else {
-            entity.setPosition(lerpedPos);
+            entity.setPosition(this._tempLerpPos);
         }
 
-        // Apply the visual rotation to the model. This is the single source of truth for rotation.
         applyRemoteYaw(entity, entity.syncCurrentYaw);
 
         if (typeof entity.syncTargetSpeed === 'number') {
@@ -281,8 +285,66 @@ PlayerSync.prototype.update = function (dt) {
 };
 
 PlayerSync.prototype.updateNameplate = function (playerEntity, username) {
-    const nameplate = playerEntity.findByName('NameplateText');
-    if (nameplate?.element) {
-        nameplate.element.text = username || '';
+    if (!playerEntity) {
+        return;
+    }
+    let nameplate = playerEntity.nameplateText;
+    if (!nameplate || !nameplate.element) {
+        nameplate = playerEntity.findByName('NameplateText');
+        if (nameplate && nameplate.element) {
+            playerEntity.nameplateText = nameplate;
+        } else {
+            if (!this._loggedMissingNameplate) {
+                console.warn('PlayerSync: NameplateText entity with an element component was not found on the player prefab.');
+                this._loggedMissingNameplate = true;
+            }
+            return;
+        }
+    }
+    nameplate.element.text = username || '';
+    var s = (username || '').toString().trim();
+    if (s.length > 16) s = s.slice(0, 16);
+    nameplate.element.text = s;
+};
+
+PlayerSync.prototype.ensurePlayerBindings = function (playerState, sessionId) {
+    if (!playerState) return;
+    if (!playerState.__playerSyncChangeHandler) {
+        const changeHandler = () => this.handlePlayerChange(playerState, sessionId);
+        playerState.__playerSyncChangeHandler = changeHandler;
+        playerState.onChange(changeHandler);
+    }
+};
+
+PlayerSync.prototype._setupNameplate = function (playerEntity, isLocalPlayer, username) {
+    if (!playerEntity) {
+        return;
+    }
+    let root = playerEntity.nameplateRoot;
+    if (!root) {
+        root = playerEntity.findByName('NameplateRoot') || null;
+        if (root) {
+            playerEntity.nameplateRoot = root;
+        }
+    }
+    this._setNameplateVisibility(playerEntity, !isLocalPlayer);
+    if (username) {
+        this.updateNameplate(playerEntity, username);
+    }
+};
+
+PlayerSync.prototype._setNameplateVisibility = function (playerEntity, shouldShow) {
+    if (!playerEntity) {
+        return;
+    }
+    let root = playerEntity.nameplateRoot;
+    if (!root) {
+        root = playerEntity.findByName('NameplateRoot') || null;
+        if (root) {
+            playerEntity.nameplateRoot = root;
+        }
+    }
+    if (root) {
+        root.enabled = shouldShow;
     }
 };

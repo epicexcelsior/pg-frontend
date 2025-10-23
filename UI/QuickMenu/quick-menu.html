@@ -1,0 +1,65 @@
+<div id="quick-menu-root" class="quick-menu" aria-hidden="true" role="dialog">
+  <div class="quick-menu__panel" data-quick-menu-panel>
+    <div class="quick-menu__header">
+      <div class="quick-menu__title">Quick Menu</div>
+      <button type="button" class="quick-menu__close" data-quick-menu-close aria-label="Close menu"></button>
+    </div>
+    <div class="quick-menu__content" data-quick-menu-scroll-region>
+      
+      <!-- Profile Section -->
+      <section class="quick-menu__section" aria-label="Profile">
+        <div class="quick-menu__section-title">Profile</div>
+        <button type="button" class="quick-menu__tile" data-quick-menu-nav="username">
+          <div class="quick-menu__tile-icon">👤</div>
+          <div class="quick-menu__tile-content">
+            <div class="quick-menu__tile-label">Username</div>
+            <div class="quick-menu__tile-value" data-quick-menu-username>—</div>
+          </div>
+          <div class="quick-menu__tile-arrow">›</div>
+        </button>
+      </section>
+
+      <!-- Booth Section (visibility controlled by script) -->
+      <section class="quick-menu__section quick-menu__section--booth" data-booth-section aria-label="Booth" style="display: none;">
+        <div class="quick-menu__section-title">Booth</div>
+        <button type="button" class="quick-menu__tile" data-quick-menu-nav="booth">
+          <div class="quick-menu__tile-icon">🏠</div>
+          <div class="quick-menu__tile-content">
+            <div class="quick-menu__tile-label">Edit Description</div>
+            <div class="quick-menu__tile-hint">Manage your booth info</div>
+          </div>
+          <div class="quick-menu__tile-arrow">›</div>
+        </button>
+      </section>
+
+      <!-- Community Section -->
+      <section class="quick-menu__section" aria-label="Community">
+        <div class="quick-menu__section-title">Community</div>
+        <button type="button" class="quick-menu__tile" data-quick-menu-nav="referrals">
+          <div class="quick-menu__tile-icon">🎁</div>
+          <div class="quick-menu__tile-content">
+            <div class="quick-menu__tile-label">Referrals</div>
+            <div class="quick-menu__tile-hint">Invite friends, earn rewards</div>
+          </div>
+          <div class="quick-menu__tile-arrow">›</div>
+        </button>
+      </section>
+
+      <!-- Settings Section -->
+      <section class="quick-menu__section" aria-label="Settings">
+        <div class="quick-menu__section-title">Settings</div>
+        <div class="quick-menu__toggle">
+          <div class="quick-menu__toggle-info">
+            <span>Enhanced animations</span>
+            <span class="quick-menu__hint">Disable for lower power devices</span>
+          </div>
+          <label class="quick-menu__switch">
+            <input type="checkbox" checked data-quick-menu-animations>
+            <span class="quick-menu__switch-slider"></span>
+          </label>
+        </div>
+      </section>
+
+    </div>
+  </div>
+</div>

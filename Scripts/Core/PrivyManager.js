@@ -15,9 +15,13 @@ PrivyManager.prototype.initialize = function () {
     this.authenticated = false;
     this.ready = false;
     this._pendingNonce = null;
+    this.loginTimeoutMs = 60000;
+    this._loginInProgress = false;
+    this._loginTimeoutHandle = null;
 
     this.twitterHandle = null;
     this.twitterUserId = null;
+    this.privyDid = null;
 
     this.privyHostOrigin = null;
     this.configLoader = null;
@@ -26,6 +30,8 @@ PrivyManager.prototype.initialize = function () {
     this.transactionTimeoutMs = 120000;
     this.transactionPromises = new Map();
     this.pendingReadyCallbacks = [];
+    this._gameTokenExchangePromise = null;
+    this.latestPrivyAccessToken = null;
 
     this.popupFeatures = 'width=400,height=650,scrollbars=yes,resizable=yes';
 
@@ -208,6 +214,7 @@ PrivyManager.prototype.onDestroyHandler = function () {
 
     this.rejectAllPendingTransactions('Privy manager destroyed before the transaction completed.');
     this.pendingReadyCallbacks.length = 0;
+    this._setLoginInProgress(false);
 };
 
 PrivyManager.prototype.rejectAllPendingTransactions = function (message) {
@@ -237,6 +244,33 @@ PrivyManager.prototype.normalizeError = function (errorOrMessage, fallbackMessag
         return new Error(errorOrMessage.trim());
     }
     return new Error(fallbackMessage || 'Operation failed.');
+};
+
+PrivyManager.prototype._setLoginInProgress = function (active) {
+    if (active) {
+        this._loginInProgress = true;
+        if (this._loginTimeoutHandle) {
+            window.clearTimeout(this._loginTimeoutHandle);
+        }
+        var timeout = typeof this.loginTimeoutMs === 'number' && this.loginTimeoutMs > 0
+            ? this.loginTimeoutMs
+            : 60000;
+        this._loginTimeoutHandle = window.setTimeout(() => {
+            console.warn('PrivyManager: Login attempt timed out. Clearing guard.');
+            this._loginInProgress = false;
+            this._loginTimeoutHandle = null;
+        }, timeout);
+        return;
+    }
+    this._loginInProgress = false;
+    if (this._loginTimeoutHandle) {
+        window.clearTimeout(this._loginTimeoutHandle);
+        this._loginTimeoutHandle = null;
+    }
+};
+
+PrivyManager.prototype.isLoginInProgress = function () {
+    return this._loginInProgress;
 };
 
 PrivyManager.prototype.handleAuthMessage = function (event) {
@@ -269,6 +303,7 @@ PrivyManager.prototype.handleAuthMessage = function (event) {
 
     switch (type) {
         case 'PRIVY_AUTH_SUCCESS':
+            this._setLoginInProgress(false);
             if (payload && typeof payload.user === 'object') {
                 this.handleAuthSuccess(payload);
             } else {
@@ -276,6 +311,7 @@ PrivyManager.prototype.handleAuthMessage = function (event) {
             }
             break;
         case 'PRIVY_AUTH_LOGOUT':
+            this._setLoginInProgress(false);
             this.handleAuthLogout();
             break;
         case 'PRIVY_TX_SUCCESS':
@@ -305,6 +341,9 @@ PrivyManager.prototype.handleAuthMessage = function (event) {
             this.app.fire('auth:linkFailed', { error: payload.error });
             break;
         default:
+            if (typeof type === 'string' && type.indexOf('PRIVY_AUTH_') === 0) {
+                this._setLoginInProgress(false);
+            }
             console.warn('PrivyManager: Unhandled message type from privy host:', type);
             break;
     }
@@ -407,8 +446,13 @@ PrivyManager.prototype.bytesToBase58 = function (bytes) {
 PrivyManager.prototype.handleAuthSuccess = function (payload) {
     console.log('PrivyManager: Authentication successful.', payload);
 
+    this._setLoginInProgress(false);
+
     this.user = payload.user;
     this.authenticated = true;
+    this.privyDid = (payload && payload.user && typeof payload.user.id === 'string')
+        ? payload.user.id
+        : null;
 
     var twitterIdentity = this.refreshTwitterIdentity(this.user);
 
@@ -426,11 +470,28 @@ PrivyManager.prototype.handleAuthSuccess = function (payload) {
         twitterHandle: this.twitterHandle,
         twitterUserId: this.twitterUserId,
         twitterIdentity: twitterIdentity || null,
+        privyDid: this.privyDid,
     });
+
+    const self = this;
+    Promise.resolve()
+        .then(function () {
+            return self.exchangeForGameToken(payload);
+        })
+        .then(function (tokenPayload) {
+            if (tokenPayload) {
+                self.app.fire('coins:refresh');
+            }
+        })
+        .catch(function (error) {
+            console.error('PrivyManager: Failed to exchange Privy token for game token.', error);
+        });
 };
 
 PrivyManager.prototype.handleAuthLogout = function () {
     console.log('PrivyManager: Logout successful.');
+
+    this._setLoginInProgress(false);
 
     this.rejectAllPendingTransactions('User logged out before the transaction completed.');
 
@@ -456,7 +517,19 @@ PrivyManager.prototype.handleAuthLogout = function () {
 
     this.user = null;
     this.authenticated = false;
+    this.privyDid = null;
+    this.latestPrivyAccessToken = null;
     this.refreshTwitterIdentity(null);
+
+    const tokenService = this.getAuthTokenService();
+    if (tokenService && typeof tokenService.clearToken === 'function') {
+        tokenService.clearToken();
+    }
+
+    this.app.fire('coins:update', {
+        balance: 0,
+        lifetimeEarned: 0,
+    });
 
     try {
         localStorage.removeItem('privyUser');
@@ -472,6 +545,7 @@ PrivyManager.prototype.handleAuthLogout = function () {
         twitterHandle: null,
         twitterUserId: null,
         twitterIdentity: null,
+        privyDid: null,
     });
 };
 
@@ -481,6 +555,7 @@ PrivyManager.prototype.restoreUserSession = function () {
         if (storedUser) {
             this.user = JSON.parse(storedUser);
             this.authenticated = false;
+            this.privyDid = (this.user && typeof this.user.id === 'string') ? this.user.id : null;
             console.log('PrivyManager: Restored user data from localStorage. Session is not active.', this.user);
 
             var twitterIdentity = this.refreshTwitterIdentity(this.user);
@@ -493,12 +568,188 @@ PrivyManager.prototype.restoreUserSession = function () {
                 twitterHandle: this.twitterHandle,
                 twitterUserId: this.twitterUserId,
                 twitterIdentity: twitterIdentity || null,
+                privyDid: this.privyDid,
             });
         }
     } catch (error) {
         console.error('PrivyManager: Error restoring user session:', error);
         localStorage.removeItem('privyUser');
     }
+};
+
+PrivyManager.prototype.getAuthTokenService = function () {
+    const services = this.app.services;
+    if (!services || typeof services.get !== 'function') {
+        return null;
+    }
+    try {
+        return services.get('authToken') || null;
+    } catch (error) {
+        console.warn('PrivyManager: Failed to resolve authToken service.', error);
+        return null;
+    }
+};
+
+PrivyManager.prototype.resolveApiUrl = function (path) {
+    var base = null;
+    if (this.configLoader && typeof this.configLoader.get === 'function') {
+        base = this.configLoader.get('apiBaseUrl');
+        if ((!base || typeof base !== 'string' || !base.length) && typeof this.configLoader.get === 'function') {
+            var endpoint = this.configLoader.get('colyseusEndpoint');
+            if (typeof endpoint === 'string' && endpoint.length) {
+                try {
+                    var parsed = new URL(endpoint);
+                    if (parsed.protocol === 'ws:' || parsed.protocol === 'wss:') {
+                        parsed.protocol = parsed.protocol === 'ws:' ? 'http:' : 'https:';
+                    }
+                    parsed.pathname = parsed.pathname.replace(/\/+$/, '');
+                    parsed.search = '';
+                    parsed.hash = '';
+                    base = parsed.toString();
+                } catch (error) {
+                    console.warn('PrivyManager: Failed to derive API base from colyseusEndpoint.', error);
+                }
+            }
+        }
+    }
+
+    if (!base && typeof window !== 'undefined' && window.location && window.location.origin) {
+        base = window.location.origin;
+    }
+
+    if (base && typeof base === 'string' && base.length) {
+        return base.replace(/\/+$/, '') + path;
+    }
+    return path;
+};
+
+PrivyManager.prototype.extractPrivyAccessToken = function (payload) {
+    if (!payload || typeof payload !== 'object') {
+        return null;
+    }
+
+    var candidates = [
+        payload.accessToken,
+        payload.access_token,
+        payload.token,
+        payload.privyAccessToken,
+        payload.privy_access_token,
+        payload.sessionToken,
+        payload.session_token,
+    ];
+
+    if (payload.session && typeof payload.session === 'object') {
+        candidates.push(payload.session.accessToken);
+        candidates.push(payload.session.access_token);
+        candidates.push(payload.session.token);
+    }
+
+    if (payload.tokens && typeof payload.tokens === 'object') {
+        candidates.push(payload.tokens.accessToken);
+        candidates.push(payload.tokens.access_token);
+    }
+
+    if (payload.user && typeof payload.user === 'object') {
+        const user = payload.user;
+        candidates.push(user.accessToken);
+        candidates.push(user.access_token);
+        candidates.push(user.token);
+
+        if (user.session && typeof user.session === 'object') {
+            candidates.push(user.session.accessToken);
+            candidates.push(user.session.access_token);
+            candidates.push(user.session.token);
+        }
+    }
+
+    for (let i = 0; i < candidates.length; i += 1) {
+        const candidate = candidates[i];
+        if (typeof candidate === 'string' && candidate.length > 20) {
+            return candidate;
+        }
+    }
+
+    if (typeof console !== 'undefined' && console.warn) {
+        try {
+            const inspected = {
+                hasSession: !!payload.session,
+                sessionKeys: payload.session ? Object.keys(payload.session) : null,
+                hasTokens: !!payload.tokens,
+                tokensKeys: payload.tokens ? Object.keys(payload.tokens) : null,
+                userKeys: payload.user ? Object.keys(payload.user) : null,
+            };
+            console.warn('PrivyManager: Unable to locate access token in payload.', inspected);
+        } catch (error) {
+            console.warn('PrivyManager: Failed inspecting access token payload.', error);
+        }
+    }
+
+    return null;
+};
+
+PrivyManager.prototype.exchangeForGameToken = function (payload) {
+    const accessToken = this.extractPrivyAccessToken(payload);
+    if (!accessToken) {
+        console.warn('PrivyManager: No Privy access token found in payload. Skipping game token exchange.');
+        return Promise.resolve(null);
+    }
+
+    this.latestPrivyAccessToken = accessToken;
+
+    if (this._gameTokenExchangePromise) {
+        return this._gameTokenExchangePromise;
+    }
+
+    const url = this.resolveApiUrl('/auth/exchange-privy');
+    const self = this;
+
+    this._gameTokenExchangePromise = fetch(url, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'Privy-Authorization': `Bearer ${accessToken}`,
+        },
+        credentials: 'include',
+    })
+        .then(function (response) {
+            if (!response.ok) {
+                throw new Error(`Exchange request failed (${response.status})`);
+            }
+            return response.json().catch(function () {
+                return {};
+            });
+        })
+        .then(function (data) {
+            if (!data || typeof data.token !== 'string' || !data.token.length) {
+                console.warn('PrivyManager: exchange-privy response missing token.');
+                return null;
+            }
+
+            const tokenPayload = {
+                token: data.token,
+                expiresIn: typeof data.expiresIn === 'number' ? data.expiresIn : null,
+                expiresAt: typeof data.expiresAt === 'number' ? data.expiresAt : null,
+                user: data.user || null,
+                issuedAt: Date.now(),
+            };
+
+            const tokenService = self.getAuthTokenService();
+            if (tokenService && typeof tokenService.setToken === 'function') {
+                tokenService.setToken(tokenPayload.token, tokenPayload);
+            }
+
+            self.app.fire('auth:gameToken', tokenPayload);
+            return tokenPayload;
+        })
+        .catch(function (error) {
+            console.error('PrivyManager: exchange-privy request failed.', error);
+            throw error;
+        })
+        .finally(function () {
+            self._gameTokenExchangePromise = null;
+        });
+
+    return this._gameTokenExchangePromise;
 };
 
 PrivyManager.prototype.buildPrivyUrl = function (parameters) {
@@ -525,20 +776,54 @@ PrivyManager.prototype.openPrivyWindow = function (url, name) {
     return popup;
 };
 
-PrivyManager.prototype.login = function () {
-    const performLogin = () => {
-        console.log('PrivyManager: Starting login process...');
-        this._pendingNonce = generateNonce();
-        const loginUrl = this.buildPrivyUrl({ action: 'login', nonce: this._pendingNonce });
-        return this.openPrivyWindow(loginUrl, 'privy-auth');
-    };
+PrivyManager.prototype.login = function (options) {
+    const force = Boolean(options && options.force);
 
-    if (!this.ready) {
-        this.queueWhenReady(performLogin, 'login');
+    if (this.authenticated && !force) {
+        console.log('PrivyManager: Login skipped; user already authenticated.');
         return null;
     }
 
-    return performLogin();
+    if (this._loginInProgress) {
+        console.log('PrivyManager: Login request ignored; another login is in progress.');
+        return null;
+    }
+
+    this._setLoginInProgress(true);
+
+    const performLogin = () => {
+        console.log('PrivyManager: Starting login process...');
+        this._pendingNonce = generateNonce();
+        const params = { action: 'login', nonce: this._pendingNonce };
+        if (force) {
+            params.force = 'true';
+        }
+        const loginUrl = this.buildPrivyUrl(params);
+        const popup = this.openPrivyWindow(loginUrl, 'privy-auth');
+        if (!popup) {
+            this._setLoginInProgress(false);
+        }
+        return popup;
+    };
+
+    if (!this.ready) {
+        this.queueWhenReady(() => {
+            try {
+                performLogin();
+            } catch (error) {
+                this._setLoginInProgress(false);
+                console.error('PrivyManager: Deferred login failed.', error);
+            }
+        }, 'login');
+        return null;
+    }
+
+    try {
+        return performLogin();
+    } catch (error) {
+        this._setLoginInProgress(false);
+        throw error;
+    }
 };
 
 PrivyManager.prototype.logout = function () {
@@ -661,6 +946,17 @@ PrivyManager.prototype.getWalletAddress = function () {
         }
     }
 
+    return null;
+};
+
+PrivyManager.prototype.getPrivyDid = function () {
+    return this.privyDid;
+};
+
+PrivyManager.prototype.getLatestPrivyToken = function () {
+    if (typeof this.latestPrivyAccessToken === 'string' && this.latestPrivyAccessToken.length > 20) {
+        return this.latestPrivyAccessToken;
+    }
     return null;
 };
 

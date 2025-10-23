@@ -11,7 +11,6 @@
  * injecting these theme properties into the relevant UI components.
  */
 const Theme = {
-  // Color Palette
   colors: {
     // Primary colors for branding and key actions
     primary: '#1d9bf0', // Twitter blue for primary actions
@@ -36,7 +35,6 @@ const Theme = {
     error: '#dc3545',   // Red for errors
   },
 
-  // Font Styles
   fonts: {
     family: "'Segoe UI', Tahoma, Geneva, Verdana, sans-serif",
     size: {
@@ -53,7 +51,6 @@ const Theme = {
     },
   },
 
-  // UI Element Styling
   styles: {
     borderRadius: '14px',
     boxShadow: '0 18px 36px rgba(0, 0, 0, 0.35)',
@@ -69,6 +66,42 @@ const Theme = {
       backgroundColor: 'rgba(255, 255, 255, 0.05)',
     },
   },
+  layout: {
+    actionDock: {
+      gap: 14,
+      buttonSize: 54,
+      baseOffset: { bottom: 80, right: 24 },
+      mobileOffset: { bottom: 72, right: 16 }
+    },
+    avatarPanel: {
+      width: 360,
+      maxWidthMobile: 320
+    },
+    quickMenu: {
+      maxHeight: 520,
+      width: 340
+    }
+  },
+  animations: {
+    enabled: true,
+    durations: {
+      instant: 0.12,
+      quick: 0.18,
+      standard: 0.28,
+      extended: 0.48
+    },
+    easings: {
+      entrance: 'power3.out',
+      exit: 'power2.in',
+      emphasize: 'power4.out'
+    },
+    stagger: 0.06,
+    lowPerformanceMultiplier: 0.75
+  },
+  performance: {
+    enableAutoQuality: true,
+    reducedMotionFallback: 'fade'
+  }
 };
 
 // Make it accessible globally

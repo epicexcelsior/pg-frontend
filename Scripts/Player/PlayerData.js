@@ -3,15 +3,30 @@ var PlayerData = pc.createScript('playerData');
 
 PlayerData.prototype.initialize = function() {
     this.walletAddress = null;
-    this.username = localStorage.getItem('userName') || "";
+    this.username = this.normalizeUsername(localStorage.getItem('userName') || "");
     this.claimedBoothId = "";
     this.twitterHandle = "";
     this.twitterUserId = "";
+    this.privyDid = "";
+
+    // Register this instance as a service
+    if (this.app.services) {
+        this.app.services.register('playerData', this);
+    } else {
+        // If services aren't initialized yet, wait for them to be ready
+        this.app.once('services:initialized', function() {
+            this.app.services.register('playerData', this);
+        }, this);
+    }
 
     this.app.on('auth:stateChanged', this.onAuthStateChanged, this);
     this.app.on('booth:claimSuccess', this.handleBoothClaimSuccess, this);
     this.app.on('booth:updated', this.handleBoothStateChange, this);
     this.app.on('booth:added', this.handleBoothStateChange, this);
+    this.app.on('booth:unclaimed', this.handleBoothUnclaimed, this);
+    this.app.on('player:username:localUpdate', this.handleLocalUsernameUpdate, this);
+    this.app.on('player:data:update', this.handleServerDataUpdate, this);
+    this.app.on('user:setname', this.handleLegacySetName, this);
 };
 
 PlayerData.prototype.onAuthStateChanged = function (event) {
@@ -27,10 +42,14 @@ PlayerData.prototype.onAuthStateChanged = function (event) {
     const normalizedTwitterUserId = typeof event.twitterUserId === 'string'
         ? event.twitterUserId
         : (event.twitterIdentity && event.twitterIdentity.userId != null ? String(event.twitterIdentity.userId) : '');
+    const normalizedPrivyDid = typeof event.privyDid === 'string'
+        ? event.privyDid
+        : (user && typeof user.id === 'string' ? user.id : '');
 
     const walletChanged = this.walletAddress !== newAddress;
     const twitterHandleChanged = this.twitterHandle !== normalizedTwitterHandle;
     const twitterUserIdChanged = this.twitterUserId !== normalizedTwitterUserId;
+    const privyDidChanged = this.privyDid !== normalizedPrivyDid;
 
     if (walletChanged) {
         this.walletAddress = newAddress;
@@ -46,12 +65,18 @@ PlayerData.prototype.onAuthStateChanged = function (event) {
         this.twitterUserId = normalizedTwitterUserId;
     }
 
-    if (walletChanged || twitterHandleChanged || twitterUserIdChanged) {
+    if (privyDidChanged) {
+        this.privyDid = normalizedPrivyDid;
+    }
+
+    const shouldSync = isConnected && (walletChanged || twitterHandleChanged || twitterUserIdChanged || privyDidChanged);
+    if (shouldSync) {
         // Inform the server of the new address / social state
         this.app.fire('network:send', 'updateAddress', {
             walletAddress: this.walletAddress || '',
             twitterHandle: this.twitterHandle || '',
-            twitterUserId: this.twitterUserId || ''
+            twitterUserId: this.twitterUserId || '',
+            privyDid: this.privyDid || ''
         });
 
         // Inform the rest of the client app that data has changed
@@ -64,6 +89,7 @@ PlayerData.prototype.onAuthStateChanged = function (event) {
         this.claimedBoothId = '';
         this.twitterHandle = '';
         this.twitterUserId = '';
+        this.privyDid = '';
     }
 };
 
@@ -93,6 +119,18 @@ PlayerData.prototype.handleBoothStateChange = function(data) {
     }
 };
 
+PlayerData.prototype.handleBoothUnclaimed = function(eventData) {
+    if (!eventData || typeof eventData.boothId !== 'string') {
+        return;
+    }
+    const matchesWallet = this.walletAddress && eventData.previousOwner === this.walletAddress;
+    const matchesClaim = this.claimedBoothId && this.claimedBoothId === eventData.boothId;
+    if (!matchesWallet && !matchesClaim) {
+        return;
+    }
+    this.clearClaimedBooth('network:booth_unclaimed');
+};
+
 PlayerData.prototype.clearClaimedBooth = function(reason) {
     if (!this.claimedBoothId) {
         return;
@@ -108,10 +146,73 @@ PlayerData.prototype.destroy = function() {
     this.app.off('booth:claimSuccess', this.handleBoothClaimSuccess, this);
     this.app.off('booth:updated', this.handleBoothStateChange, this);
     this.app.off('booth:added', this.handleBoothStateChange, this);
+    this.app.off('booth:unclaimed', this.handleBoothUnclaimed, this);
+    this.app.off('player:username:localUpdate', this.handleLocalUsernameUpdate, this);
+    this.app.off('player:data:update', this.handleServerDataUpdate, this);
+    this.app.off('user:setname', this.handleLegacySetName, this);
 };
 
 // --- GETTERS ---
 PlayerData.prototype.getWalletAddress = function() { return this.walletAddress; };
 PlayerData.prototype.getUsername = function() { return this.username; };
 PlayerData.prototype.getClaimedBoothId = function() { return this.claimedBoothId; };
+PlayerData.prototype.getPrivyDid = function() { return this.privyDid; };
+
+PlayerData.prototype.normalizeUsername = function(raw) {
+    if (typeof raw !== 'string') {
+        return '';
+    }
+    const withoutTags = raw.replace(/(<([^>]+)>)/gi, '');
+    const collapsedWhitespace = withoutTags.replace(/\s+/g, ' ').trim();
+    if (!collapsedWhitespace.length) {
+        return '';
+    }
+    return collapsedWhitespace.substring(0, 16);
+};
+
+PlayerData.prototype.persistUsername = function(username) {
+    try {
+        localStorage.setItem('userName', username);
+    } catch (err) {
+        console.warn('PlayerData: Failed to persist username to localStorage.', err);
+    }
+};
+
+PlayerData.prototype.handleLocalUsernameUpdate = function(raw) {
+    const normalized = this.normalizeUsername(raw);
+    if (!normalized) {
+        return;
+    }
+    if (this.username === normalized) {
+        return;
+    }
+    this.username = normalized;
+    this.persistUsername(normalized);
+    this.app.fire('player:data:changed', this);
+};
+
+PlayerData.prototype.handleServerDataUpdate = function(payload) {
+    if (!payload || typeof payload.username !== 'string') {
+        return;
+    }
+    const normalized = this.normalizeUsername(payload.username);
+    if (!normalized) {
+        if (this.username !== '') {
+            this.username = '';
+            this.persistUsername('');
+            this.app.fire('player:data:changed', this);
+        }
+        return;
+    }
+    if (this.username === normalized) {
+        return;
+    }
+    this.username = normalized;
+    this.persistUsername(normalized);
+    this.app.fire('player:data:changed', this);
+};
+
+PlayerData.prototype.handleLegacySetName = function(username) {
+    this.handleLocalUsernameUpdate(username);
+};
 
