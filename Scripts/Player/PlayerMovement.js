@@ -52,6 +52,13 @@ function yawFromDirXZ(vx, vz) {
   return Math.atan2(-vx, -vz) * pc.math.RAD_TO_DEG;
 }
 
+function sanitizeVec3(vec) {
+  if (!Number.isFinite(vec.x)) vec.x = 0;
+  if (!Number.isFinite(vec.y)) vec.y = 0;
+  if (!Number.isFinite(vec.z)) vec.z = 0;
+  return vec;
+}
+
 PlayerMovement.prototype.initialize = function () {
   this.isMobile = pc.platform.touch;
   this.chatFocused = false; // Track if chat input is focused
@@ -70,6 +77,7 @@ PlayerMovement.prototype.initialize = function () {
   this._tempMoveDir = new pc.Vec3();
   this._tempBasisForward = new pc.Vec3();
   this._tempBasisRight = new pc.Vec3();
+  this._tempQuat = new pc.Quat();
   var initialEuler = this.visualRoot.getEulerAngles
     ? this.visualRoot.getEulerAngles()
     : null;
@@ -153,12 +161,18 @@ PlayerMovement.prototype.initialize = function () {
 
 PlayerMovement.prototype._cameraBasisXZ = function () {
   var yaw =
-    this.cameraScript && typeof this.cameraScript.yaw === "number"
+    this.cameraScript && Number.isFinite(this.cameraScript.yaw)
       ? this.cameraScript.yaw
       : 0;
   var y = yaw * pc.math.DEG_TO_RAD;
-  this._tempBasisForward.set(-Math.sin(y), 0, -Math.cos(y)).normalize();
-  this._tempBasisRight.set(Math.cos(y), 0, -Math.sin(y)).normalize();
+  this._tempBasisForward
+    .set(-Math.sin(y), 0, -Math.cos(y))
+    .normalize();
+  sanitizeVec3(this._tempBasisForward);
+  this._tempBasisRight
+    .set(Math.cos(y), 0, -Math.sin(y))
+    .normalize();
+  sanitizeVec3(this._tempBasisRight);
   return { forward: this._tempBasisForward, right: this._tempBasisRight };
 };
 
@@ -205,17 +219,19 @@ PlayerMovement.prototype.update = function (dt) {
     this._tempMoveDir.add(basis.forward.clone().scale(this.inZ));
     this._tempMoveDir.add(basis.right.clone().scale(this.inX));
     this._tempMoveDir.normalize();
+    sanitizeVec3(this._tempMoveDir);
   }
 
   // physics vel
   var rb = this.entity.rigidbody;
-  var currentVelocity = rb.linearVelocity.clone();
+  var currentVelocity = sanitizeVec3(rb.linearVelocity.clone());
   var targetVelocity = this._tmpTargetVelocity;
   targetVelocity.set(
     this._tempMoveDir.x * this.maxSpeed,
     currentVelocity.y,
     this._tempMoveDir.z * this.maxSpeed
   );
+  sanitizeVec3(targetVelocity);
 
   var blend = clamp01(this.acceleration * dt);
   var next = new pc.Vec3(
@@ -223,8 +239,10 @@ PlayerMovement.prototype.update = function (dt) {
     currentVelocity.y + (targetVelocity.y - currentVelocity.y) * blend,
     currentVelocity.z + (targetVelocity.z - currentVelocity.z) * blend
   );
+  sanitizeVec3(next);
 
   var speedXZ = Math.hypot(next.x, next.z);
+  if (!Number.isFinite(speedXZ)) speedXZ = 0;
   if (speedXZ < this.stopSpeed && this._inputMag === 0) {
     next.x = 0;
     next.z = 0;
@@ -241,18 +259,24 @@ PlayerMovement.prototype.update = function (dt) {
 
   if (next.x * next.x + next.z * next.z > 1e-6) {
     var yawDeg = yawFromDirXZ(next.x, next.z) + this.modelForwardOffsetY;
-    var q = new pc.Quat().setFromEulerAngles(0, yawDeg, 0);
-    var tgt = this.baseLocalRot.clone().mul(q);
-    var cur = this.visualRoot.getLocalRotation().clone();
-    var s = clamp01(this.turnSpeed * dt);
-    this.visualRoot.setLocalRotation(cur.slerp(tgt, s));
-    this._currentYaw = yawDeg;
+    if (Number.isFinite(yawDeg)) {
+      var q = new pc.Quat().setFromEulerAngles(0, yawDeg, 0);
+      var tgt = this.baseLocalRot.clone().mul(q);
+      var cur = this.visualRoot.getLocalRotation().clone();
+      var s = clamp01(this.turnSpeed * dt);
+      var smoothed = this._tempQuat.slerp(cur, tgt, s);
+      if (Number.isFinite(smoothed.x) && Number.isFinite(smoothed.y) && Number.isFinite(smoothed.z) && Number.isFinite(smoothed.w)) {
+        this.visualRoot.setLocalRotation(smoothed);
+        this._currentYaw = yawDeg;
+      }
+    }
   }
 
   var speedNormalized = Math.min(
     1,
     speedXZ / Math.max(0.0001, this.maxSpeed)
   );
+  if (!Number.isFinite(speedNormalized)) speedNormalized = 0;
   if (this.animEnt && this.animEnt.anim) {
     this.animEnt.anim.setFloat("speed", speedNormalized);
   }
@@ -263,7 +287,7 @@ PlayerMovement.prototype.update = function (dt) {
     x: pos.x,
     y: pos.y,
     z: pos.z,
-    rotation: this._currentYaw,
+    rotation: Number.isFinite(this._currentYaw) ? this._currentYaw : 0,
     speed: speedNormalized,
   });
 };
