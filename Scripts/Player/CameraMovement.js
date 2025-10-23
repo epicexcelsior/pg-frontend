@@ -48,6 +48,12 @@ CameraMovement.prototype.initialize = function(){
     this.chatFocused = false; // Track if chat input is focused
     this.uiInputLockedReasons = new Set();
 
+    // Pre-allocate temps for GC optimization (reused every frame, no per-frame allocs)
+    this._tmpPos = new pc.Vec3();
+    this._curPos = new pc.Vec3();
+    this._desiredPos = new pc.Vec3();
+    this._rotQ = new pc.Quat();
+
     // Mouse handlers (desktop only)
     this.rmb = false;
     if (!this.isMobile){
@@ -97,15 +103,12 @@ CameraMovement.prototype.postUpdate = function(dt){
     if (!this._target) return;
 
     // (A) Smooth follow
-    const desired = this._target.getPosition().clone();
-    desired.y += this.height;
-    const cur = this.entity.getPosition().clone();
+    this._desiredPos.copy(this._target.getPosition());
+    this._desiredPos.y += this.height;
+    this._curPos.copy(this.entity.getPosition());
     const a = pc.math.clamp(this.followSpeed * dt, 0, 1);
-    this.entity.setPosition(new pc.Vec3(
-      cur.x + (desired.x - cur.x) * a,
-      cur.y + (desired.y - cur.y) * a,
-      cur.z + (desired.z - cur.z) * a
-    ));
+    this._tmpPos.lerp(this._curPos, this._desiredPos, a);
+    this.entity.setPosition(this._tmpPos);
 
     // (B) Keep camera generally behind player
     const pm = this._target.script && this._target.script.playerMovement ? this._target.script.playerMovement : null;
@@ -121,8 +124,8 @@ CameraMovement.prototype.postUpdate = function(dt){
 
     // (C) Strafe orbit — continuous gentle yaw from horizontal input (no RMB)
     if (pm && !this.rmb) {
-        const ix = pm.inX || 0;
-        const iz = pm.inZ || 0;
+        const ix = Number.isFinite(pm.inX) ? pm.inX : 0;
+        const iz = Number.isFinite(pm.inZ) ? pm.inZ : 0;
         const absX = Math.abs(ix);
         if (absX > this.strafeDeadzone) {
             // reduce when also moving forward/back to avoid over-rotation
@@ -142,8 +145,10 @@ CameraMovement.prototype.postUpdate = function(dt){
         if (cameraStick) {
             // Use joystick input for camera rotation
             const sensitivity = 2.0; // Adjust sensitivity as needed
-            this.yaw -= cameraStick.x * sensitivity * dt * 60; // Convert to per-second
-            this.pitch -= cameraStick.y * sensitivity * dt * 60;
+            const sx = Number.isFinite(cameraStick.x) ? cameraStick.x : 0;
+            const sy = Number.isFinite(cameraStick.y) ? cameraStick.y : 0;
+            this.yaw -= sx * sensitivity * dt * 60; // Convert to per-second
+            this.pitch -= sy * sensitivity * dt * 60;
         }
     }
 
@@ -155,11 +160,20 @@ CameraMovement.prototype.postUpdate = function(dt){
     }
 
     // Apply rotation (FIX: correct Quat ctor)
+    if (!Number.isFinite(this.pitch)) this.pitch = 15;
+    if (!Number.isFinite(this.yaw)) this.yaw = 0;
     this.pitch = pc.math.clamp(this.pitch, this.pitchMin, this.pitchMax);
-    this.entity.setRotation(new pc.Quat().setFromEulerAngles(this.pitch, this.yaw, 0));
+    this._rotQ.setFromEulerAngles(this.pitch, this.yaw, 0);
+    this.entity.setRotation(this._rotQ);
 };
 
 CameraMovement.prototype._stepYawTowards = function(targetDeg, strengthPerSec, dt){
+    if (!Number.isFinite(targetDeg)) {
+        return;
+    }
+    if (!Number.isFinite(this.yaw)) {
+        this.yaw = 0;
+    }
     let delta = ((targetDeg - this.yaw + 540) % 360) - 180;
     const maxStep = this.autoYawMaxPerSec * dt;
     delta = pc.math.clamp(delta, -maxStep, maxStep);
