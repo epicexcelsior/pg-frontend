@@ -125,6 +125,10 @@
   transition: width var(--animation-duration-standard, 0.28s) ease;
 }
 
+#avatar-customizer .hidden {
+  display: none !important;
+}
+
 #avatar-customizer .slot-btn {
   width: 38px;
   height: 38px;
@@ -230,6 +234,185 @@
 #avatar-customizer .footer-actions .btn:focus-visible {
   outline: 2px solid rgba(255, 255, 255, 0.4);
   outline-offset: 2px;
+}
+
+#avatar-customizer.rpm-mode {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  width: 100vw;
+  height: 100vh;
+  transform: none;
+  padding: 0;
+  border-radius: 0;
+  border: none;
+  background: transparent;
+  box-shadow: none;
+  backdrop-filter: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  max-height: none;
+  max-width: none;
+  z-index: 6000;
+}
+
+#avatar-customizer.rpm-mode .avatar-header,
+#avatar-customizer.rpm-mode .avatar-slots,
+#avatar-customizer.rpm-mode .avatar-footer {
+  display: none;
+}
+
+#avatar-customizer .rpm-overlay-scrim {
+  position: absolute;
+  inset: 0;
+  background: rgba(11, 14, 20, 0.75);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--animation-duration-standard, 0.28s) ease;
+  display: none;
+}
+
+#avatar-customizer.rpm-mode .rpm-overlay-scrim {
+  display: block;
+  opacity: 1;
+  pointer-events: auto;
+}
+
+#avatar-customizer .rpm-overlay-shell {
+  position: relative;
+  display: none;
+  width: 100vw;
+  height: 100vh;
+  background: var(--avatar-overlay-surface, rgba(17, 22, 34, 0.98));
+  border: 1px solid var(--avatar-overlay-border, rgba(255, 255, 255, 0.12));
+  box-shadow: 0 32px 64px rgba(5, 8, 15, 0.65);
+  border-radius: 0;
+  overflow: hidden;
+  transform: scale(0.98);
+  opacity: 0;
+  transition:
+    transform var(--animation-duration-standard, 0.24s) ease,
+    opacity var(--animation-duration-standard, 0.24s) ease;
+}
+
+#avatar-customizer.rpm-mode .rpm-overlay-shell {
+  display: flex;
+  flex-direction: column;
+  transform: scale(1);
+  opacity: 1;
+}
+
+#avatar-customizer.rpm-mode.inset90 .rpm-overlay-shell {
+  width: 90vw;
+  height: 90vh;
+  max-width: 1080px;
+  max-height: 96vh;
+  border-radius: 24px;
+}
+
+#avatar-customizer.rpm-mode:not(.inset90) .rpm-overlay-shell {
+  border-radius: 0;
+}
+
+#avatar-customizer .rpm-overlay-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 18px 22px;
+  background: rgba(0, 0, 0, 0.24);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+#avatar-customizer .rpm-overlay-title {
+  font-size: 16px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-muted-color, rgba(255, 255, 255, 0.7));
+}
+
+#avatar-customizer .rpm-overlay-close {
+  appearance: none;
+  border: 1px solid rgba(255, 255, 255, 0.28);
+  background: rgba(12, 16, 24, 0.6);
+  color: #ffffff;
+  font-size: 13px;
+  letter-spacing: 0.08em;
+  padding: 10px 16px;
+  border-radius: 14px;
+  cursor: pointer;
+  transition:
+    background var(--animation-duration-quick, 0.16s) ease,
+    transform var(--animation-duration-quick, 0.16s) ease;
+}
+
+#avatar-customizer .rpm-overlay-close:hover {
+  background: rgba(255, 255, 255, 0.18);
+  transform: translateY(-1px);
+}
+
+#avatar-customizer .rpm-overlay-close:focus-visible {
+  outline: 2px solid rgba(255, 255, 255, 0.48);
+  outline-offset: 2px;
+}
+
+#avatar-customizer .rpm-overlay-content {
+  position: relative;
+  flex: 1;
+  background: rgba(8, 11, 18, 0.92);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+
+#avatar-customizer .rpm-overlay-loading {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  padding: 14px 22px;
+  border-radius: 12px;
+  background: rgba(0, 0, 0, 0.68);
+  color: rgba(255, 255, 255, 0.82);
+  font-size: 14px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  z-index: 2;
+  box-shadow: 0 18px 38px rgba(0, 0, 0, 0.35);
+}
+
+#avatar-customizer .rpm-overlay-error {
+  position: absolute;
+  bottom: 24px;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 12px 16px;
+  border-radius: 10px;
+  background: rgba(180, 46, 46, 0.88);
+  color: #ffffff;
+  font-size: 13px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  z-index: 3;
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.35);
+}
+
+#avatar-customizer .rpm-frame-host {
+  position: relative;
+  width: 100%;
+  height: 100%;
+}
+
+#avatar-customizer .rpm-creator-frame {
+  width: 100%;
+  height: 100%;
+  border: none;
+  border-radius: inherit;
+  background: transparent;
 }
 
 @keyframes avatar-slot-spin {

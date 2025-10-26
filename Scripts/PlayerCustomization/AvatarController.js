@@ -65,6 +65,7 @@
     this.savedRecipe = null;
     this.lastApplyTs = 0;
     this.slotLocks = {};
+    this.currentDescriptor = null;
 
     this._wireUi();
   }
@@ -293,6 +294,36 @@ AvatarController.prototype.destroy = function () {
         delete this.slotLocks[slot];
       }
     }
+  };
+
+  AvatarController.prototype.applyAvatarDescriptor = async function (descriptor, options) {
+    if (!descriptor || !this.loader || typeof this.loader.applyAvatar !== 'function') {
+      return Promise.reject(new Error('AvatarController: RPM avatar loading is not available.'));
+    }
+    var self = this;
+    var mergedOptions = Object.assign({ castShadows: true, quiet: false, initialTier: 'near' }, options || {});
+    if (!descriptor.version) descriptor.version = 1;
+    if (descriptor.rpm === undefined) descriptor.rpm = true;
+    var result = await this.loader.applyAvatar(descriptor, mergedOptions);
+    this.currentDescriptor = {
+      avatarId: descriptor.avatarId,
+      url: descriptor.url || result.url || null,
+      updatedAt: Date.now(),
+      version: descriptor.version || 1,
+      rpm: descriptor.rpm !== false
+    };
+    if (this.options && typeof this.options.onAvatarApplied === 'function') {
+      try {
+        this.options.onAvatarApplied(this.currentDescriptor);
+      } catch (err) {
+        console.warn('AvatarController: onAvatarApplied callback failed.', err);
+      }
+    }
+    return this.currentDescriptor;
+  };
+
+  AvatarController.prototype.getCurrentDescriptor = function () {
+    return this.currentDescriptor;
   };
 
   scope.PlayerCustomization = scope.PlayerCustomization || {};

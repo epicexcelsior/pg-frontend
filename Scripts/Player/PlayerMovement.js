@@ -34,6 +34,21 @@ PlayerMovement.attributes.add("forwardMinHold", {
   default: 0.3,
   title: "Forward Hold (s)",
 });
+PlayerMovement.attributes.add("jumpImpulse", {
+  type: "number",
+  default: 4.2,
+  title: "Jump Impulse",
+});
+PlayerMovement.attributes.add("jumpCooldown", {
+  type: "number",
+  default: 0.75,
+  title: "Jump Cooldown (s)",
+});
+PlayerMovement.attributes.add("groundRayLength", {
+  type: "number",
+  default: 1.1,
+  title: "Ground Ray Length",
+});
 
 // mobile ids
 PlayerMovement.attributes.add("joystickId", {
@@ -115,10 +130,20 @@ PlayerMovement.prototype.initialize = function () {
   this._speedN = 0;
   this._inputMag = 0;
   this._lockUntil = 0; // while locked, we won't return to Idle
+  this._jumpCooldownTimer = 0;
+  this._isGrounded = false;
+  this._groundRayStart = new pc.Vec3();
+  this._groundRayEnd = new pc.Vec3();
+  this._tempImpulse = new pc.Vec3();
+  this._tempVelocity = new pc.Vec3();
 
   // input
   this.inX = 0;
   this.inZ = 0;
+
+  if (this.entity && typeof this.entity.on === 'function') {
+    this.entity.on('avatar:model:updated', this.onAvatarModelUpdated, this);
+  }
 
   // hide mobile UI on desktop
   if (!this.isMobile) {
@@ -157,6 +182,8 @@ PlayerMovement.prototype.initialize = function () {
   this.app.on('ui:chat:blur', this.onChatBlur, this);
   this.app.on('ui:input:focus', this.onUiInputFocus, this);
   this.app.on('ui:input:blur', this.onUiInputBlur, this);
+
+  this._updateGrounded();
 };
 
 PlayerMovement.prototype._cameraBasisXZ = function () {
@@ -204,6 +231,11 @@ PlayerMovement.prototype._gatherInput = function () {
 PlayerMovement.prototype.update = function (dt) {
   if (!this.entity.rigidbody) return;
 
+  this._updateGrounded();
+  if (this._jumpCooldownTimer > 0) {
+    this._jumpCooldownTimer = Math.max(0, this._jumpCooldownTimer - dt);
+  }
+
   // keep component & layer alive
   if (this.animEnt && this.animEnt.anim && !this.animEnt.anim.playing)
     this.animEnt.anim.playing = true;
@@ -212,6 +244,10 @@ PlayerMovement.prototype.update = function (dt) {
   // input
   this._gatherInput();
   this._inputMag = Math.hypot(this.inX, this.inZ);
+
+  if (this._shouldTriggerJump()) {
+    this._executeJump();
+  }
 
   var basis = this._cameraBasisXZ();
   this._tempMoveDir.set(0, 0, 0);
@@ -326,8 +362,95 @@ PlayerMovement.prototype._releaseInputLock = function(reason) {
   }
 };
 
+PlayerMovement.prototype._updateGrounded = function () {
+  if (!this.entity || !this.app || !this.app.systems || !this.app.systems.rigidbody) {
+    return;
+  }
+  var position = this.entity.getPosition ? this.entity.getPosition() : null;
+  if (!position) {
+    return;
+  }
+  this._groundRayStart.copy(position);
+  this._groundRayEnd.copy(position);
+  this._groundRayEnd.y -= this.groundRayLength || 1.1;
+  var hit = this.app.systems.rigidbody.raycastFirst(this._groundRayStart, this._groundRayEnd);
+  if (hit && hit.normal && typeof hit.normal.y === 'number') {
+    this._isGrounded = hit.normal.y >= 0.35;
+  } else {
+    this._isGrounded = !!hit;
+  }
+};
+
+PlayerMovement.prototype._shouldTriggerJump = function () {
+  var kb = this.app.keyboard;
+  if (!kb) {
+    return false;
+  }
+  if (!kb.wasPressed(pc.KEY_SPACE)) {
+    return false;
+  }
+  if (!this._isGrounded) {
+    return false;
+  }
+  return this._jumpCooldownTimer <= 0;
+};
+
+PlayerMovement.prototype._executeJump = function () {
+  if (!this.entity || !this.entity.rigidbody) {
+    return;
+  }
+  var rb = this.entity.rigidbody;
+  this._tempVelocity.copy(rb.linearVelocity);
+  if (this._tempVelocity.y < 0) {
+    this._tempVelocity.y = 0;
+  }
+  rb.linearVelocity = this._tempVelocity;
+  this._tempImpulse.set(0, this.jumpImpulse || 4.2, 0);
+  rb.applyImpulse(this._tempImpulse);
+  this._jumpCooldownTimer = Math.max(0.05, this.jumpCooldown || 0.75);
+  this._isGrounded = false;
+  this.app.fire('animation:play:local', { name: 'jump', source: 'movement' });
+};
+
 PlayerMovement.prototype._isInputLocked = function() {
   return this.activeInputLocks.size > 0;
+};
+
+PlayerMovement.prototype.onAvatarModelUpdated = function (evt) {
+  var model = evt && evt.model ? evt.model : null;
+  if (!model) return;
+  this.visualRoot = model;
+  if (model.getLocalRotation) {
+    this.baseLocalRot = model.getLocalRotation().clone();
+  }
+  if (model.getEulerAngles) {
+    var euler = model.getEulerAngles();
+    this._currentYaw = euler ? euler.y : this._currentYaw;
+  }
+  var self = this;
+  var animTarget = evt && evt.animTarget ? evt.animTarget : (function dfs(e) {
+    if (e && e.anim) return e;
+    if (!e) return null;
+    for (var i = 0; i < e.children.length; i++) {
+      var found = dfs(e.children[i]);
+      if (found) return found;
+    }
+    return null;
+  })(model);
+  this.animEnt = animTarget || null;
+  this.entity.animTarget = animTarget || null;
+  if (this.animEnt && this.animEnt.anim) {
+    this.animEnt.anim.playing = true;
+    this.animEnt.anim.speed = 1;
+    if (this.animEnt.anim.baseLayer) {
+      this.layer = this.animEnt.anim.baseLayer;
+    } else if (this.animEnt.anim.layers && this.animEnt.anim.layers.length) {
+      this.layer = this.animEnt.anim.layers[0];
+    }
+    if (this.layer && this.layer.transition) {
+      this.layer.transition('Idle', 0);
+    }
+  }
 };
 
 PlayerMovement.prototype.destroy = function() {
@@ -336,4 +459,7 @@ PlayerMovement.prototype.destroy = function() {
   this.app.off('ui:chat:blur', this.onChatBlur, this);
   this.app.off('ui:input:focus', this.onUiInputFocus, this);
   this.app.off('ui:input:blur', this.onUiInputBlur, this);
+  if (this.entity && typeof this.entity.off === 'function') {
+    this.entity.off('avatar:model:updated', this.onAvatarModelUpdated, this);
+  }
 };

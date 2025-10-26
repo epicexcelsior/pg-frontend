@@ -31,6 +31,10 @@ AvatarCustomization.attributes.add('autoOpenOnSpawn', {
         feet: "Casual_Feet"
     };
 
+    function isAvatarDescriptor(value) {
+        return value && typeof value === 'object' && typeof value.avatarId === 'string';
+    }
+
     AvatarCustomization.prototype.initialize = function () {
         var namespace = getNamespace();
         if (typeof namespace.ensureAvatarAnchors !== 'function' ||
@@ -57,12 +61,17 @@ AvatarCustomization.attributes.add('autoOpenOnSpawn', {
         this.localSessionId = null;
         this.localController = null;
         this._destroyed = false;
+        this._lodInterval = 360;
+        this._lastLodUpdate = 0;
+        this._updateLodBound = this._updateLod.bind(this);
 
         this.app.on('avatar:uiReady', this.onUiReady, this);
         this.app.on('player:spawned', this.onPlayerSpawned, this);
         this.app.on('player:removed', this.onPlayerRemoved, this);
         this.app.on('avatar:apply', this.onLocalApply, this);
+        this.app.on('avatar:rpm:exported', this.onRpmAvatarExported, this);
         this.app.on('colyseus:disconnected', this.onDisconnected, this);
+        this.app.on('postUpdate', this._updateLodBound, this);
 
         if (typeof namespace.AvatarNetSync === 'function') {
             this.netSync = new namespace.AvatarNetSync(this.app, {
@@ -173,6 +182,9 @@ AvatarCustomization.attributes.add('autoOpenOnSpawn', {
                 anchorOptions: {},
                 onApply: function (recipe) {
                     self._persistRecipe(sessionId, recipe);
+                },
+                onAvatarApplied: function (descriptor) {
+                    self._persistRecipe(sessionId, descriptor);
                 }
             });
             self.controllers.set(sessionId, controller);
@@ -180,8 +192,23 @@ AvatarCustomization.attributes.add('autoOpenOnSpawn', {
 
             var saved = self.persistence ? self.persistence.load(sessionId) : null;
             var initial = serverRecipe || saved || catalog.defaults || self.defaults;
-            controller.init(initial).then(function () {
-                self._persistRecipe(sessionId, controller.getRecipe());
+
+            var initializePromise;
+            if (isAvatarDescriptor(initial)) {
+                if (!initial.version) initial.version = 1;
+                if (initial.rpm === undefined) initial.rpm = true;
+                initializePromise = controller.applyAvatarDescriptor(initial, {
+                    castShadows: true,
+                    quiet: true,
+                    initialTier: 'near'
+                });
+            } else {
+                initializePromise = controller.init(initial).then(function () {
+                    self._persistRecipe(sessionId, controller.getRecipe());
+                });
+            }
+
+            initializePromise.then(function () {
                 var movement = entity.script && entity.script.playerMovement;
                 if (movement && typeof movement.modelForwardOffsetY === "number") {
                     var offset = movement.modelForwardOffsetY % 360;
@@ -189,6 +216,9 @@ AvatarCustomization.attributes.add('autoOpenOnSpawn', {
                     if (Math.abs(offset) < 1 || Math.abs(offset - 360) < 1) {
                         movement.modelForwardOffsetY = 180;
                     }
+                }
+                if (controller.loader && typeof controller.loader.updateLodIfNeeded === 'function') {
+                    controller.loader.updateLodIfNeeded(0, { force: true, isLocal: true });
                 }
                 if (self.autoOpenOnSpawn && bridge && typeof bridge.open === 'function') {
                     bridge.open();
@@ -211,8 +241,21 @@ AvatarCustomization.attributes.add('autoOpenOnSpawn', {
             self.remoteLoaders.set(sessionId, loader);
             var recipe = self.pendingRecipes.get(sessionId) || (catalog.defaults || self.defaults);
             self.pendingRecipes.delete(sessionId);
-            loader.applyRecipe(recipe).catch(function (err) {
-                console.error('AvatarCustomization: Failed to equip default recipe for remote player', sessionId, err);
+            var applyPromise;
+            if (isAvatarDescriptor(recipe)) {
+                if (!recipe.version) recipe.version = 1;
+                if (recipe.rpm === undefined) recipe.rpm = true;
+                applyPromise = loader.applyAvatar(recipe, {
+                    castShadows: false,
+                    receiveShadows: true,
+                    quiet: true,
+                    initialTier: 'mid'
+                });
+            } else {
+                applyPromise = loader.applyRecipe(recipe);
+            }
+            applyPromise.catch(function (err) {
+                console.error('AvatarCustomization: Failed to equip avatar for remote player', sessionId, err);
             });
         });
     };
@@ -245,14 +288,60 @@ AvatarCustomization.attributes.add('autoOpenOnSpawn', {
         if (!loader) {
             return Promise.resolve();
         }
-        return loader.applyRecipe(recipe).catch(function (err) {
-            console.error('AvatarCustomization: Failed to apply remote recipe.', err);
-        });
+        if (isAvatarDescriptor(recipe) && typeof loader.applyAvatar === 'function') {
+            if (!recipe.version) recipe.version = 1;
+            if (recipe.rpm === undefined) recipe.rpm = true;
+            return loader.applyAvatar(recipe, {
+                castShadows: false,
+                receiveShadows: true,
+                quiet: true,
+                initialTier: 'mid'
+            }).catch(function (err) {
+                console.error('AvatarCustomization: Failed to apply remote RPM avatar.', err);
+            });
+        }
+        if (typeof loader.applyRecipe === 'function') {
+            return loader.applyRecipe(recipe).catch(function (err) {
+                console.error('AvatarCustomization: Failed to apply remote recipe.', err);
+            });
+        }
+        return Promise.resolve();
     };
 
     AvatarCustomization.prototype.onLocalApply = function (recipe) {
         if (!recipe || !this.localSessionId) return;
         this._persistRecipe(this.localSessionId, recipe);
+    };
+
+    AvatarCustomization.prototype.onRpmAvatarExported = function (payload) {
+        if (!payload || !payload.avatarId) {
+            console.warn('AvatarCustomization: RPM export payload missing avatarId.', payload);
+            return;
+        }
+        if (!this.localSessionId || !this.localController) {
+            console.warn('AvatarCustomization: Local controller not ready. Deferring RPM avatar apply.');
+            this.pendingRecipes.set(this.localSessionId || 'local', payload);
+            return;
+        }
+        var descriptor = {
+            avatarId: payload.avatarId,
+            url: payload.url || null,
+            userId: payload.userId || null,
+            updatedAt: Date.now(),
+            version: 1,
+            rpm: true
+        };
+        var self = this;
+        this.localController.applyAvatarDescriptor(descriptor, {
+            castShadows: true,
+            quiet: false,
+            initialTier: 'near'
+        }).then(function () {
+            self._persistRecipe(self.localSessionId, descriptor);
+            self.app.fire('avatar:apply', descriptor);
+        }).catch(function (err) {
+            console.error('AvatarCustomization: Failed to apply RPM avatar for local player.', err);
+        });
     };
 
     AvatarCustomization.prototype._persistRecipe = function (sessionId, recipe) {
@@ -270,12 +359,44 @@ AvatarCustomization.attributes.add('autoOpenOnSpawn', {
         this.pendingRecipes.clear();
     };
 
+    AvatarCustomization.prototype._updateLod = function () {
+        if (this._destroyed) {
+            return;
+        }
+        var now = Date.now();
+        if (now - this._lastLodUpdate < this._lodInterval) {
+            return;
+        }
+        this._lastLodUpdate = now;
+
+        var camera = this.app && this.app.scene ? this.app.scene.activeCamera : null;
+        var cameraEntity = camera && camera.entity ? camera.entity : null;
+        if (!cameraEntity || !cameraEntity.getPosition) {
+            return;
+        }
+        var cameraPos = cameraEntity.getPosition();
+        this.remoteLoaders.forEach(function (loader) {
+            if (!loader || typeof loader.updateLodIfNeeded !== 'function') {
+                return;
+            }
+            var entity = loader.player;
+            if (!entity || !entity.getPosition) {
+                return;
+            }
+            var pos = entity.getPosition();
+            var distance = cameraPos.distance(pos);
+            loader.updateLodIfNeeded(distance, { isLocal: false });
+        });
+    };
+
     AvatarCustomization.prototype._cleanupListeners = function () {
         this.app.off('avatar:uiReady', this.onUiReady, this);
         this.app.off('player:spawned', this.onPlayerSpawned, this);
         this.app.off('player:removed', this.onPlayerRemoved, this);
         this.app.off('avatar:apply', this.onLocalApply, this);
+        this.app.off('avatar:rpm:exported', this.onRpmAvatarExported, this);
         this.app.off('colyseus:disconnected', this.onDisconnected, this);
+        this.app.off('postUpdate', this._updateLodBound, this);
     };
 
     AvatarCustomization.prototype.swap = function (old) {
@@ -293,6 +414,12 @@ AvatarCustomization.attributes.add('autoOpenOnSpawn', {
         this.defaults = old.defaults;
         this.slots = old.slots;
         this.netSync = old.netSync;
+        this._lodInterval = old._lodInterval;
+        this._lastLodUpdate = old._lastLodUpdate;
+        this._updateLodBound = old._updateLodBound || this._updateLodBound;
+        if (this.app && this._updateLodBound) {
+            this.app.on('postUpdate', this._updateLodBound, this);
+        }
     };
 
     AvatarCustomization.prototype.destroy = function () {
