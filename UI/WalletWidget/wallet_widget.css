@@ -77,7 +77,14 @@
     border-top-color: var(--surface-color);
 }
 
-.logout-btn {
+/* Button group for better alignment */
+.button-group {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.privy-userpill-btn, .logout-btn {
     background: rgba(255, 255, 255, 0.1);
     border: 1px solid rgba(255, 255, 255, 0.2);
     border-radius: 8px;
@@ -88,16 +95,34 @@
     align-items: center;
     justify-content: center;
     transition: all 0.2s ease;
+    min-width: 32px;
+    height: 32px;
 }
 
-.logout-btn:hover {
+.privy-userpill-btn:hover, .logout-btn:hover {
     background: rgba(255, 255, 255, 0.2);
     border-color: rgba(255, 255, 255, 0.4);
     transform: translateY(-1px);
 }
 
-.logout-btn:active {
+.privy-userpill-btn:active, .logout-btn:active {
     transform: translateY(0);
+}
+
+.privy-userpill-btn {
+    background: rgba(103, 111, 255, 0.15);
+    border: 1.5px solid rgba(103, 111, 255, 0.3);
+    color: rgb(103, 111, 255);
+}
+
+.privy-userpill-btn:hover {
+    background: rgba(103, 111, 255, 0.25);
+    border-color: rgba(103, 111, 255, 0.5);
+    box-shadow: 0 0 12px rgba(103, 111, 255, 0.3);
+}
+
+.privy-userpill-btn:active {
+    background: rgba(103, 111, 255, 0.3);
 }
 
 .twitter-section {
