@@ -110,19 +110,19 @@
 }
 
 .privy-userpill-btn {
-    background: rgba(103, 111, 255, 0.15);
-    border: 1.5px solid rgba(103, 111, 255, 0.3);
-    color: rgb(103, 111, 255);
+    background: rgba(120, 120, 120, 0.15);
+    border: 1.5px solid rgba(120, 120, 120, 0.3);
+    color: rgb(120, 120, 120);
 }
 
 .privy-userpill-btn:hover {
-    background: rgba(103, 111, 255, 0.25);
-    border-color: rgba(103, 111, 255, 0.5);
-    box-shadow: 0 0 12px rgba(103, 111, 255, 0.3);
+    background: rgba(120, 120, 120, 0.25);
+    border-color: rgba(120, 120, 120, 0.5);
+    box-shadow: 0 0 12px rgba(120, 120, 120, 0.25);
 }
 
 .privy-userpill-btn:active {
-    background: rgba(103, 111, 255, 0.3);
+    background: rgba(120, 120, 120, 0.3);
 }
 
 .twitter-section {
