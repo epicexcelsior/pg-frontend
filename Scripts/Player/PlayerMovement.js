@@ -97,6 +97,7 @@ PlayerMovement.prototype.initialize = function () {
     ? this.visualRoot.getEulerAngles()
     : null;
   this._currentYaw = initialEuler ? initialEuler.y : 0;
+  this.currentSpeed = 0;
 
   if (this.entity.rigidbody) this.entity.rigidbody.angularFactor = pc.Vec3.ZERO;
 
@@ -284,6 +285,7 @@ PlayerMovement.prototype.update = function (dt) {
     next.z = 0;
     speedXZ = 0;
   }
+  this.currentSpeed = speedXZ;
   rb.linearVelocity = next;
 
   if (speedXZ > 1e-4) {
@@ -313,9 +315,6 @@ PlayerMovement.prototype.update = function (dt) {
     speedXZ / Math.max(0.0001, this.maxSpeed)
   );
   if (!Number.isFinite(speedNormalized)) speedNormalized = 0;
-  if (this.animEnt && this.animEnt.anim) {
-    this.animEnt.anim.setFloat("speed", speedNormalized);
-  }
 
   var pos = this.entity.getPosition();
 
@@ -409,7 +408,11 @@ PlayerMovement.prototype._executeJump = function () {
   rb.applyImpulse(this._tempImpulse);
   this._jumpCooldownTimer = Math.max(0.05, this.jumpCooldown || 0.75);
   this._isGrounded = false;
-  this.app.fire('animation:play:local', { name: 'jump', source: 'movement' });
+
+  // Trigger jump animation via PlayerAnimation script
+  if (this.entity.script && this.entity.script.playerAnimation) {
+    this.entity.script.playerAnimation.requestEmote('JUMP');
+  }
 };
 
 PlayerMovement.prototype._isInputLocked = function() {
