@@ -367,7 +367,11 @@ WaveButton.prototype._handleActionClick = function (action, event) {
         return;
     }
     if (action.payload && action.payload.name) {
-        this.app.fire('animation:play:local', { name: action.payload.name, source: 'wave-menu' });
+        var playerEntity = this.app.localPlayer;
+        if (playerEntity && playerEntity.script && playerEntity.script.playerAnimation) {
+            var emoteId = this._mapPayloadToEmoteId(action.payload.name);
+            playerEntity.script.playerAnimation.requestEmote(emoteId);
+        }
     }
     this._closeMenu();
 };
@@ -408,6 +412,11 @@ WaveButton.prototype._handleEscape = function (event) {
 
 WaveButton.prototype._shouldAnimate = function () {
     return this.animationConfig && this.animationConfig.enabled !== false;
+};
+
+WaveButton.prototype._mapPayloadToEmoteId = function (name) {
+    var map = { 'wave': 'WAVE', 'dance_a': 'DANCE_A', 'dance_b': 'DANCE_B', 'cheer': 'CHEER' };
+    return map[name] || name.toUpperCase();
 };
 
 WaveButton.prototype.setAnimationConfig = function (config) {

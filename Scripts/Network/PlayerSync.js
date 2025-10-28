@@ -29,6 +29,23 @@ function findVisualRoot(entity) {
     );
 }
 
+function resolveSpeedScale(entity) {
+    if (!entity || !entity.script || !entity.script.playerMovement) {
+        return 1;
+    }
+    var movement = entity.script.playerMovement;
+    var maxSpeed = typeof movement.maxSpeed === 'number' ? movement.maxSpeed : 1;
+    return maxSpeed > 0 ? maxSpeed : 1;
+}
+
+function convertNormalizedSpeed(entity, value) {
+    var normalized = Number(value);
+    if (!Number.isFinite(normalized)) {
+        return 0;
+    }
+    return normalized * resolveSpeedScale(entity);
+}
+
 function frameBlend(base, dt) {
     if (base <= 0) return 0;
     if (base >= 1) return 1;
@@ -66,8 +83,16 @@ PlayerSync.prototype.initialize = function () {
     this._loggedMissingNameplate = false;
     this._tempLerpPos = new pc.Vec3();
     this._tempQuat = new pc.Quat();
+    
+    // Expose PlayerSync to the app so MessageBroker can access it
+    this.app.playerSync = this;
+    
     this.app.on('colyseus:connected', this.onConnected, this);
     this.app.on('colyseus:disconnected', this.onDisconnected, this);
+};
+
+PlayerSync.prototype.getPlayerEntityById = function (sessionId) {
+    return this.playerEntities[sessionId] || null;
 };
 
 PlayerSync.prototype.onConnected = function (room) {
@@ -157,7 +182,7 @@ PlayerSync.prototype.spawnPlayer = function (playerState, sessionId) {
         playerEntity.syncTargetYaw = yawWithOffset;
         playerEntity.syncTargetYawRaw = rawYaw;
         playerEntity.syncCurrentYaw = yawWithOffset;
-        playerEntity.syncTargetSpeed = playerState.speed || 0;
+        playerEntity.syncTargetSpeed = convertNormalizedSpeed(playerEntity, playerState.speed || 0);
     }
 
     const initialYaw = (typeof playerState.rotation === 'number' ? playerState.rotation : 0) + this.remoteRotationOffset;
@@ -221,7 +246,7 @@ PlayerSync.prototype.updateRemotePlayerVisuals = function (entity, playerState) 
         entity.syncTargetYawRaw = playerState.rotation;
     }
     if (typeof playerState.speed === 'number') {
-        entity.syncTargetSpeed = playerState.speed;
+        entity.syncTargetSpeed = convertNormalizedSpeed(entity, playerState.speed);
     }
 };
 
@@ -262,23 +287,31 @@ PlayerSync.prototype.update = function (dt) {
 
         const rotBlend = frameBlend(this.rotationSlerpFactor, dt);
         entity.syncCurrentYaw = pc.math.lerp(entity.syncCurrentYaw, entity.syncTargetYaw, rotBlend);
+        
         const currentPos = entity.getPosition();
         const targetPos = entity.syncTargetPos;
         const posBlend = frameBlend(this.positionLerpFactor, dt);
         this._tempLerpPos.lerp(currentPos, targetPos, posBlend);
 
+        // Build quaternion from yaw for proper entity rotation
+        var entityRotQuat = new pc.Quat().setFromEulerAngles(0, entity.syncCurrentYaw, 0);
+        
         if (entity.rigidbody) {
-            entity.rigidbody.teleport(this._tempLerpPos, pc.Quat.IDENTITY);
+            entity.rigidbody.teleport(this._tempLerpPos, entityRotQuat);
         } else {
             entity.setPosition(this._tempLerpPos);
+            entity.setRotation(entityRotQuat);
         }
 
         applyRemoteYaw(entity, entity.syncCurrentYaw);
 
         if (typeof entity.syncTargetSpeed === 'number') {
-            const animTarget = entity.animTarget;
-            if (animTarget && animTarget.anim) {
-                animTarget.anim.setFloat('speed', entity.syncTargetSpeed);
+            // Get anim from PlayerAnimation script if available (handles avatar recipe changes)
+            const playerAnimScript = entity.script?.playerAnimation;
+            const anim = playerAnimScript?.avatarAnim || (entity.animTarget?.anim);
+            
+            if (anim) {
+                anim.setFloat('speed', entity.syncTargetSpeed);
             }
         }
     }
