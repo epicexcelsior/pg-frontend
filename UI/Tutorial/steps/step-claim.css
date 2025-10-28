@@ -1,0 +1,225 @@
+/* Tutorial Step - Claim Booth */
+:root {
+    --tutorial-step-duration: 6s;
+    --tutorial-step-ease: ease-in-out;
+}
+
+.tutorial-step-card {
+    position: fixed;
+    background: rgba(17, 17, 17, 0.92);
+    backdrop-filter: blur(8px);
+    border-radius: 12px;
+    padding: 16px;
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    z-index: 5000;
+    box-shadow: 0 12px 28px rgba(0, 0, 0, 0.3);
+    will-change: transform, opacity;
+    contain: layout style paint;
+    display: none;
+}
+
+.tutorial-step-card.hidden {
+    display: none !important;
+}
+
+.tutorial-step-claim {
+    bottom: 120px;
+    left: 20px;
+    width: 320px;
+    max-width: calc(100vw - 40px);
+    border: 2px solid rgba(29, 242, 164, 0.4);
+    animation: slideInLeft 0.3s ease-out forwards;
+}
+
+@keyframes slideInLeft {
+    from {
+        transform: translateX(-100%);
+        opacity: 0;
+    }
+    to {
+        transform: translateX(0);
+        opacity: 1;
+    }
+}
+
+@keyframes slideOutLeft {
+    from {
+        transform: translateX(0);
+        opacity: 1;
+    }
+    to {
+        transform: translateX(-100%);
+        opacity: 0;
+    }
+}
+
+@keyframes borderGlow {
+    0%, 100% {
+        box-shadow: inset 0 0 0 2px rgba(29, 242, 164, 0.3), 0 12px 28px rgba(0, 0, 0, 0.3);
+    }
+    50% {
+        box-shadow: inset 0 0 0 2px rgba(29, 242, 164, 0.6), 0 12px 28px rgba(29, 242, 164, 0.15);
+    }
+}
+
+.tutorial-step-card.idle {
+    animation: borderGlow 6s ease-in-out infinite !important;
+}
+
+.tutorial-step-card.hidden {
+    animation: slideOutLeft 0.3s ease-in;
+    pointer-events: none;
+}
+
+.tutorial-step-close {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    width: 28px;
+    height: 28px;
+    background: rgba(255, 255, 255, 0.08);
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    border-radius: 50%;
+    cursor: pointer;
+    font-size: 18px;
+    color: rgba(255, 255, 255, 0.7);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s ease;
+    line-height: 1;
+}
+
+.tutorial-step-close::before {
+    content: '×';
+}
+
+.tutorial-step-close:hover {
+    background: rgba(29, 242, 164, 0.2);
+    border-color: rgba(29, 242, 164, 0.5);
+    color: rgba(29, 242, 164, 0.9);
+    transform: scale(1.08);
+}
+
+.tutorial-step-close:active {
+    transform: scale(0.95);
+}
+
+.tutorial-step-content {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    padding-right: 8px;
+}
+
+.tutorial-step-icon {
+    font-size: 32px;
+    line-height: 1;
+    text-align: center;
+    animation: iconBounce 2.2s ease-in-out infinite;
+    will-change: transform;
+}
+
+@keyframes iconBounce {
+    0%, 100% {
+        transform: translateY(0) scale(1);
+    }
+    50% {
+        transform: translateY(-3px) scale(1.05);
+    }
+}
+
+.tutorial-step-title {
+    margin: 0;
+    font-size: 16px;
+    font-weight: 600;
+    color: #ffffff;
+    line-height: 1.3;
+}
+
+.tutorial-step-text {
+    margin: 0;
+    font-size: 14px;
+    color: rgba(255, 255, 255, 0.85);
+    line-height: 1.5;
+}
+
+.key-hint {
+    background: rgba(29, 242, 164, 0.15);
+    border: 1px solid rgba(29, 242, 164, 0.4);
+    border-radius: 4px;
+    padding: 2px 6px;
+    font-family: 'Courier New', monospace;
+    font-weight: 600;
+    color: rgba(29, 242, 164, 0.9);
+    font-size: 12px;
+}
+
+/* Mobile performance optimization - reduce animations on smaller devices */
+@media (max-width: 1024px) {
+    .tutorial-step-card.idle {
+        animation: borderGlow 8s ease-in-out infinite !important;
+    }
+    
+    .tutorial-step-icon {
+        animation: iconBounce 2.8s ease-in-out infinite !important;
+    }
+}
+
+@media (max-width: 768px) {
+    .tutorial-step-card.idle {
+        animation: borderGlow 10s ease-in-out infinite !important;
+    }
+    
+    .tutorial-step-icon {
+        animation: none !important;
+    }
+}
+    .tutorial-step-claim {
+        bottom: 100px;
+        left: 12px;
+        right: 12px;
+        width: auto;
+        max-width: none;
+        padding: 14px;
+    }
+
+    .tutorial-step-icon {
+        font-size: 28px;
+    }
+
+    .tutorial-step-title {
+        font-size: 15px;
+    }
+
+    .tutorial-step-text {
+        font-size: 13px;
+    }
+
+    .tutorial-step-close {
+        width: 26px;
+        height: 26px;
+        font-size: 16px;
+    }
+}
+
+@media (max-width: 480px) {
+    .tutorial-step-claim {
+        bottom: 80px;
+        left: 8px;
+        right: 8px;
+        padding: 12px;
+    }
+
+    .tutorial-step-icon {
+        font-size: 24px;
+    }
+
+    .tutorial-step-title {
+        font-size: 14px;
+    }
+
+    .tutorial-step-text {
+        font-size: 12px;
+    }
+}

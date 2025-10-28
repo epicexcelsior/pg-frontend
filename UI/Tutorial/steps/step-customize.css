@@ -1,0 +1,111 @@
+/* Tutorial Step - Customize Booth */
+
+.tutorial-step-customize {
+    bottom: 120px;
+    right: 20px;
+    left: auto;
+    width: 320px;
+    max-width: calc(100vw - 40px);
+    border: 2px solid rgba(29, 242, 164, 0.4);
+    animation: slideInRight 0.3s ease-out forwards;
+}
+
+@keyframes slideOutRight {
+    from {
+        transform: translateX(0);
+        opacity: 1;
+    }
+    to {
+        transform: translateX(100%);
+        opacity: 0;
+    }
+}
+
+.tutorial-step-customize.idle {
+    animation: borderGlow 6s ease-in-out infinite !important;
+}
+
+.tutorial-step-customize.hidden {
+    animation: slideOutRight 0.3s ease-in;
+    pointer-events: none;
+}
+
+.tutorial-step-customize .tutorial-step-icon {
+    font-size: 32px;
+    animation: sparkle 2.4s ease-in-out infinite;
+    will-change: transform;
+}
+
+@keyframes sparkle {
+    0%, 100% {
+        transform: scale(1) rotate(0deg);
+        opacity: 1;
+    }
+    50% {
+        transform: scale(1.12) rotate(8deg);
+        opacity: 0.85;
+    }
+}
+
+/* Mobile performance optimization - reduce animations on smaller devices */
+@media (max-width: 1024px) {
+    .tutorial-step-customize.idle {
+        animation: borderGlow 8s ease-in-out infinite !important;
+    }
+    
+    .tutorial-step-customize .tutorial-step-icon {
+        animation: sparkle 3s ease-in-out infinite !important;
+    }
+}
+
+@media (max-width: 768px) {
+    .tutorial-step-customize.idle {
+        animation: borderGlow 10s ease-in-out infinite !important;
+    }
+    
+    .tutorial-step-customize .tutorial-step-icon {
+        animation: none !important;
+    }
+}
+
+/* Mobile responsiveness */
+@media (max-width: 768px) {
+    .tutorial-step-customize {
+        bottom: 100px;
+        right: 12px;
+        left: auto;
+        width: auto;
+        max-width: 90vw;
+        padding: 14px;
+    }
+
+    .tutorial-step-title {
+        font-size: 15px;
+    }
+
+    .tutorial-step-text {
+        font-size: 13px;
+    }
+}
+
+@media (max-width: 480px) {
+    .tutorial-step-customize {
+        bottom: 80px;
+        right: 8px;
+        left: 8px;
+        width: auto;
+        padding: 12px;
+    }
+
+    .tutorial-step-icon {
+        font-size: 24px;
+    }
+
+    .tutorial-step-title {
+        font-size: 14px;
+    }
+
+    .tutorial-step-text {
+        font-size: 12px;
+    }
+}

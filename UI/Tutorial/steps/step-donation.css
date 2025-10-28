@@ -1,0 +1,149 @@
+/* Tutorial Step - Make Donation */
+
+.tutorial-step-donation {
+    bottom: 120px;
+    right: 20px;
+    left: auto;
+    width: 320px;
+    max-width: calc(100vw - 40px);
+    border: 2px solid rgba(29, 242, 164, 0.4);
+    animation: slideInRight 0.3s ease-out forwards;
+}
+
+@keyframes slideInRight {
+    from {
+        transform: translateX(100%);
+        opacity: 0;
+    }
+    to {
+        transform: translateX(0);
+        opacity: 1;
+    }
+}
+
+@keyframes slideOutRight {
+    from {
+        transform: translateX(0);
+        opacity: 1;
+    }
+    to {
+        transform: translateX(100%);
+        opacity: 0;
+    }
+}
+
+.tutorial-step-donation.idle {
+    animation: borderGlow 6s ease-in-out infinite !important;
+}
+
+.tutorial-step-donation.hidden {
+    animation: slideOutRight 0.3s ease-in;
+    pointer-events: none;
+}
+
+.tutorial-step-hint {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 8px;
+    padding: 8px 10px;
+    background: rgba(29, 242, 164, 0.08);
+    border-radius: 6px;
+    border-left: 3px solid rgba(29, 242, 164, 0.4);
+}
+
+.hint-icon {
+    display: inline-block;
+    font-size: 16px;
+    color: rgba(29, 242, 164, 0.7);
+    animation: arrowPulse 2s ease-in-out infinite;
+    will-change: transform;
+}
+
+@keyframes arrowPulse {
+    0%, 100% {
+        transform: translateX(0);
+        opacity: 0.65;
+    }
+    50% {
+        transform: translateX(3px);
+        opacity: 1;
+    }
+}
+
+.hint-text {
+    font-size: 12px;
+    color: rgba(255, 255, 255, 0.75);
+    font-weight: 500;
+}
+
+/* Mobile performance optimization - reduce animations on smaller devices */
+@media (max-width: 1024px) {
+    .tutorial-step-donation.idle {
+        animation: borderGlow 8s ease-in-out infinite !important;
+    }
+    
+    .hint-icon {
+        animation: arrowPulse 2.4s ease-in-out infinite !important;
+    }
+}
+
+@media (max-width: 768px) {
+    .tutorial-step-donation.idle {
+        animation: borderGlow 10s ease-in-out infinite !important;
+    }
+    
+    .hint-icon {
+        animation: none !important;
+    }
+}
+
+/* Mobile responsiveness */
+@media (max-width: 768px) {
+    .tutorial-step-donation {
+        bottom: 100px;
+        right: 12px;
+        left: auto;
+        width: auto;
+        max-width: 90vw;
+        padding: 14px;
+    }
+
+    .tutorial-step-title {
+        font-size: 15px;
+    }
+
+    .tutorial-step-text {
+        font-size: 13px;
+    }
+
+    .hint-text {
+        font-size: 11px;
+    }
+}
+
+@media (max-width: 480px) {
+    .tutorial-step-donation {
+        bottom: 80px;
+        right: 8px;
+        left: 8px;
+        width: auto;
+        padding: 12px;
+    }
+
+    .tutorial-step-icon {
+        font-size: 24px;
+    }
+
+    .tutorial-step-title {
+        font-size: 14px;
+    }
+
+    .tutorial-step-text {
+        font-size: 12px;
+    }
+
+    .hint-text {
+        font-size: 11px;
+    }
+}
