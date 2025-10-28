@@ -340,6 +340,10 @@ PrivyManager.prototype.handleAuthMessage = function (event) {
             console.error('PrivyManager: Failed to link account.', payload);
             this.app.fire('auth:linkFailed', { error: payload.error });
             break;
+        case 'PRIVY_USERPILL_ACTION':
+            console.log('PrivyManager: UserPill action received', payload);
+            this.app.fire('privy:userPillAction', { actionType: payload.actionType, data: payload.data });
+            break;
         default:
             if (typeof type === 'string' && type.indexOf('PRIVY_AUTH_') === 0) {
                 this._setLoginInProgress(false);
@@ -841,6 +845,22 @@ PrivyManager.prototype.logout = function () {
     }
 
     return performLogout();
+};
+
+PrivyManager.prototype.openUserPill = function () {
+    const performOpenUserPill = () => {
+        console.log('PrivyManager: Opening UserPill...');
+        this._pendingNonce = generateNonce();
+        const userPillUrl = this.buildPrivyUrl({ action: 'user-pill', nonce: this._pendingNonce });
+        return this.openPrivyWindow(userPillUrl, 'privy-userpill');
+    };
+
+    if (!this.ready) {
+        this.queueWhenReady(performOpenUserPill, 'openUserPill');
+        return null;
+    }
+
+    return performOpenUserPill();
 };
 
 PrivyManager.prototype.linkTwitter = function () {
