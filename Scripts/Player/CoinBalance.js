@@ -9,6 +9,7 @@ CoinBalance.prototype.initialize = function () {
 
     this.app.on('coins:update', this.handleUpdate, this);
     this.app.on('coins:refresh', this.requestRefresh, this);
+    this.app.on('coins:tutorialBonus', this.handleTutorialBonus, this);
     this.app.on('auth:stateChanged', this.handleAuthChanged, this);
     this.app.once('destroy', this.destroy, this);
 
@@ -48,9 +49,22 @@ CoinBalance.prototype.handleUpdate = function (payload) {
     });
 };
 
+CoinBalance.prototype.handleTutorialBonus = function (payload) {
+    if (!payload || typeof payload.amount !== 'number' || typeof payload.newBalance !== 'number') {
+        return;
+    }
+    this.balance = payload.newBalance;
+    this.lastUpdate = Date.now();
+    this.app.fire('ui:coins:update', {
+        balance: this.balance,
+        lifetimeEarned: this.lifetime,
+    });
+};
+
 CoinBalance.prototype.destroy = function () {
     this.app.off('coins:update', this.handleUpdate, this);
     this.app.off('coins:refresh', this.requestRefresh, this);
+    this.app.off('coins:tutorialBonus', this.handleTutorialBonus, this);
     this.app.off('auth:stateChanged', this.handleAuthChanged, this);
 };
 
