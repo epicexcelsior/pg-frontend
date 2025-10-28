@@ -80,57 +80,68 @@ pc.script.createLoadingScreen((app) => {
             /* Button container for social/external links */
             #loading-buttons-container {
                 position: absolute;
-                bottom: 20px;
+                bottom: 25px;
                 left: 50%;
                 transform: translateX(-50%);
                 display: flex;
-                gap: 15px;
+                gap: 12px;
                 justify-content: center;
                 align-items: center;
                 flex-wrap: nowrap;
             }
 
-            .loading-button {
-                padding: 10px 20px;
-                background: rgba(255, 255, 255, 0.9);
+            .social-button {
+                position: relative;
+                padding: 8px 14px;
+                background: rgba(255, 255, 255, 0.85);
                 border: 2px solid rgba(255, 255, 255, 0.7);
-                border-radius: 8px;
+                border-radius: 12px;
                 color: #333;
                 text-decoration: none;
-                font-size: 14px;
+                font-size: 18px;
                 font-weight: 500;
                 transition: all 0.2s ease;
                 box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
-                white-space: nowrap;
-                display: inline-block;
+                display: inline-flex;
+                align-items: center;
+                justify-content: center;
+                gap: 8px;
+                cursor: pointer;
             }
 
-            .loading-button:hover {
+            .social-button:hover {
                 background: rgba(255, 255, 255, 1);
-                border-color: rgba(255, 255, 255, 0.9);
-                transform: translateY(-2px);
                 box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
-                color: #222;
             }
 
-            .loading-button:active {
-                transform: translateY(0);
+            .social-button:active {
                 box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2);
+            }
+
+            .button-icon {
+                display: inline;
+                min-width: 20px;
+                text-align: center;
+            }
+
+            .button-label {
+                display: inline;
+                margin-left: 8px;
+                font-size: 14px;
+                white-space: nowrap;
             }
 
             /* Mobile responsive layout */
             @media (max-width: 768px) {
                 #loading-buttons-container {
-                    flex-direction: column;
-                    gap: 12px;
-                    bottom: 30px;
+                    flex-wrap: wrap;
+                    gap: 8px;
+                    bottom: 20px;
                 }
 
-                .loading-button {
-                    padding: 12px 24px;
-                    font-size: 15px;
-                    min-width: 160px;
-                    text-align: center;
+                .social-button {
+                    padding: 6px 10px;
+                    font-size: 16px;
                 }
 
                 #progress-bar-container {
@@ -140,14 +151,18 @@ pc.script.createLoadingScreen((app) => {
 
             @media (max-width: 480px) {
                 #loading-buttons-container {
-                    bottom: 20px;
-                    gap: 10px;
+                    bottom: 15px;
+                    gap: 6px;
                 }
 
-                .loading-button {
-                    padding: 10px 20px;
+                .social-button {
+                    padding: 5px 8px;
                     font-size: 14px;
-                    min-width: 140px;
+                }
+
+                .button-label {
+                    margin-left: 4px;
+                    font-size: 12px;
                 }
             }
         `;
@@ -192,33 +207,34 @@ pc.script.createLoadingScreen((app) => {
                const buttonsContainer = document.createElement('div');
                buttonsContainer.id = 'loading-buttons-container';
 
-               // Website button
-               const websiteButton = document.createElement('a');
-               websiteButton.className = 'loading-button';
-               websiteButton.href = 'https://plsgive.com/';
-               websiteButton.target = '_blank';
-               websiteButton.rel = 'noopener noreferrer';
-               websiteButton.textContent = 'Website';
+               // Helper function to create social buttons
+               const createSocialButton = (icon, label, url) => {
+                    const button = document.createElement('a');
+                    button.className = 'social-button';
+                    button.href = url;
+                    button.target = '_blank';
+                    button.rel = 'noopener noreferrer';
+                    button.title = label;
+                    
+                    const iconSpan = document.createElement('span');
+                    iconSpan.className = 'button-icon';
+                    iconSpan.textContent = icon;
+                    
+                    const labelSpan = document.createElement('span');
+                    labelSpan.className = 'button-label';
+                    labelSpan.textContent = label;
+                    
+                    button.appendChild(iconSpan);
+                    button.appendChild(labelSpan);
+                    return button;
+               };
 
-               // Twitter button
-               const twitterButton = document.createElement('a');
-               twitterButton.className = 'loading-button';
-               twitterButton.href = 'https://x.com/intent/user?screen_name=playplsgive';
-               twitterButton.target = '_blank';
-               twitterButton.rel = 'noopener noreferrer';
-               twitterButton.textContent = 'Twitter';
+               // Create buttons with emojis
+               buttonsContainer.appendChild(createSocialButton('🐦', 'Twitter', 'https://x.com/intent/user?screen_name=playplsgive'));
+               buttonsContainer.appendChild(createSocialButton('💬', 'Discord', 'https://dsc.gg/plsgive'));
+               buttonsContainer.appendChild(createSocialButton('💭', 'Feedback', 'https://forms.gle/xrJchANvtrouMTWv9'));
+               buttonsContainer.appendChild(createSocialButton('🌐', 'Website', 'https://plsgive.com/'));
 
-               // Feedback button
-               const feedbackButton = document.createElement('a');
-               feedbackButton.className = 'loading-button';
-               feedbackButton.href = 'https://forms.gle/xrJchANvtrouMTWv9';
-               feedbackButton.target = '_blank';
-               feedbackButton.rel = 'noopener noreferrer';
-               feedbackButton.textContent = 'Feedback';
-
-               buttonsContainer.appendChild(websiteButton);
-               buttonsContainer.appendChild(twitterButton);
-               buttonsContainer.appendChild(feedbackButton);
                screen.appendChild(buttonsContainer);
 
                document.body.appendChild(screen);
