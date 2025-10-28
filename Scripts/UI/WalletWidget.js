@@ -20,6 +20,7 @@ WalletWidget.prototype.initialize = function () {
     this.walletAddressEl = container.querySelector('#wallet-address');
     this.walletBalanceEl = container.querySelector('#wallet-balance');
     this.logoutButtonEl = container.querySelector('#logout-btn');
+    this.privyUserPillBtn = container.querySelector('#privy-userpill-btn');
     this.twitterLinkEl = container.querySelector('#twitter-link');
     this.twitterHandleEl = container.querySelector('#twitter-handle');
 
@@ -28,14 +29,18 @@ WalletWidget.prototype.initialize = function () {
 
     this.currentAddress = null;
     this.balanceRetryTimeout = null;
+    this.balancePollingInterval = null;
     this.maxBalanceRetries = 8;
     this.feedbackService = null;
     this.heliusRpcUrl = null;
     this.heliusConnection = null;
+    this.balancePollingIntervalMs = 45000;
+    this.lastBalanceFetchTime = 0;
 
     this.boundOnAddressClick = this.onAddressClick.bind(this);
     this.boundOnAddressKeyDown = this.onAddressKeyDown.bind(this);
     this.boundOnLogoutClick = this.onLogout.bind(this);
+    this.boundOnPrivyUserPillClick = this.onPrivyUserPill.bind(this);
     this.boundOnLinkTwitterClick = this.onLinkTwitter.bind(this);
 
     if (this.walletAddressEl) {
@@ -51,6 +56,11 @@ WalletWidget.prototype.initialize = function () {
     if (this.logoutButtonEl) {
         this.logoutButtonEl.addEventListener('click', this.boundOnLogoutClick);
         this.logoutButtonEl.setAttribute('data-sound', 'ui_click_default');
+    }
+
+    if (this.privyUserPillBtn) {
+        this.privyUserPillBtn.addEventListener('click', this.boundOnPrivyUserPillClick);
+        this.privyUserPillBtn.setAttribute('data-sound', 'ui_click_default');
     }
 
     if (this.twitterLinkEl) {
@@ -108,6 +118,12 @@ WalletWidget.prototype.onLogout = function () {
     }
 };
 
+WalletWidget.prototype.onPrivyUserPill = function () {
+    if (this.privyManager) {
+        this.privyManager.openUserPill();
+    }
+};
+
 WalletWidget.prototype.onLinkTwitter = function () {
     if (this.privyManager) {
         this.privyManager.linkTwitter();
@@ -124,14 +140,14 @@ WalletWidget.prototype.onAuthStateChanged = function (data) {
 
         this.updateTwitterDisplay(data.twitterHandle);
 
-        this.stopBalancePolling();
-        this.startBalancePolling();
+        this.stopPeriodicPolling();
+        this.startPeriodicPolling();
     } else {
         this.currentAddress = null;
         this.walletWidgetEl.style.display = 'none';
         this.walletBalanceEl.textContent = '... SOL';
         this.updateTwitterDisplay(null);
-        this.stopBalancePolling();
+        this.stopPeriodicPolling();
     }
 };
 
@@ -162,17 +178,32 @@ WalletWidget.prototype.onIncomingDonation = function (data) {
     }
 };
 
-WalletWidget.prototype.startBalancePolling = function () {
+WalletWidget.prototype.startPeriodicPolling = function () {
     if (!this.currentAddress) {
         return;
     }
 
     this.clearBalanceRetryTimeout();
     this.fetchBalance(this.currentAddress);
+    
+    this.stopPeriodicPolling();
+    this.balancePollingInterval = window.setInterval(() => {
+        if (this.currentAddress) {
+            this.fetchBalance(this.currentAddress);
+        }
+    }, this.balancePollingIntervalMs);
+    
+    console.log(`WalletWidget: Started periodic balance polling every ${this.balancePollingIntervalMs}ms`);
 };
 
-WalletWidget.prototype.stopBalancePolling = function () {
+WalletWidget.prototype.stopPeriodicPolling = function () {
     this.clearBalanceRetryTimeout();
+    
+    if (this.balancePollingInterval) {
+        window.clearInterval(this.balancePollingInterval);
+        this.balancePollingInterval = null;
+        console.log('WalletWidget: Stopped periodic balance polling');
+    }
 };
 
 WalletWidget.prototype.clearBalanceRetryTimeout = function () {
@@ -187,11 +218,14 @@ WalletWidget.prototype.scheduleBalanceRefresh = function (delayMs) {
         return;
     }
     const delay = typeof delayMs === 'number' && delayMs >= 0 ? delayMs : 0;
+    
     this.clearBalanceRetryTimeout();
+    
     if (delay === 0) {
         this.fetchBalance(this.currentAddress);
         return;
     }
+    
     this.balanceRetryTimeout = window.setTimeout(() => {
         this.balanceRetryTimeout = null;
         if (this.currentAddress) {
@@ -206,6 +240,7 @@ WalletWidget.prototype.fetchBalance = async function (address, attempt = 0) {
     }
 
     this.clearBalanceRetryTimeout();
+    this.lastBalanceFetchTime = Date.now();
 
     let balanceLamports = null;
     let lastError = null;
@@ -339,7 +374,7 @@ WalletWidget.prototype.showCopyFeedback = function (success) {
 };
 
 WalletWidget.prototype.destroy = function () {
-    this.stopBalancePolling();
+    this.stopPeriodicPolling();
 
     this.app.off('services:initialized', this.setupEventListeners, this);
     this.app.off('auth:stateChanged', this.onAuthStateChanged, this);
@@ -355,6 +390,10 @@ WalletWidget.prototype.destroy = function () {
 
     if (this.logoutButtonEl && this.boundOnLogoutClick) {
         this.logoutButtonEl.removeEventListener('click', this.boundOnLogoutClick);
+    }
+
+    if (this.privyUserPillBtn && this.boundOnPrivyUserPillClick) {
+        this.privyUserPillBtn.removeEventListener('click', this.boundOnPrivyUserPillClick);
     }
 
     if (this.twitterLinkEl && this.boundOnLinkTwitterClick) {
