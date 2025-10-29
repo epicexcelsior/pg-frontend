@@ -104,6 +104,8 @@ ReferralPanel.prototype.createUi = function () {
     this.input.name = 'referralCode';
     this.input.autocomplete = 'off';
     this.input.maxLength = 8;
+    this.input.addEventListener('focus', this.handleInputFocus.bind(this));
+    this.input.addEventListener('blur', this.handleInputBlur.bind(this));
 
     this.submitButton = document.createElement('button');
     this.submitButton.type = 'submit';
@@ -683,6 +685,14 @@ ReferralPanel.prototype.handleUnauthorized = function () {
     this.updateUiState(false);
     this.feedback.textContent = 'Session expired. Please log in again.';
     this.profile = null;
+};
+
+ReferralPanel.prototype.handleInputFocus = function () {
+    this.app.fire('ui:input:focus', { source: 'referralPanel' });
+};
+
+ReferralPanel.prototype.handleInputBlur = function () {
+    this.app.fire('ui:input:blur', { source: 'referralPanel' });
 };
 
 ReferralPanel.prototype.destroy = function () {
