@@ -311,7 +311,17 @@ HtmlAvatarCustomizer.prototype._createToggleButton = function () {
   button.type = "button";
   button.setAttribute("aria-label", "Customize avatar");
   button.setAttribute("aria-pressed", "false");
-  button.innerHTML = '<span class="icon" aria-hidden="true">Avatar</span>';
+  
+  if (this.iconAsset) {
+    var img = document.createElement("img");
+    img.className = "icon";
+    img.setAttribute("aria-hidden", "true");
+    img.alt = "";
+    img.src = this.iconAsset.getFileUrl();
+    button.appendChild(img);
+  } else {
+    button.innerHTML = '<span class="icon" aria-hidden="true"></span>';
+  }
 
   var self = this;
   this._handlers.toggleButton = function () {

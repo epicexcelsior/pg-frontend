@@ -33,6 +33,7 @@ AvatarCustomization.attributes.add('autoOpenOnSpawn', {
         this.pendingDescriptors = new Map();
         this.localSessionId = null;
         this._destroyed = false;
+        this.feedbackService = null;
 
         this._lodInterval = 360;
         this._lastLodUpdate = 0;
@@ -146,9 +147,11 @@ AvatarCustomization.attributes.add('autoOpenOnSpawn', {
             return;
         }
 
+        this._showApplyingToast();
         loader.setAvatarId(descriptor.avatarId);
         this._persistDescriptor(this.localSessionId, descriptor);
         this.app.fire('avatar:apply', descriptor);
+        this._showSuccessToast();
     };
 
     AvatarCustomization.prototype.onLocalApply = function (descriptor) {
@@ -230,6 +233,39 @@ AvatarCustomization.attributes.add('autoOpenOnSpawn', {
                 loader.updateLodIfNeeded(distance, { isLocal: false });
             }
         }, this);
+    };
+
+    AvatarCustomization.prototype._getFeedbackService = function () {
+        if (this.feedbackService) {
+            return this.feedbackService;
+        }
+        if (this.app.services && typeof this.app.services.get === 'function') {
+            try {
+                this.feedbackService = this.app.services.get('feedbackService');
+                return this.feedbackService;
+            } catch (err) {
+                // Service not found
+            }
+        }
+        if (typeof window !== 'undefined' && window.feedbackService) {
+            this.feedbackService = window.feedbackService;
+            return this.feedbackService;
+        }
+        return null;
+    };
+
+    AvatarCustomization.prototype._showApplyingToast = function () {
+        var feedbackService = this._getFeedbackService();
+        if (feedbackService && typeof feedbackService.showInfo === 'function') {
+            feedbackService.showInfo('Applying avatar', 3000);
+        }
+    };
+
+    AvatarCustomization.prototype._showSuccessToast = function () {
+        var feedbackService = this._getFeedbackService();
+        if (feedbackService && typeof feedbackService.showSuccess === 'function') {
+            feedbackService.showSuccess('Avatar applied successfully!', 5000);
+        }
     };
 
     AvatarCustomization.prototype._cleanupListeners = function () {
