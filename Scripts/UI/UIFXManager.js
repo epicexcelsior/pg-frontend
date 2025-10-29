@@ -501,7 +501,7 @@ UIFXManager.prototype._onDonationEvent = function (payload) {
     if (!payload) {
         payload = {};
     }
-    playDonationToast(this._toastEl, payload, this._glowEl);
+    // playDonationToast(this._toastEl, payload, this._glowEl); // Toast disabled - confetti only
     playConfettiBurst(this._canvas, payload);
 };
 
@@ -512,6 +512,6 @@ UIFXManager.prototype._onDonationDebug = function () {
         toName: 'Bob',
         isSelf: false
     };
-    playDonationToast(this._toastEl, payload, this._glowEl);
+    // playDonationToast(this._toastEl, payload, this._glowEl); // Toast disabled - confetti only
     playConfettiBurst(this._canvas, payload);
 };

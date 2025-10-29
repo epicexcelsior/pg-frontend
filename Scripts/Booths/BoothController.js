@@ -192,10 +192,15 @@ BoothController.prototype.handleClaimRequest = function(boothId) {
         return;
     }
 
-    if (typeof privyManager.isLoginInProgress === 'function' && privyManager.isLoginInProgress()) {
-        console.log('BoothController: Waiting for existing Privy login to complete before retrying claim.');
-    } else {
+    const isLoginInProgress = typeof privyManager.isLoginInProgress === 'function'
+        ? privyManager.isLoginInProgress()
+        : false;
+    
+    if (!isLoginInProgress) {
+        console.log('BoothController: User not authenticated. Initiating Privy login.');
         privyManager.login();
+    } else {
+        console.log('BoothController: Login already in progress. Will retry after completion.');
     }
 
     this.app.fire('ui:showClaimAuthPrompt', {
@@ -311,7 +316,7 @@ BoothController.prototype.onAuthStateChanged = function (authStateData) {
     }
 
     if (this.pendingClaimBoothId) {
-        console.log("BoothController: Auth complete. Waiting for PlayerData to confirm address sync.");
+        console.log("BoothController: Auth complete. Retrying pending booth claim.");
         this._scheduleClaimRetry(this.pendingClaimBoothId, 'auth-complete', this.claimRetryDelayMs);
     }
 
@@ -356,21 +361,16 @@ BoothController.prototype.onBoothUpdated = function (boothData) {
         boothEntity.script.boothClaimZone.claimedBy = boothData.claimedBy; // Ensure local script is in sync
         const screenEntity = boothEntity.findByName("3D Screen");
         if (screenEntity) {
-            const upperTxt = screenEntity.findByName("UpperTxt")?.element;
             const usernameTxt = screenEntity.findByName("UsernameTxt")?.element;
             const descriptionTxt = screenEntity.findByName("DescriptionTxt")?.element || screenEntity.findByName("Description")?.element;
-            if (upperTxt && usernameTxt) {
-                upperTxt.text = boothData.claimedBy ? "Give to" : "CLAIM";
+            if (usernameTxt) {
                 if (boothData.claimedBy) {
                     const twitterHandle = boothData.claimedByTwitterHandle;
                     const username = boothData.claimedByUsername;
-                    if (twitterHandle) {
-                        usernameTxt.text = `@${twitterHandle}`;
-                    } else {
-                        usernameTxt.text = username || "";
-                    }
+                    const name = twitterHandle ? `@${twitterHandle}` : username;
+                    usernameTxt.text = `Give to ${name}`;
                 } else {
-                    usernameTxt.text = "ME!";
+                    usernameTxt.text = "Claim me";
                 }
             }
             if (descriptionTxt) {
@@ -425,12 +425,10 @@ BoothController.prototype.onBoothDescriptionSaved = function (payload) {
     }
     const description = typeof payload.description === "string" ? payload.description : "";
     this.boothDescriptions.set(payload.boothId, description);
-    if (this.currentZoneScript && this.currentZoneScript.boothId === payload.boothId) {
-        this.app.fire('ui:boothDescription:ack', {
-            boothId: payload.boothId,
-            description: description
-        });
-    }
+    this.app.fire('ui:boothDescription:ack', {
+        boothId: payload.boothId,
+        description: description
+    });
 };
 
 BoothController.prototype.onBoothDescriptionError = function (payload) {

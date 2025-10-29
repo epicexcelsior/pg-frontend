@@ -34,6 +34,21 @@ PlayerMovement.attributes.add("forwardMinHold", {
   default: 0.3,
   title: "Forward Hold (s)",
 });
+PlayerMovement.attributes.add("jumpImpulse", {
+  type: "number",
+  default: 4.2,
+  title: "Jump Impulse",
+});
+PlayerMovement.attributes.add("jumpCooldown", {
+  type: "number",
+  default: 0.75,
+  title: "Jump Cooldown (s)",
+});
+PlayerMovement.attributes.add("groundRayLength", {
+  type: "number",
+  default: 1.1,
+  title: "Ground Ray Length",
+});
 
 // mobile ids
 PlayerMovement.attributes.add("joystickId", {
@@ -82,6 +97,7 @@ PlayerMovement.prototype.initialize = function () {
     ? this.visualRoot.getEulerAngles()
     : null;
   this._currentYaw = initialEuler ? initialEuler.y : 0;
+  this.currentSpeed = 0;
 
   if (this.entity.rigidbody) this.entity.rigidbody.angularFactor = pc.Vec3.ZERO;
 
@@ -115,10 +131,22 @@ PlayerMovement.prototype.initialize = function () {
   this._speedN = 0;
   this._inputMag = 0;
   this._lockUntil = 0; // while locked, we won't return to Idle
+  this._jumpCooldownTimer = 0;
+  this._isGrounded = false;
+  this._groundRayStart = new pc.Vec3();
+  this._groundRayEnd = new pc.Vec3();
+  this._tempImpulse = new pc.Vec3();
+  this._tempVelocity = new pc.Vec3();
+  this._lastVerticalVelocity = 0;
+  this._wasJumpingLastFrame = false;
 
   // input
   this.inX = 0;
   this.inZ = 0;
+
+  if (this.entity && typeof this.entity.on === 'function') {
+    this.entity.on('avatar:model:updated', this.onAvatarModelUpdated, this);
+  }
 
   // hide mobile UI on desktop
   if (!this.isMobile) {
@@ -157,6 +185,8 @@ PlayerMovement.prototype.initialize = function () {
   this.app.on('ui:chat:blur', this.onChatBlur, this);
   this.app.on('ui:input:focus', this.onUiInputFocus, this);
   this.app.on('ui:input:blur', this.onUiInputBlur, this);
+
+  this._updateGrounded();
 };
 
 PlayerMovement.prototype._cameraBasisXZ = function () {
@@ -204,6 +234,11 @@ PlayerMovement.prototype._gatherInput = function () {
 PlayerMovement.prototype.update = function (dt) {
   if (!this.entity.rigidbody) return;
 
+  this._updateGrounded();
+  if (this._jumpCooldownTimer > 0) {
+    this._jumpCooldownTimer = Math.max(0, this._jumpCooldownTimer - dt);
+  }
+
   // keep component & layer alive
   if (this.animEnt && this.animEnt.anim && !this.animEnt.anim.playing)
     this.animEnt.anim.playing = true;
@@ -212,6 +247,10 @@ PlayerMovement.prototype.update = function (dt) {
   // input
   this._gatherInput();
   this._inputMag = Math.hypot(this.inX, this.inZ);
+
+  if (this._shouldTriggerJump()) {
+    this._executeJump();
+  }
 
   var basis = this._cameraBasisXZ();
   this._tempMoveDir.set(0, 0, 0);
@@ -248,6 +287,7 @@ PlayerMovement.prototype.update = function (dt) {
     next.z = 0;
     speedXZ = 0;
   }
+  this.currentSpeed = speedXZ;
   rb.linearVelocity = next;
 
   if (speedXZ > 1e-4) {
@@ -277,11 +317,9 @@ PlayerMovement.prototype.update = function (dt) {
     speedXZ / Math.max(0.0001, this.maxSpeed)
   );
   if (!Number.isFinite(speedNormalized)) speedNormalized = 0;
-  if (this.animEnt && this.animEnt.anim) {
-    this.animEnt.anim.setFloat("speed", speedNormalized);
-  }
 
   var pos = this.entity.getPosition();
+  var verticalVel = this.entity.rigidbody ? this.entity.rigidbody.linearVelocity.y : 0;
 
   this.app.fire("player:move", {
     x: pos.x,
@@ -289,6 +327,7 @@ PlayerMovement.prototype.update = function (dt) {
     z: pos.z,
     rotation: Number.isFinite(this._currentYaw) ? this._currentYaw : 0,
     speed: speedNormalized,
+    verticalVelocity: verticalVel,
   });
 };
 
@@ -326,8 +365,102 @@ PlayerMovement.prototype._releaseInputLock = function(reason) {
   }
 };
 
+PlayerMovement.prototype._updateGrounded = function () {
+  if (!this.entity || !this.app || !this.app.systems || !this.app.systems.rigidbody) {
+    return;
+  }
+  var position = this.entity.getPosition ? this.entity.getPosition() : null;
+  if (!position) {
+    return;
+  }
+  this._groundRayStart.copy(position);
+  this._groundRayEnd.copy(position);
+  this._groundRayEnd.y -= this.groundRayLength || 1.1;
+  var hit = this.app.systems.rigidbody.raycastFirst(this._groundRayStart, this._groundRayEnd);
+  if (hit && hit.normal && typeof hit.normal.y === 'number') {
+    this._isGrounded = hit.normal.y >= 0.35;
+  } else {
+    this._isGrounded = !!hit;
+  }
+};
+
+PlayerMovement.prototype._shouldTriggerJump = function () {
+  var kb = this.app.keyboard;
+  if (!kb) {
+    return false;
+  }
+  if (!kb.wasPressed(pc.KEY_SPACE)) {
+    return false;
+  }
+  if (!this._isGrounded) {
+    return false;
+  }
+  if (this._isInputLocked()) {
+    return false;
+  }
+  return this._jumpCooldownTimer <= 0;
+};
+
+PlayerMovement.prototype._executeJump = function () {
+  if (!this.entity || !this.entity.rigidbody) {
+    return;
+  }
+  var rb = this.entity.rigidbody;
+  
+  // Roblox-style jump: directly set upward velocity for immediate effect
+  this._tempVelocity.copy(rb.linearVelocity);
+  this._tempVelocity.y = this.jumpImpulse || 6;
+  rb.linearVelocity = this._tempVelocity;
+  
+  this._jumpCooldownTimer = Math.max(0.05, this.jumpCooldown || 0.75);
+  this._isGrounded = false;
+  this._wasJumpingLastFrame = true;
+
+  // Trigger jump animation via PlayerAnimation script (syncs across network)
+  if (this.entity.script && this.entity.script.playerAnimation) {
+    this.entity.script.playerAnimation.requestEmote('JUMP');
+  }
+};
+
 PlayerMovement.prototype._isInputLocked = function() {
   return this.activeInputLocks.size > 0;
+};
+
+PlayerMovement.prototype.onAvatarModelUpdated = function (evt) {
+  var model = evt && evt.model ? evt.model : null;
+  if (!model) return;
+  this.visualRoot = model;
+  if (model.getLocalRotation) {
+    this.baseLocalRot = model.getLocalRotation().clone();
+  }
+  if (model.getEulerAngles) {
+    var euler = model.getEulerAngles();
+    this._currentYaw = euler ? euler.y : this._currentYaw;
+  }
+  var self = this;
+  var animTarget = evt && evt.animTarget ? evt.animTarget : (function dfs(e) {
+    if (e && e.anim) return e;
+    if (!e) return null;
+    for (var i = 0; i < e.children.length; i++) {
+      var found = dfs(e.children[i]);
+      if (found) return found;
+    }
+    return null;
+  })(model);
+  this.animEnt = animTarget || null;
+  this.entity.animTarget = animTarget || null;
+  if (this.animEnt && this.animEnt.anim) {
+    this.animEnt.anim.playing = true;
+    this.animEnt.anim.speed = 1;
+    if (this.animEnt.anim.baseLayer) {
+      this.layer = this.animEnt.anim.baseLayer;
+    } else if (this.animEnt.anim.layers && this.animEnt.anim.layers.length) {
+      this.layer = this.animEnt.anim.layers[0];
+    }
+    if (this.layer && this.layer.transition) {
+      this.layer.transition('Idle', 0);
+    }
+  }
 };
 
 PlayerMovement.prototype.destroy = function() {
@@ -336,4 +469,8 @@ PlayerMovement.prototype.destroy = function() {
   this.app.off('ui:chat:blur', this.onChatBlur, this);
   this.app.off('ui:input:focus', this.onUiInputFocus, this);
   this.app.off('ui:input:blur', this.onUiInputBlur, this);
+  if (this.entity && typeof this.entity.off === 'function') {
+    this.entity.off('avatar:model:updated', this.onAvatarModelUpdated, this);
+  }
 };
+

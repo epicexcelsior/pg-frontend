@@ -109,10 +109,12 @@ HtmlChat.prototype.onDocumentKeyDown = function(event) {
 
 HtmlChat.prototype.onInputFocus = function() {
     this.app.fire('ui:chat:focus');
+    this.app.fire('ui:input:focus', { source: 'chat' });
 };
 
 HtmlChat.prototype.onInputBlur = function() {
     this.app.fire('ui:chat:blur');
+    this.app.fire('ui:input:blur', { source: 'chat' });
 };
 HtmlChat.prototype.onSendClick = function() {
     this.sendMessage();

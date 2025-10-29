@@ -109,10 +109,21 @@ MessageBroker.prototype.setupRoomMessageListeners = function (room) {
         this.app.fire('chat:newMessage', { type: 'user', sender: senderName, content: data.content });
     });
     room.onMessage("avatar:recipe", (data) => this.app.fire('avatar:recipe', data));
-    room.onMessage("animation:play", (data) => this.app.fire('animation:play:network', data));
+    room.onMessage("animation:play", (data) => {
+        // data: { playerId, id, triggerId }
+        // Route animation directly to the correct player entity
+        const playerSync = this.app.playerSync;
+        if (!playerSync) return;
+
+        const targetEntity = playerSync.getPlayerEntityById(data.playerId);
+        if (!targetEntity || !targetEntity.script || !targetEntity.script.playerAnimation) return;
+
+        targetEntity.script.playerAnimation.applyNetworkEmote(data);
+    });
     room.onMessage("booth:updateDescription:ok", (data) => this.app.fire('booth:description:ok', data));
     room.onMessage("booth:updateDescription:error", (data) => this.app.fire('booth:description:error', data));
     room.onMessage("leaderboard:data", (data) => this.app.fire('leaderboard:data', data));
+    room.onMessage("leaderboard:updated", (data) => this.app.fire('leaderboard:updated', data));
 };
 
 MessageBroker.prototype._handlePlaygroundMessageTypes = function (data) {

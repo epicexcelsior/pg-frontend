@@ -77,7 +77,14 @@
     border-top-color: var(--surface-color);
 }
 
-.logout-btn {
+/* Button group for better alignment */
+.button-group {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.privy-userpill-btn, .logout-btn {
     background: rgba(255, 255, 255, 0.1);
     border: 1px solid rgba(255, 255, 255, 0.2);
     border-radius: 8px;
@@ -88,17 +95,25 @@
     align-items: center;
     justify-content: center;
     transition: all 0.2s ease;
+    min-width: 32px;
+    height: 32px;
 }
 
-.logout-btn:hover {
+.privy-userpill-btn:hover, .logout-btn:hover {
     background: rgba(255, 255, 255, 0.2);
     border-color: rgba(255, 255, 255, 0.4);
     transform: translateY(-1px);
 }
 
-.logout-btn:active {
+.privy-userpill-btn:active, .logout-btn:active {
     transform: translateY(0);
 }
+
+.privy-icon {
+    display: block;
+}
+
+
 
 .twitter-section {
     display: flex;

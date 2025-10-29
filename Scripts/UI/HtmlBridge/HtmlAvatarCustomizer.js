@@ -3,100 +3,178 @@ var HtmlAvatarCustomizer = pc.createScript("htmlAvatarCustomizer");
 HtmlAvatarCustomizer.attributes.add("cssAsset", {
   type: "asset",
   assetType: "css",
-  title: "Customizer CSS",
+  title: "Customizer CSS"
 });
 HtmlAvatarCustomizer.attributes.add("htmlAsset", {
   type: "asset",
   assetType: "html",
-  title: "Customizer HTML",
+  title: "Customizer HTML"
 });
 HtmlAvatarCustomizer.attributes.add("iconAsset", {
   type: "asset",
   assetType: "texture",
-  title: "Toggle Icon Asset",
+  title: "Toggle Icon Asset"
 });
 HtmlAvatarCustomizer.attributes.add("openOnStart", {
   type: "boolean",
   default: false,
-  title: "Open On Start",
+  title: "Open On Start"
+});
+HtmlAvatarCustomizer.attributes.add("rpmSubdomain", {
+  type: "string",
+  default: "pls-give.readyplayer.me",
+  title: "Ready Player Me Subdomain (e.g. mygame or mygame.readyplayer.me)"
+});
+HtmlAvatarCustomizer.attributes.add("useInsetLayout", {
+  type: "boolean",
+  default: false,
+  title: "Use 90% Inset Layout"
+});
+HtmlAvatarCustomizer.attributes.add("additionalQuery", {
+  type: "string",
+  default: "",
+  title: "Additional Creator Query Params"
+});
+HtmlAvatarCustomizer.attributes.add("overlayTitle", {
+  type: "string",
+  default: "Ready Player Me",
+  title: "Overlay Title"
 });
 
 HtmlAvatarCustomizer.prototype.initialize = function () {
-  this.slotNames = ["head", "body", "legs", "feet"];
-  this.callbacks = { next: new Map(), prev: new Map(), apply: [], cancel: [] };
-  this.slotElements = new Map();
   this.container = null;
-  this.rateLimitEl = null;
-  this.bridge = this._createBridge();
-  this._rateLimitTimer = null;
-  this.isOpen = false;
+  this.root = null;
+  this.scrim = null;
+  this.overlayShell = null;
+  this.frameHost = null;
+  this.iframe = null;
+  this.closeButton = null;
+  this.loadingEl = null;
+  this.errorEl = null;
   this.toggleButton = null;
-  this._requestedVariantStream = false;
+  this.rateLimitEl = null;
+  this.isOpen = false;
+  this.frameReady = false;
+  this._pendingOpenRequest = null;
+  this._inputsSuspended = false;
+  this._bodyOverflow = null;
+  this._closeReason = null;
+  this.lastAvatarInfo = null;
+  this.additionalQuery = (this.additionalQuery || "").trim();
+  this.overlayTitle = (this.overlayTitle || "Ready Player Me").trim() || "Ready Player Me";
+  this.defaultInset = !!this.useInsetLayout;
+  this.activeInset = this.defaultInset;
   this.animationConfig = {
     enabled: true,
     durations: { standard: 0.26, quick: 0.18 },
-    easings: { entrance: 'power3.out', exit: 'power2.in' },
+    easings: { entrance: "power3.out", exit: "power2.in" },
     multiplier: 1
   };
+
+  this.callbacks = {
+    next: new Map(),
+    prev: new Map(),
+    apply: [],
+    cancel: [],
+    exported: []
+  };
+
+  this.bridge = this._createBridge();
+
+  this._handlers = {};
+  this._handlers.toggleButton = null;
+  this._handlers.hoverButton = null;
+  this._handlers.waveButton = null;
+  this._handlers.toggleRequest = null;
+  this._handlers.openRequest = null;
+  this._handlers.closeRequest = null;
+
+  this._messageHandler = this._handleMessage.bind(this);
+  this._escHandler = this._handleEscape.bind(this);
+  this._boundCloseClick = this.close.bind(this);
+  this._boundScrimClick = this.close.bind(this);
+  this._legacyWarningShown = false;
+  this._pendingSubscriptions = ["v1.avatar.exported"];
+  this._subscriptionAcks = new Set();
+
+  this.rpmOrigin = this._normalizeRpmOrigin(this.rpmSubdomain);
+  this._rpmOriginConfigured = !!this.rpmOrigin;
+  this._missingOriginWarned = false;
+  if (!this._rpmOriginConfigured) {
+    this.rpmOrigin = "https://YOUR-SUBDOMAIN.readyplayer.me";
+  }
 
   if (this.app.uiManager && this.app.uiManager.registerComponent) {
     this.app.uiManager.registerComponent(this);
   }
 
   this._loadAssets();
-  this._preloadSounds();
+};
+
+HtmlAvatarCustomizer.prototype._normalizeRpmOrigin = function (value) {
+  if (!value) return null;
+  var trimmed = String(value).trim();
+  if (!trimmed) return null;
+
+  if (/^https?:\/\//i.test(trimmed)) {
+    trimmed = trimmed.replace(/^http:\/\//i, "https://");
+  } else {
+    var domain = trimmed;
+    if (domain.indexOf(".") === -1) {
+      domain = domain + ".readyplayer.me";
+    }
+    trimmed = "https://" + domain;
+  }
+
+  return trimmed.replace(/\/+$/, "");
 };
 
 HtmlAvatarCustomizer.prototype._loadAssets = function () {
-  var self = this,
-    pending = 0;
+  var self = this;
+  var pending = 0;
+
   function onReady() {
-    if (--pending === 0) self._buildDom();
+    pending -= 1;
+    if (pending === 0) {
+      self._buildDom();
+    }
   }
 
   if (this.cssAsset) {
-    pending++;
+    pending += 1;
     this._ensureAsset(this.cssAsset, function (css) {
       self._injectCss(css);
       onReady();
     });
   }
+
   if (this.htmlAsset) {
-    pending++;
+    pending += 1;
     this._ensureAsset(this.htmlAsset, function (html) {
       self.htmlTemplate = html;
       onReady();
     });
   }
-  if (pending === 0) this._buildDom();
+
+  if (pending === 0) {
+    this._buildDom();
+  }
 };
 
 HtmlAvatarCustomizer.prototype._ensureAsset = function (asset, callback) {
   if (!asset) return;
-  if (asset.resource) callback(asset.resource);
-  else {
+  if (asset.resource) {
+    callback(asset.resource);
+  } else {
     asset.once("load", function (a) {
       callback(a.resource);
     });
     asset.once("error", function (err) {
       console.error("HtmlAvatarCustomizer: Failed to load asset.", err);
     });
-    this.app.assets.load(asset);
-  }
-};
-
-HtmlAvatarCustomizer.prototype._ensureTextureAsset = function (
-  asset,
-  callback
-) {
-  if (!asset) return;
-  if (asset.resource) callback(asset);
-  else {
-    asset.once("load", callback);
-    asset.once("error", function (err) {
-      console.error("HtmlAvatarCustomizer: Failed to load asset.", err);
-    });
-    if (!asset.loading) this.app.assets.load(asset);
+    if (!asset.loading) {
+      this.app.assets.load(asset);
+    }
   }
 };
 
@@ -111,102 +189,114 @@ HtmlAvatarCustomizer.prototype._injectCss = function (cssText) {
 HtmlAvatarCustomizer.prototype._buildDom = function () {
   if (!this.htmlTemplate || this.container) return;
 
-  // Insert HTML
-  this.container = document.createElement("div");
-  this.container.innerHTML = this.htmlTemplate;
-  document.body.appendChild(this.container);
+  var container = document.createElement("div");
+  container.innerHTML = this.htmlTemplate;
+  document.body.appendChild(container);
+  this.container = container;
 
-  var root = this.container.querySelector("#avatar-customizer");
+  var root = container.querySelector("#avatar-customizer");
   if (!root) {
-    console.error(
-      "HtmlAvatarCustomizer: Root element #avatar-customizer not found."
-    );
+    console.error("HtmlAvatarCustomizer: Root element #avatar-customizer not found.");
     return;
   }
+
   this.root = root;
   this.root.classList.add("is-closed");
-  this.rateLimitEl = root.querySelector("[data-rate-limit]");
+  this._setupOverlayDom();
+  this._createToggleButton();
 
-  // Wire slot controls
   var self = this;
-  this.slotNames.forEach(function (slot) {
-    var slotEl = root.querySelector('[data-slot="' + slot + '"]');
-    if (!slotEl) return;
-    self.slotElements.set(slot, {
-      container: slotEl,
-      indexEl: slotEl.querySelector("[data-slot-index]"),
-      progressEl: slotEl.querySelector("[data-slot-progress]"),
-      progressFill: slotEl.querySelector("[data-slot-progress] .progress-fill"),
-      busyEl: slotEl.querySelector("[data-slot-busy]"),
-    });
-    var prevBtn = slotEl.querySelector("[data-slot-prev]");
-    var nextBtn = slotEl.querySelector("[data-slot-next]");
-    if (prevBtn)
-      prevBtn.addEventListener("click", function () {
-        self._emitSlot("prev", slot);
-        self.app.fire("ui:playSound", "ui_click_default");
-      });
-    if (nextBtn)
-      nextBtn.addEventListener("click", function () {
-        self._emitSlot("next", slot);
-        self.app.fire("ui:playSound", "ui_click_default");
-      });
-  });
-
-  var applyBtn = root.querySelector("[data-apply]");
-  if (applyBtn) {
-    applyBtn.setAttribute('data-suppress-default-sound', 'true');
-    applyBtn.addEventListener("click", function () {
-      self.callbacks.apply.forEach(function (fn) {
-        try {
-          fn();
-        } catch (e) {
-          console.error("Avatar apply callback error", e);
-        }
-      });
-      self.close();
-      self.app.fire("ui:playSound", "avatar_apply_click");
-    });
-  }
-
-  var cancelBtn = root.querySelector("[data-cancel]");
-  if (cancelBtn)
-    cancelBtn.addEventListener("click", function () {
-      self.callbacks.cancel.forEach(function (fn) {
-        try {
-          fn();
-        } catch (e) {
-          console.error("Avatar cancel callback error", e);
-        }
-      });
-      self.close();
-    });
-
-  // Create/announce the bottom-right button container
-  this._createButtonsContainerAndToggle();
-
-  if (this.openOnStart) this.open();
-  else this.close();
-
-  this._handlers = this._handlers || {};
   this._handlers.toggleRequest = function () {
-    if (self.isOpen) self.close();
-    else self.open();
+    self.toggle();
   };
-  this._handlers.openRequest = function () { self.open(); };
-  this._handlers.closeRequest = function () { self.close(); };
+  this._handlers.openRequest = function () {
+    self.open();
+  };
+  this._handlers.closeRequest = function () {
+    self.close();
+  };
 
   this.app.on("htmlAvatarCustomizer:toggle", this._handlers.toggleRequest, this);
   this.app.on("htmlAvatarCustomizer:open", this._handlers.openRequest, this);
   this.app.on("htmlAvatarCustomizer:close", this._handlers.closeRequest, this);
 
   this.app.fire("avatar:uiReady", this.bridge);
+
+  if (this.openOnStart) {
+    this.open();
+  } else if (this._pendingOpenRequest) {
+    var pendingOptions = this._pendingOpenRequest;
+    this._pendingOpenRequest = null;
+    this.open(pendingOptions);
+  }
 };
 
-HtmlAvatarCustomizer.prototype._createButtonsContainerAndToggle = function () {
-  var self = this;
+HtmlAvatarCustomizer.prototype._setupOverlayDom = function () {
+  if (!this.root) return;
+  if (this.overlayShell) return;
 
-  // Create the shared ui-button-container if missing (positioned left-center)
+  this.root.setAttribute("aria-hidden", "true");
+
+  var scrim = document.createElement("div");
+  scrim.className = "rpm-overlay-scrim";
+  scrim.setAttribute("aria-hidden", "true");
+
+  var shell = document.createElement("div");
+  shell.className = "rpm-overlay-shell";
+  shell.setAttribute("role", "dialog");
+  shell.setAttribute("aria-modal", "true");
+  shell.setAttribute("aria-label", this.overlayTitle);
+
+  var toolbar = document.createElement("div");
+  toolbar.className = "rpm-overlay-toolbar";
+
+  var title = document.createElement("span");
+  title.className = "rpm-overlay-title";
+  title.textContent = this.overlayTitle;
+
+  var closeBtn = document.createElement("button");
+  closeBtn.type = "button";
+  closeBtn.className = "rpm-overlay-close";
+  closeBtn.setAttribute("aria-label", "Close avatar creator");
+  closeBtn.textContent = "Close";
+
+  toolbar.appendChild(title);
+  toolbar.appendChild(closeBtn);
+
+  var content = document.createElement("div");
+  content.className = "rpm-overlay-content";
+
+  var loading = document.createElement("div");
+  loading.className = "rpm-overlay-loading hidden";
+  loading.textContent = "Loading Ready Player Me...";
+
+  var error = document.createElement("div");
+  error.className = "rpm-overlay-error hidden";
+  error.setAttribute("role", "alert");
+
+  var frameHost = document.createElement("div");
+  frameHost.className = "rpm-frame-host";
+
+  content.appendChild(loading);
+  content.appendChild(error);
+  content.appendChild(frameHost);
+
+  shell.appendChild(toolbar);
+  shell.appendChild(content);
+
+  this.scrim = scrim;
+  this.overlayShell = shell;
+  this.closeButton = closeBtn;
+  this.loadingEl = loading;
+  this.errorEl = error;
+  this.frameHost = frameHost;
+  this.titleEl = title;
+
+  this.root.appendChild(scrim);
+  this.root.appendChild(shell);
+};
+
+HtmlAvatarCustomizer.prototype._createToggleButton = function () {
   var buttonContainer = document.getElementById("ui-button-container");
   if (!buttonContainer) {
     buttonContainer = document.createElement("div");
@@ -214,165 +304,503 @@ HtmlAvatarCustomizer.prototype._createButtonsContainerAndToggle = function () {
     document.body.appendChild(buttonContainer);
   }
 
-  // Create the avatar customizer toggle button
-  if (!this.toggleButton) {
-    this.toggleButton = document.createElement('button');
-    this.toggleButton.className = 'ui-action-button avatar-customizer-toggle';
-    this.toggleButton.type = 'button';
-    this.toggleButton.setAttribute('aria-label', 'Customize avatar');
-    this.toggleButton.setAttribute('aria-pressed', 'false');
-    this.toggleButton.innerHTML = '<span class="icon" aria-hidden="true">🎨</span>';
+  if (this.toggleButton) return;
 
-    this._handlers = this._handlers || {};
-    this._handlers.toggleButton = function () {
-      self.app.fire('ui:playSound', 'ui_click_default');
-      if (self.isOpen) self.close();
-      else self.open();
-    };
-    this._handlers.hoverButton = function () {
-      self.app.fire('ui:playSound', 'ui_hover_default');
-    };
-
-    this.toggleButton.addEventListener('click', this._handlers.toggleButton);
-    this.toggleButton.addEventListener('mouseenter', this._handlers.hoverButton);
-
-    buttonContainer.appendChild(this.toggleButton);
+  var button = document.createElement("button");
+  button.className = "ui-action-button avatar-customizer-toggle";
+  button.type = "button";
+  button.setAttribute("aria-label", "Customize avatar");
+  button.setAttribute("aria-pressed", "false");
+  
+  if (this.iconAsset) {
+    var img = document.createElement("img");
+    img.className = "icon";
+    img.setAttribute("aria-hidden", "true");
+    img.alt = "";
+    img.src = this.iconAsset.getFileUrl();
+    button.appendChild(img);
+  } else {
+    button.innerHTML = '<span class="icon" aria-hidden="true"></span>';
   }
 
-  // Signal other scripts (WaveButton) that container is ready
+  var self = this;
+  this._handlers.toggleButton = function () {
+    self.app.fire("ui:playSound", "ui_click_default");
+    self.toggle();
+  };
+  this._handlers.hoverButton = function () {
+    self.app.fire("ui:playSound", "ui_hover_default");
+  };
+
+  button.addEventListener("click", this._handlers.toggleButton);
+  button.addEventListener("mouseenter", this._handlers.hoverButton);
+
+  buttonContainer.appendChild(button);
+  this.toggleButton = button;
+
   this.app.fire("ui:button-container:ready");
 
-  // Listen for the wave button and insert it before avatar button
-  this.app.on("ui:wavebutton:create", function (waveButton) {
+  this._handlers.waveButton = function (waveButton) {
     if (!waveButton || !self.toggleButton) return;
     if (buttonContainer.contains(waveButton)) return;
     buttonContainer.insertBefore(waveButton, self.toggleButton);
-  });
-
-  var themeToApply = this.theme;
-  if (!themeToApply && this.app.uiManager && typeof this.app.uiManager.getTheme === "function") {
-    themeToApply = this.app.uiManager.getTheme();
-  }
-  if (themeToApply) {
-    this.setTheme(themeToApply);
-  }
+  };
+  this.app.on("ui:wavebutton:create", this._handlers.waveButton, this);
 };
 
 HtmlAvatarCustomizer.prototype._createBridge = function () {
   var self = this;
+
+  function warnLegacy() {
+    if (self._legacyWarningShown) return;
+    self._legacyWarningShown = true;
+    console.warn("HtmlAvatarCustomizer: Legacy slot callbacks are ignored in Ready Player Me mode.");
+  }
+
   return {
-    onNext: function (slot, h) {
-      self._registerSlotCallback("next", slot, h);
+    onNext: function () {
+      warnLegacy();
     },
-    onPrev: function (slot, h) {
-      self._registerSlotCallback("prev", slot, h);
+    onPrev: function () {
+      warnLegacy();
     },
-    onApply: function (h) {
-      if (h) self.callbacks.apply.push(h);
+    onApply: function (handler) {
+      if (typeof handler === "function") {
+        self.callbacks.apply.push(handler);
+      }
     },
-    onCancel: function (h) {
-      if (h) self.callbacks.cancel.push(h);
+    onCancel: function (handler) {
+      if (typeof handler === "function") {
+        self.callbacks.cancel.push(handler);
+      }
     },
-    setSelection: function (slot, info) {
-      self._setSelection(slot, info);
+    onAvatarExported: function (handler) {
+      self._registerExportListener(handler);
     },
-    setBusy: function (slot, s) {
-      self._setBusy(slot, s);
-    },
-    setRecipe: function (r) {
-      self._setRecipeSummary(r);
-    },
-    showRateLimit: function (ms) {
-      self._showRateLimit(ms);
-    },
-    open: function () {
-      self.open();
+    setSelection: warnLegacy,
+    setBusy: warnLegacy,
+    setRecipe: warnLegacy,
+    showRateLimit: function () {},
+    open: function (options) {
+      self.open(options || {});
     },
     close: function () {
       self.close();
     },
-    toggle: function () {
-      if (self.isOpen) self.close();
-      else self.open();
+    toggle: function (options) {
+      self.toggle(options || {});
     },
     isOpen: function () {
       return self.isOpen;
     },
+    setInsetLayout: function (enabled) {
+      self._setInsetLayout(enabled);
+    },
+    setAvatarContext: function (info) {
+      if (!info) {
+        self.lastAvatarInfo = null;
+        return;
+      }
+      if (typeof info === "string") {
+        self.lastAvatarInfo = { avatarId: info };
+        return;
+      }
+      if (typeof info === "object") {
+        var avatarId = info.avatarId || info.id || null;
+        var url = info.url || null;
+        var userId = info.userId || null;
+        self.lastAvatarInfo = avatarId
+          ? { avatarId: avatarId, url: url, userId: userId }
+          : null;
+      }
+    }
   };
 };
 
-HtmlAvatarCustomizer.prototype._registerSlotCallback = function (
-  type,
-  slot,
-  handler
-) {
-  if (!handler) return;
-  var map = this.callbacks[type];
-  if (!map) return;
-  if (!map.has(slot)) map.set(slot, []);
-  map.get(slot).push(handler);
+HtmlAvatarCustomizer.prototype._registerExportListener = function (handler) {
+  if (typeof handler === "function") {
+    this.callbacks.exported.push(handler);
+  }
 };
 
-HtmlAvatarCustomizer.prototype._emitSlot = function (type, slot) {
-  var list = (this.callbacks[type] && this.callbacks[type].get(slot)) || [];
-  list.forEach(function (fn) {
+HtmlAvatarCustomizer.prototype._setInsetLayout = function (enabled) {
+  this.activeInset = !!enabled;
+  if (this.isOpen) {
+    this._updateOpenState(true);
+  }
+};
+
+HtmlAvatarCustomizer.prototype.open = function (options) {
+  options = options || {};
+  if (!this.root) {
+    this._pendingOpenRequest = options;
+    return;
+  }
+  if (this.isOpen) return;
+
+  this.isOpen = true;
+  this._closeReason = null;
+  this.activeInset = typeof options.inset === "boolean" ? options.inset : this.activeInset;
+
+  this._clearError();
+  this._setLoading(true);
+  this._updateOpenState(true);
+  this._mountIframe(options);
+
+  if (!this._rpmOriginConfigured) {
+    this._showError("Set HtmlAvatarCustomizer.rpmSubdomain to your Ready Player Me subdomain.");
+    this._setLoading(false);
+  }
+
+  window.addEventListener("message", this._messageHandler);
+  window.addEventListener("keydown", this._escHandler);
+
+  if (this.scrim) {
+    this.scrim.addEventListener("click", this._boundScrimClick);
+  }
+  if (this.closeButton) {
+    this.closeButton.addEventListener("click", this._boundCloseClick);
+  }
+
+  this._setInputsSuspended(true);
+  this._stashBodyOverflow();
+  this.app.fire("avatar:rpm:creator:open");
+};
+
+HtmlAvatarCustomizer.prototype.close = function (options) {
+  options = options || {};
+  if (!this.isOpen || !this.root) {
+    this._pendingOpenRequest = null;
+    return;
+  }
+
+  this.isOpen = false;
+  this._updateOpenState(false);
+
+  window.removeEventListener("message", this._messageHandler);
+  window.removeEventListener("keydown", this._escHandler);
+
+  if (this.scrim) {
+    this.scrim.removeEventListener("click", this._boundScrimClick);
+  }
+  if (this.closeButton) {
+    this.closeButton.removeEventListener("click", this._boundCloseClick);
+  }
+
+  this._destroyIframe();
+  this._setLoading(false);
+  this._clearError();
+  this._setInputsSuspended(false);
+  this._restoreBodyOverflow();
+  this.app.fire("avatar:rpm:creator:close", options);
+
+  var reason = options.reason || this._closeReason;
+  this._closeReason = null;
+
+  if (reason === "submitted") {
+    return;
+  }
+
+  for (var i = 0; i < this.callbacks.cancel.length; i++) {
     try {
-      fn();
-    } catch (e) {
-      console.error("HtmlAvatarCustomizer callback error", e);
+      this.callbacks.cancel[i]();
+    } catch (err) {
+      console.error("HtmlAvatarCustomizer: cancel callback failed.", err);
     }
-  });
+  }
 };
 
-HtmlAvatarCustomizer.prototype._setSelection = function (slot, info) {
-  var refs = this.slotElements.get(slot);
-  if (!refs) return;
-  var total = info && typeof info.total === "number" ? info.total : 0;
-  var index = info && typeof info.index === "number" ? info.index : 0;
-  var displayIndex = total ? index + 1 : 0;
-  refs.lastIndex = displayIndex;
-  refs.totalOptions = total;
-  if (refs.indexEl)
-    refs.indexEl.textContent = total ? displayIndex + " / " + total : "0 / 0";
-  if (refs.progressFill)
-    refs.progressFill.style.width =
-      (total ? (displayIndex / total) * 100 : 0) + "%";
+HtmlAvatarCustomizer.prototype.toggle = function (options) {
+  if (this.isOpen) {
+    this.close(options || {});
+  } else {
+    this.open(options || {});
+  }
 };
 
-HtmlAvatarCustomizer.prototype._setBusy = function (slot, state) {
-  var refs = this.slotElements.get(slot);
-  if (!refs) return;
-  if (refs.container) refs.container.classList.toggle("is-busy", !!state);
-  if (refs.busyEl) refs.busyEl.classList.toggle("hidden", !state);
-};
-
-HtmlAvatarCustomizer.prototype._setRecipeSummary = function (recipe) {
+HtmlAvatarCustomizer.prototype._updateOpenState = function (isOpen) {
   if (!this.root) return;
-  var summary = this.root.querySelector("[data-recipe-summary]");
-  if (!summary) return;
-  summary.textContent = recipe ? "Tap the arrows to preview each style." : "";
+  this.root.classList.toggle("is-open", !!isOpen);
+  this.root.classList.toggle("is-closed", !isOpen);
+  this.root.classList.toggle("rpm-mode", !!isOpen);
+  this.root.classList.toggle("inset90", !!isOpen && this.activeInset);
+
+  if (this.root) {
+    this.root.setAttribute("aria-hidden", isOpen ? "false" : "true");
+  }
+  if (this.scrim) {
+    this.scrim.classList.toggle("hidden", !isOpen);
+    this.scrim.setAttribute("aria-hidden", isOpen ? "false" : "true");
+  }
+  if (this.overlayShell) {
+    this.overlayShell.classList.toggle("hidden", !isOpen);
+  }
+  if (this.toggleButton) {
+    this.toggleButton.classList.toggle("is-open", !!isOpen);
+    this.toggleButton.setAttribute("aria-pressed", isOpen ? "true" : "false");
+  }
 };
 
-HtmlAvatarCustomizer.prototype._showRateLimit = function (remainingMs) {
-  if (!this.rateLimitEl) return;
-  clearTimeout(this._rateLimitTimer);
-  var seconds = Math.max(0, Math.ceil(remainingMs / 1000));
-  this.rateLimitEl.textContent =
-    seconds > 0 ? "Please wait " + seconds + "s before applying again." : "";
-  this.rateLimitEl.classList.remove("hidden");
-  var self = this;
-  this._rateLimitTimer = setTimeout(function () {
-    if (self.rateLimitEl) self.rateLimitEl.classList.add("hidden");
-  }, Math.max(1500, remainingMs));
+HtmlAvatarCustomizer.prototype._mountIframe = function (options) {
+  if (!this.frameHost) return;
+
+  this._destroyIframe();
+
+  this.frameReady = false;
+  this._subscriptionAcks.clear();
+
+  var avatarId = null;
+  if (options && options.avatarId) {
+    avatarId = options.avatarId;
+  } else if (this.lastAvatarInfo && this.lastAvatarInfo.avatarId) {
+    avatarId = this.lastAvatarInfo.avatarId;
+  }
+
+  var iframe = document.createElement("iframe");
+  iframe.className = "rpm-creator-frame";
+  iframe.allow = "camera; microphone; clipboard-write";
+  iframe.setAttribute("allowfullscreen", "true");
+  iframe.setAttribute("title", this.overlayTitle + " Creator");
+  iframe.src = this._buildCreatorUrl(avatarId, options && options.query);
+
+  this.frameHost.appendChild(iframe);
+  this.iframe = iframe;
+
+  iframe.addEventListener("load", this._handleFrameLoad.bind(this), { once: true });
+};
+
+HtmlAvatarCustomizer.prototype._destroyIframe = function () {
+  if (this.iframe && this.iframe.parentNode) {
+    this.iframe.parentNode.removeChild(this.iframe);
+  }
+  this.iframe = null;
+};
+
+HtmlAvatarCustomizer.prototype._buildCreatorUrl = function (avatarId, extraParams) {
+  var origin = this.rpmOrigin.replace(/\/+$/, "");
+  var endpoint = origin + "/avatar";
+  var params = new URLSearchParams();
+  params.set("frameApi", "1");
+  params.set("clearCache", "true");
+
+  if (avatarId) {
+    params.set("avatarId", avatarId);
+  }
+
+  this._applyQueryParams(params, this.additionalQuery);
+  this._applyQueryParams(params, extraParams);
+
+  return endpoint + "?" + params.toString();
+};
+
+HtmlAvatarCustomizer.prototype._applyQueryParams = function (params, source) {
+  if (!source) return;
+
+  if (typeof source === "string") {
+    var normalized = source.trim();
+    if (!normalized) return;
+    normalized = normalized.replace(/^[?&]+/, "");
+    if (!normalized) return;
+    var parts = normalized.split("&");
+    for (var i = 0; i < parts.length; i++) {
+      var part = parts[i];
+      if (!part) continue;
+      var split = part.split("=");
+      var key = decodeURIComponent(split[0]);
+      var value = split.length > 1 ? decodeURIComponent(split.slice(1).join("=")) : "";
+      if (key) params.set(key, value);
+    }
+    return;
+  }
+
+  if (typeof source === "object") {
+    for (var prop in source) {
+      if (Object.prototype.hasOwnProperty.call(source, prop)) {
+        params.set(prop, source[prop]);
+      }
+    }
+  }
+};
+
+HtmlAvatarCustomizer.prototype._handleMessage = function (event) {
+  if (!this.isOpen || !this.iframe || event.source !== this.iframe.contentWindow) {
+    return;
+  }
+
+  var payload = event.data;
+  if (typeof payload === "string") {
+    try {
+      payload = JSON.parse(payload);
+    } catch (err) {
+      return;
+    }
+  }
+  if (!payload || typeof payload !== "object") {
+    return;
+  }
+
+  var originTrusted = false;
+  if (this._rpmOriginConfigured) {
+    originTrusted = event.origin === this.rpmOrigin;
+  } else if (event.origin && /https:\/\/([a-z0-9-]+\.)?readyplayer\.me$/i.test(event.origin)) {
+    originTrusted = true;
+  } else {
+    if (!this._missingOriginWarned) {
+      this._missingOriginWarned = true;
+      console.warn("HtmlAvatarCustomizer: RPM subdomain not configured; accepting iframe messages in development mode.");
+    }
+    originTrusted = true;
+  }
+  if (!originTrusted) {
+    return;
+  }
+
+  if (payload.source !== "readyplayerme") {
+    return;
+  }
+
+  var eventName = payload.eventName || payload.type;
+  if (!eventName) {
+    return;
+  }
+
+  if (eventName === "v1.frame.ready") {
+    this._handleFrameReady();
+    return;
+  }
+
+  if (eventName === "v1.avatar.exported") {
+    this._handleAvatarExported(payload);
+    return;
+  }
+};
+
+HtmlAvatarCustomizer.prototype._handleFrameReady = function () {
+  this.frameReady = true;
+  this._setLoading(false);
+
+  for (var i = 0; i < this._pendingSubscriptions.length; i++) {
+    this._postToCreator({
+      target: "readyplayerme",
+      type: "subscribe",
+      eventName: this._pendingSubscriptions[i]
+    });
+  }
+};
+
+HtmlAvatarCustomizer.prototype._handleFrameLoad = function () {
+  if (!this.isOpen) {
+    return;
+  }
+  this._setLoading(false);
+  this._clearError();
+};
+
+HtmlAvatarCustomizer.prototype._handleAvatarExported = function (payload) {
+  if (!payload || !payload.data) {
+    console.warn("HtmlAvatarCustomizer: Received malformed export payload.", payload);
+    return;
+  }
+
+  var data = payload.data;
+  if (!data.url || !data.avatarId) {
+    console.warn("HtmlAvatarCustomizer: Export payload missing url or avatarId.", data);
+    return;
+  }
+
+  var exportedInfo = {
+    avatarId: data.avatarId,
+    url: data.url,
+    userId: data.userId || null,
+    timestamp: Date.now()
+  };
+  this.lastAvatarInfo = exportedInfo;
+
+  for (var i = 0; i < this.callbacks.exported.length; i++) {
+    try {
+      this.callbacks.exported[i](exportedInfo);
+    } catch (err) {
+      console.error("HtmlAvatarCustomizer: exported callback failed.", err);
+    }
+  }
+
+  for (var j = 0; j < this.callbacks.apply.length; j++) {
+    try {
+      this.callbacks.apply[j](exportedInfo);
+    } catch (e) {
+      console.error("HtmlAvatarCustomizer: apply callback failed.", e);
+    }
+  }
+
+  this.app.fire("avatar:rpm:exported", exportedInfo);
+  this._closeReason = "submitted";
+  this.close({ reason: "submitted" });
+};
+
+HtmlAvatarCustomizer.prototype._postToCreator = function (message) {
+  if (!this.iframe || !this.iframe.contentWindow) return;
+  try {
+    var payload = typeof message === "string" ? message : JSON.stringify(message);
+    var targetOrigin = this._rpmOriginConfigured ? this.rpmOrigin : "*";
+    this.iframe.contentWindow.postMessage(payload, targetOrigin);
+  } catch (err) {
+    console.error("HtmlAvatarCustomizer: Failed to post message to RPM frame.", err);
+  }
+};
+
+HtmlAvatarCustomizer.prototype._setLoading = function (isLoading) {
+  if (!this.loadingEl) return;
+  this.loadingEl.classList.toggle("hidden", !isLoading);
+};
+
+HtmlAvatarCustomizer.prototype._showError = function (message) {
+  if (!this.errorEl) return;
+  this.errorEl.textContent = message || "Avatar creator failed to load.";
+  this.errorEl.classList.remove("hidden");
+};
+
+HtmlAvatarCustomizer.prototype._clearError = function () {
+  if (!this.errorEl) return;
+  this.errorEl.textContent = "";
+  this.errorEl.classList.add("hidden");
+};
+
+HtmlAvatarCustomizer.prototype._setInputsSuspended = function (suspended) {
+  if (suspended && !this._inputsSuspended) {
+    this._inputsSuspended = true;
+    this.app.fire("ui:input:focus", { source: "avatar-customizer" });
+  } else if (!suspended && this._inputsSuspended) {
+    this._inputsSuspended = false;
+    this.app.fire("ui:input:blur", { source: "avatar-customizer" });
+  }
+};
+
+HtmlAvatarCustomizer.prototype._stashBodyOverflow = function () {
+  if (this._bodyOverflow !== null) return;
+  this._bodyOverflow = document.body.style.overflow || "";
+  document.body.style.overflow = "hidden";
+};
+
+HtmlAvatarCustomizer.prototype._restoreBodyOverflow = function () {
+  if (this._bodyOverflow === null) return;
+  document.body.style.overflow = this._bodyOverflow;
+  this._bodyOverflow = null;
+};
+
+HtmlAvatarCustomizer.prototype._handleEscape = function (event) {
+  if (!this.isOpen) return;
+  if (event.key === "Escape" || event.key === "Esc") {
+    this.close();
+  }
 };
 
 HtmlAvatarCustomizer.prototype.setTheme = function (theme) {
   this.theme = theme;
   if (!theme) return;
+
   if (this.root) {
     var colors = theme.colors || {};
     var layout = theme.layout && theme.layout.avatarPanel ? theme.layout.avatarPanel : null;
-
     this.root.style.setProperty("--accent-color", colors.accent || "#1df2a4");
     this.root.style.setProperty("--accent2-color", colors.accent2 || colors.primary || "#1de8f2");
     this.root.style.setProperty("--avatar-surface", colors.surface2 || colors.surface || "rgba(17, 22, 34, 0.94)");
@@ -384,144 +812,76 @@ HtmlAvatarCustomizer.prototype.setTheme = function (theme) {
       this.root.style.setProperty("--avatar-panel-width", layout.width + "px");
     }
   }
-  if (this.toggleButton && theme.colors && theme.colors.surface)
-    this.toggleButton.style.setProperty(
-      "--toggle-surface",
-      theme.colors.surface
-    );
+
+  if (this.overlayShell) {
+    this.overlayShell.style.setProperty("--avatar-overlay-surface", (theme.colors && theme.colors.surface) || "rgba(12, 16, 24, 0.94)");
+    this.overlayShell.style.setProperty("--avatar-overlay-border", "rgba(255, 255, 255, 0.12)");
+  }
+
+  if (this.closeButton) {
+    this.closeButton.style.setProperty("--toggle-surface", (theme.colors && theme.colors.surface) || "#1f2534");
+  }
+
+  if (this.toggleButton && theme.colors && theme.colors.surface) {
+    this.toggleButton.style.setProperty("--toggle-surface", theme.colors.surface);
+  }
 };
 
 HtmlAvatarCustomizer.prototype.setAnimationConfig = function (config) {
-  if (!config) {
-    return;
-  }
+  if (!config) return;
   this.animationConfig = Object.assign({}, this.animationConfig, config);
 };
 
-HtmlAvatarCustomizer.prototype.open = function () {
-  if (!this.root || this.isOpen) return;
-  this.isOpen = true;
-  this.root.style.display = 'block';
-  this.root.style.display = 'block';
-  this.root.classList.remove("is-closed");
-  this.root.classList.add("is-open");
-  this.root.style.pointerEvents = "auto";
-  this._animatePanel(true);
-  this._requestVariantStreaming();
-  if (this.toggleButton) {
-    this.toggleButton.classList.add("is-open");
-    this.toggleButton.setAttribute("aria-pressed", "true");
-  }
-};
-
-HtmlAvatarCustomizer.prototype.close = function () {
-  if (!this.root || !this.isOpen) return;
-  var self = this;
-  this.isOpen = false;
-  this.root.style.pointerEvents = "none";
-  if (this.toggleButton) {
-    this.toggleButton.classList.remove("is-open");
-    this.toggleButton.setAttribute("aria-pressed", "false");
-  }
-
-  var duration = this._animatePanel(false);
-  var finalize = function () {
-    if (!self.root) return;
-    self.root.classList.add("is-closed");
-    self.root.classList.remove("is-open");
-  };
-
-  if (duration > 0 && window.gsap && this._shouldAnimate()) {
-    gsap.delayedCall(duration, finalize);
-  } else {
-    finalize();
-  }
-};
-
-HtmlAvatarCustomizer.prototype._preloadSounds = function () {
-  if (this.app.soundManager && this.app.soundManager.preloadSound) {
-    this.app.soundManager.preloadSound('ui_click_default');
-    this.app.soundManager.preloadSound('avatar_apply_click');
-    this.app.soundManager.preloadSound('ui_hover_default');
-  }
-};
-
-HtmlAvatarCustomizer.prototype._requestVariantStreaming = function () {
-  if (this._requestedVariantStream) {
-    return;
-  }
-  this._requestedVariantStream = true;
-  const queue = this.app && this.app.tagLoadQueue;
-  if (!queue || typeof queue.loadByTags !== 'function') {
-    return;
-  }
-  queue.loadByTags(['avatars-variants'], {
-    priority: 3,
-    phase: 'postSpawnStream'
-  }).catch(function (err) {
-    console.warn('HtmlAvatarCustomizer: Failed to stream avatar variants.', err);
-  });
-};
-
-HtmlAvatarCustomizer.prototype._shouldAnimate = function () {
-  return this.animationConfig && this.animationConfig.enabled !== false;
-};
-
-HtmlAvatarCustomizer.prototype._animatePanel = function (isOpening) {
-  if (!window.gsap || !this._shouldAnimate() || !this.root) {
-    return 0;
-  }
-  var baseDuration = (this.animationConfig.durations && this.animationConfig.durations.standard) || 0.26;
-  var duration = Math.max(0.16, baseDuration * (this.animationConfig.multiplier || 1));
-  var easeIn = (this.animationConfig.easings && this.animationConfig.easings.entrance) || 'power3.out';
-  var easeOut = (this.animationConfig.easings && this.animationConfig.easings.exit) || 'power2.in';
-
-  gsap.killTweensOf(this.root);
-  if (isOpening) {
-    gsap.fromTo(this.root,
-      { opacity: 0, y: 28, scale: 0.95 },
-      { opacity: 1, y: 0, scale: 1, duration: duration, ease: easeIn }
-    );
-    return duration;
-  }
-
-  var closingDuration = Math.max(0.14, duration * 0.85);
-  gsap.to(this.root, {
-    opacity: 0,
-    y: 24,
-    scale: 0.94,
-    duration: closingDuration,
-    ease: easeOut
-  });
-  return closingDuration;
-};
-
 HtmlAvatarCustomizer.prototype.destroy = function () {
-  clearTimeout(this._rateLimitTimer);
-  this.app.off("ui:wavebutton:create");
-  if (this._handlers) {
-    if (this._handlers.toggleRequest) {
-      this.app.off("htmlAvatarCustomizer:toggle", this._handlers.toggleRequest, this);
-    }
-    if (this._handlers.openRequest) {
-      this.app.off("htmlAvatarCustomizer:open", this._handlers.openRequest, this);
-    }
-    if (this._handlers.closeRequest) {
-      this.app.off("htmlAvatarCustomizer:close", this._handlers.closeRequest, this);
-    }
+  window.removeEventListener("message", this._messageHandler);
+  window.removeEventListener("keydown", this._escHandler);
+
+  if (this.scrim) {
+    this.scrim.removeEventListener("click", this._boundScrimClick);
+  }
+  if (this.closeButton) {
+    this.closeButton.removeEventListener("click", this._boundCloseClick);
   }
   if (this.toggleButton) {
     if (this._handlers.toggleButton) {
-      this.toggleButton.removeEventListener('click', this._handlers.toggleButton);
+      this.toggleButton.removeEventListener("click", this._handlers.toggleButton);
     }
     if (this._handlers.hoverButton) {
-      this.toggleButton.removeEventListener('mouseenter', this._handlers.hoverButton);
+      this.toggleButton.removeEventListener("mouseenter", this._handlers.hoverButton);
     }
     if (this.toggleButton.parentNode) {
       this.toggleButton.parentNode.removeChild(this.toggleButton);
     }
     this.toggleButton = null;
   }
-  if (this.container && this.container.parentNode)
+
+  if (this._handlers.waveButton) {
+    this.app.off("ui:wavebutton:create", this._handlers.waveButton, this);
+  }
+
+  if (this._handlers.toggleRequest) {
+    this.app.off("htmlAvatarCustomizer:toggle", this._handlers.toggleRequest, this);
+  }
+  if (this._handlers.openRequest) {
+    this.app.off("htmlAvatarCustomizer:open", this._handlers.openRequest, this);
+  }
+  if (this._handlers.closeRequest) {
+    this.app.off("htmlAvatarCustomizer:close", this._handlers.closeRequest, this);
+  }
+
+  this._restoreBodyOverflow();
+  this._destroyIframe();
+  this._setInputsSuspended(false);
+
+  if (this.container && this.container.parentNode) {
     this.container.parentNode.removeChild(this.container);
+  }
+  this.container = null;
+  this.root = null;
+  this.scrim = null;
+  this.overlayShell = null;
+  this.frameHost = null;
+  this.closeButton = null;
+  this.loadingEl = null;
+  this.errorEl = null;
 };

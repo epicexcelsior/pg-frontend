@@ -55,6 +55,8 @@ HtmlUsernamePanel.prototype._bindDom = function () {
     this._boundSubmit = this.handleSubmit.bind(this);
     this._boundBackdropClick = this.handleBackdropClick.bind(this);
     this._boundKeyDown = this.handleGlobalKeyDown.bind(this);
+    this._boundInputFocus = this.handleInputFocus.bind(this);
+    this._boundInputBlur = this.handleInputBlur.bind(this);
 
     if (this.closeButton) {
         this.closeButton.addEventListener('click', this._boundClose);
@@ -68,6 +70,10 @@ HtmlUsernamePanel.prototype._bindDom = function () {
     if (this.modalEl) {
         this.modalEl.addEventListener('click', this._boundBackdropClick);
     }
+    if (this.inputEl) {
+        this.inputEl.addEventListener('focus', this._boundInputFocus);
+        this.inputEl.addEventListener('blur', this._boundInputBlur);
+    }
     document.addEventListener('keydown', this._boundKeyDown, true);
 };
 
@@ -77,6 +83,14 @@ HtmlUsernamePanel.prototype._registerEvents = function () {
     this.app.on('player:spawned', this.updateDisplay, this);
     this.app.on('ui:usernamePanel:open', this.openPanel, this);
     this.app.on('ui:usernamePanel:close', this.closePanel, this);
+};
+
+HtmlUsernamePanel.prototype.handleInputFocus = function () {
+    this.app.fire('ui:input:focus', { source: 'usernamePanel' });
+};
+
+HtmlUsernamePanel.prototype.handleInputBlur = function () {
+    this.app.fire('ui:input:blur', { source: 'usernamePanel' });
 };
 
 HtmlUsernamePanel.prototype.destroy = function () {
@@ -97,6 +111,12 @@ HtmlUsernamePanel.prototype.destroy = function () {
     }
     if (this.modalEl && this._boundBackdropClick) {
         this.modalEl.removeEventListener('click', this._boundBackdropClick);
+    }
+    if (this.inputEl && this._boundInputFocus) {
+        this.inputEl.removeEventListener('focus', this._boundInputFocus);
+    }
+    if (this.inputEl && this._boundInputBlur) {
+        this.inputEl.removeEventListener('blur', this._boundInputBlur);
     }
     document.removeEventListener('keydown', this._boundKeyDown, true);
 

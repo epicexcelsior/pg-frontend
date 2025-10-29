@@ -376,6 +376,11 @@ DonationService.prototype.pollForSolanaPayTransaction = async function (data) {
                     donor: null,
                 };
                 this.app.fire('network:send', 'announceDonation', announcePayload);
+                const senderAddress = this.privyManager?.getWalletAddress();
+                if (senderAddress) {
+                    this.app.fire('wallet:refreshBalance', { address: senderAddress, source: 'solanapay:success' });
+                    this.scheduleBalanceRefresh(500);
+                }
                 this.stopPolling();
                 return;
             }

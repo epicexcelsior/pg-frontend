@@ -4,23 +4,10 @@
               {};
 
   var constants = {
-    AVATAR_SLOTS: ["head", "body", "legs", "feet"],
-    DEFAULTS: {
-      version: 1,
-      gender: "unisex",
-      head: "Casual_Head",
-      body: "Casual_Body",
-      legs: "Casual_Legs",
-      feet: "Casual_Feet"
-    },
-    CACHE: { perSlotKeep: 6, prefetchCount: 2 },
-    NET: { rateLimitMs: 1000 }
+    DEFAULT_RPM_AVATAR_ID: '68febb59c22c764a620b7b90'
   };
 
   scope.PlayerCustomization = scope.PlayerCustomization || {};
-  scope.PlayerCustomization.AVATAR_SLOTS = constants.AVATAR_SLOTS;
-  scope.PlayerCustomization.DEFAULTS = constants.DEFAULTS;
-  scope.PlayerCustomization.CACHE = constants.CACHE;
-  scope.PlayerCustomization.NET = constants.NET;
+  scope.PlayerCustomization.DEFAULT_RPM_AVATAR_ID = constants.DEFAULT_RPM_AVATAR_ID;
   scope.PlayerCustomization.CONSTANTS = constants;
 })();
