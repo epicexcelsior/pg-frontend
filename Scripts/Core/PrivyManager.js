@@ -15,9 +15,12 @@ PrivyManager.prototype.initialize = function () {
     this.authenticated = false;
     this.ready = false;
     this._pendingNonce = null;
-    this.loginTimeoutMs = 60000;
-    this._loginInProgress = false;
+    this.loginTimeoutMs = 30000;
+    this._loginState = 'idle';
     this._loginTimeoutHandle = null;
+    this._popupWindowRef = null;
+    this._popupCheckInterval = null;
+    this._popupCheckIntervalMs = 1000;
 
     this.twitterHandle = null;
     this.twitterUserId = null;
@@ -214,7 +217,8 @@ PrivyManager.prototype.onDestroyHandler = function () {
 
     this.rejectAllPendingTransactions('Privy manager destroyed before the transaction completed.');
     this.pendingReadyCallbacks.length = 0;
-    this._setLoginInProgress(false);
+    this._setLoginState('idle');
+    this._stopPopupMonitor();
 };
 
 PrivyManager.prototype.rejectAllPendingTransactions = function (message) {
@@ -246,31 +250,88 @@ PrivyManager.prototype.normalizeError = function (errorOrMessage, fallbackMessag
     return new Error(fallbackMessage || 'Operation failed.');
 };
 
-PrivyManager.prototype._setLoginInProgress = function (active) {
-    if (active) {
-        this._loginInProgress = true;
+PrivyManager.prototype._stopPopupMonitor = function () {
+    if (this._popupCheckInterval) {
+        window.clearInterval(this._popupCheckInterval);
+        this._popupCheckInterval = null;
+    }
+    this._popupWindowRef = null;
+};
+
+PrivyManager.prototype._startPopupMonitor = function (popup) {
+    this._stopPopupMonitor();
+    if (!popup) {
+        return;
+    }
+    this._popupWindowRef = popup;
+    var checkIntervalMs = typeof this._popupCheckIntervalMs === 'number' && this._popupCheckIntervalMs > 0
+        ? this._popupCheckIntervalMs
+        : 1000;
+    this._popupCheckInterval = window.setInterval(() => {
+        if (this._popupWindowRef && this._popupWindowRef.closed) {
+            console.log('PrivyManager: Popup closed by user. Transitioning to failed state.');
+            this._handlePopupClosure();
+        }
+    }, checkIntervalMs);
+};
+
+PrivyManager.prototype._handlePopupClosure = function () {
+    this._stopPopupMonitor();
+    if (this._loginState === 'pending') {
+        console.log('PrivyManager: User cancelled login. Can retry immediately.');
+        this._loginState = 'failed';
+        this._pendingNonce = null;
+        if (this._loginTimeoutHandle) {
+            window.clearTimeout(this._loginTimeoutHandle);
+            this._loginTimeoutHandle = null;
+        }
+    }
+};
+
+PrivyManager.prototype._setLoginState = function (state) {
+    if (this._loginState === state) {
+        return;
+    }
+    console.log('PrivyManager: Login state transition:', { from: this._loginState, to: state });
+    
+    if (state === 'idle') {
+        this._loginState = 'idle';
+        if (this._loginTimeoutHandle) {
+            window.clearTimeout(this._loginTimeoutHandle);
+            this._loginTimeoutHandle = null;
+        }
+        this._stopPopupMonitor();
+        this._pendingNonce = null;
+    } else if (state === 'pending') {
+        this._loginState = 'pending';
         if (this._loginTimeoutHandle) {
             window.clearTimeout(this._loginTimeoutHandle);
         }
         var timeout = typeof this.loginTimeoutMs === 'number' && this.loginTimeoutMs > 0
             ? this.loginTimeoutMs
-            : 60000;
+            : 30000;
         this._loginTimeoutHandle = window.setTimeout(() => {
-            console.warn('PrivyManager: Login attempt timed out. Clearing guard.');
-            this._loginInProgress = false;
+            console.warn('PrivyManager: Login attempt timed out. Transitioning to failed state.');
+            this._loginState = 'failed';
             this._loginTimeoutHandle = null;
+            this._stopPopupMonitor();
         }, timeout);
-        return;
-    }
-    this._loginInProgress = false;
-    if (this._loginTimeoutHandle) {
-        window.clearTimeout(this._loginTimeoutHandle);
-        this._loginTimeoutHandle = null;
+    } else if (state === 'failed') {
+        this._loginState = 'failed';
+        if (this._loginTimeoutHandle) {
+            window.clearTimeout(this._loginTimeoutHandle);
+            this._loginTimeoutHandle = null;
+        }
+        this._stopPopupMonitor();
     }
 };
 
 PrivyManager.prototype.isLoginInProgress = function () {
-    return this._loginInProgress;
+    return this._loginState === 'pending';
+};
+
+PrivyManager.prototype.canRetryLogin = function () {
+    return this._loginState === 'idle' || this._loginState === 'failed';
 };
 
 PrivyManager.prototype.handleAuthMessage = function (event) {
@@ -303,7 +364,7 @@ PrivyManager.prototype.handleAuthMessage = function (event) {
 
     switch (type) {
         case 'PRIVY_AUTH_SUCCESS':
-            this._setLoginInProgress(false);
+            this._setLoginState('idle');
             if (payload && typeof payload.user === 'object') {
                 this.handleAuthSuccess(payload);
             } else {
@@ -311,7 +372,7 @@ PrivyManager.prototype.handleAuthMessage = function (event) {
             }
             break;
         case 'PRIVY_AUTH_LOGOUT':
-            this._setLoginInProgress(false);
+            this._setLoginState('idle');
             this.handleAuthLogout();
             break;
         case 'PRIVY_TX_SUCCESS':
@@ -346,7 +407,7 @@ PrivyManager.prototype.handleAuthMessage = function (event) {
             break;
         default:
             if (typeof type === 'string' && type.indexOf('PRIVY_AUTH_') === 0) {
-                this._setLoginInProgress(false);
+                this._setLoginState('idle');
             }
             console.warn('PrivyManager: Unhandled message type from privy host:', type);
             break;
@@ -450,7 +511,7 @@ PrivyManager.prototype.bytesToBase58 = function (bytes) {
 PrivyManager.prototype.handleAuthSuccess = function (payload) {
     console.log('PrivyManager: Authentication successful.', payload);
 
-    this._setLoginInProgress(false);
+    this._setLoginState('idle');
 
     this.user = payload.user;
     this.authenticated = true;
@@ -495,7 +556,7 @@ PrivyManager.prototype.handleAuthSuccess = function (payload) {
 PrivyManager.prototype.handleAuthLogout = function () {
     console.log('PrivyManager: Logout successful.');
 
-    this._setLoginInProgress(false);
+    this._setLoginState('idle');
 
     this.rejectAllPendingTransactions('User logged out before the transaction completed.');
 
@@ -788,12 +849,12 @@ PrivyManager.prototype.login = function (options) {
         return null;
     }
 
-    if (this._loginInProgress) {
-        console.log('PrivyManager: Login request ignored; another login is in progress.');
+    if (!this.canRetryLogin()) {
+        console.log('PrivyManager: Login already in progress. Cannot initiate new login.');
         return null;
     }
 
-    this._setLoginInProgress(true);
+    this._setLoginState('pending');
 
     const performLogin = () => {
         console.log('PrivyManager: Starting login process...');
@@ -805,7 +866,10 @@ PrivyManager.prototype.login = function (options) {
         const loginUrl = this.buildPrivyUrl(params);
         const popup = this.openPrivyWindow(loginUrl, 'privy-auth');
         if (!popup) {
-            this._setLoginInProgress(false);
+            console.error('PrivyManager: Failed to open popup.');
+            this._setLoginState('failed');
+        } else {
+            this._startPopupMonitor(popup);
         }
         return popup;
     };
@@ -815,7 +879,7 @@ PrivyManager.prototype.login = function (options) {
             try {
                 performLogin();
             } catch (error) {
-                this._setLoginInProgress(false);
+                this._setLoginState('failed');
                 console.error('PrivyManager: Deferred login failed.', error);
             }
         }, 'login');
@@ -825,7 +889,7 @@ PrivyManager.prototype.login = function (options) {
     try {
         return performLogin();
     } catch (error) {
-        this._setLoginInProgress(false);
+        this._setLoginState('failed');
         throw error;
     }
 };
