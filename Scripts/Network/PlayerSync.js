@@ -6,9 +6,10 @@ PlayerSync.attributes.add('playerPrefab', {
     assetType: 'template',
     title: 'Player Prefab'
 });
-PlayerSync.attributes.add('positionLerpFactor', { type: 'number', default: 0.1 });
+PlayerSync.attributes.add('positionLerpFactor', { type: 'number', default: 0.15 });
 PlayerSync.attributes.add('rotationSlerpFactor', { type: 'number', default: 0.15 });
 PlayerSync.attributes.add('remoteRotationOffset', { type: 'number', default: 0 });
+PlayerSync.attributes.add('jumpSmoothingFactor', { type: 'number', default: 0.25, title: 'Jump Smoothing (higher = smoother jumps)' });
 
 function findAnimEntity(entity) {
     if (!entity) return null;
@@ -245,8 +246,12 @@ PlayerSync.prototype.updateRemotePlayerVisuals = function (entity, playerState) 
         entity.syncTargetYaw = unwrapAngle(entity.syncCurrentYaw, rawYaw);
         entity.syncTargetYawRaw = playerState.rotation;
     }
-    if (typeof playerState.speed === 'number') {
+        if (typeof playerState.speed === 'number') {
         entity.syncTargetSpeed = convertNormalizedSpeed(entity, playerState.speed);
+    }
+    // Capture vertical velocity for smooth jump interpolation
+    if (typeof playerState.verticalVelocity === 'number') {
+        entity.syncVerticalVelocity = playerState.verticalVelocity;
     }
 };
 
@@ -290,7 +295,13 @@ PlayerSync.prototype.update = function (dt) {
         
         const currentPos = entity.getPosition();
         const targetPos = entity.syncTargetPos;
-        const posBlend = frameBlend(this.positionLerpFactor, dt);
+        
+        // Detect if player is jumping based on vertical velocity (smoother jump interpolation)
+        const verticalVel = typeof entity.syncVerticalVelocity === 'number' ? entity.syncVerticalVelocity : 0;
+        const isJumping = verticalVel > 0.5;
+        const jumpFactor = isJumping ? this.jumpSmoothingFactor : this.positionLerpFactor;
+        const posBlend = frameBlend(jumpFactor, dt);
+        
         this._tempLerpPos.lerp(currentPos, targetPos, posBlend);
 
         // Build quaternion from yaw for proper entity rotation

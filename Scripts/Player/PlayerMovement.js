@@ -137,6 +137,8 @@ PlayerMovement.prototype.initialize = function () {
   this._groundRayEnd = new pc.Vec3();
   this._tempImpulse = new pc.Vec3();
   this._tempVelocity = new pc.Vec3();
+  this._lastVerticalVelocity = 0;
+  this._wasJumpingLastFrame = false;
 
   // input
   this.inX = 0;
@@ -317,6 +319,7 @@ PlayerMovement.prototype.update = function (dt) {
   if (!Number.isFinite(speedNormalized)) speedNormalized = 0;
 
   var pos = this.entity.getPosition();
+  var verticalVel = this.entity.rigidbody ? this.entity.rigidbody.linearVelocity.y : 0;
 
   this.app.fire("player:move", {
     x: pos.x,
@@ -324,6 +327,7 @@ PlayerMovement.prototype.update = function (dt) {
     z: pos.z,
     rotation: Number.isFinite(this._currentYaw) ? this._currentYaw : 0,
     speed: speedNormalized,
+    verticalVelocity: verticalVel,
   });
 };
 
@@ -391,6 +395,9 @@ PlayerMovement.prototype._shouldTriggerJump = function () {
   if (!this._isGrounded) {
     return false;
   }
+  if (this._isInputLocked()) {
+    return false;
+  }
   return this._jumpCooldownTimer <= 0;
 };
 
@@ -399,17 +406,17 @@ PlayerMovement.prototype._executeJump = function () {
     return;
   }
   var rb = this.entity.rigidbody;
+  
+  // Roblox-style jump: directly set upward velocity for immediate effect
   this._tempVelocity.copy(rb.linearVelocity);
-  if (this._tempVelocity.y < 0) {
-    this._tempVelocity.y = 0;
-  }
+  this._tempVelocity.y = this.jumpImpulse || 6;
   rb.linearVelocity = this._tempVelocity;
-  this._tempImpulse.set(0, this.jumpImpulse || 4.2, 0);
-  rb.applyImpulse(this._tempImpulse);
+  
   this._jumpCooldownTimer = Math.max(0.05, this.jumpCooldown || 0.75);
   this._isGrounded = false;
+  this._wasJumpingLastFrame = true;
 
-  // Trigger jump animation via PlayerAnimation script
+  // Trigger jump animation via PlayerAnimation script (syncs across network)
   if (this.entity.script && this.entity.script.playerAnimation) {
     this.entity.script.playerAnimation.requestEmote('JUMP');
   }
@@ -466,3 +473,4 @@ PlayerMovement.prototype.destroy = function() {
     this.entity.off('avatar:model:updated', this.onAvatarModelUpdated, this);
   }
 };
+
