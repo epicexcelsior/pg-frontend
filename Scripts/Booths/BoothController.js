@@ -425,12 +425,10 @@ BoothController.prototype.onBoothDescriptionSaved = function (payload) {
     }
     const description = typeof payload.description === "string" ? payload.description : "";
     this.boothDescriptions.set(payload.boothId, description);
-    if (this.currentZoneScript && this.currentZoneScript.boothId === payload.boothId) {
-        this.app.fire('ui:boothDescription:ack', {
-            boothId: payload.boothId,
-            description: description
-        });
-    }
+    this.app.fire('ui:boothDescription:ack', {
+        boothId: payload.boothId,
+        description: description
+    });
 };
 
 BoothController.prototype.onBoothDescriptionError = function (payload) {
