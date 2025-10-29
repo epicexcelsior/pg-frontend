@@ -123,6 +123,7 @@ MessageBroker.prototype.setupRoomMessageListeners = function (room) {
     room.onMessage("booth:updateDescription:ok", (data) => this.app.fire('booth:description:ok', data));
     room.onMessage("booth:updateDescription:error", (data) => this.app.fire('booth:description:error', data));
     room.onMessage("leaderboard:data", (data) => this.app.fire('leaderboard:data', data));
+    room.onMessage("leaderboard:updated", (data) => this.app.fire('leaderboard:updated', data));
 };
 
 MessageBroker.prototype._handlePlaygroundMessageTypes = function (data) {
