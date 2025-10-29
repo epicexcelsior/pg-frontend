@@ -184,7 +184,7 @@ AvatarCustomization.attributes.add('autoOpenOnSpawn', {
     };
 
     AvatarCustomization.prototype._descriptorFromState = function (state) {
-        if (!state || typeof state.avatarRecipe !== 'string') {
+        if (!state || typeof state.avatarRecipe !== 'string' || !state.avatarRecipe.length) {
             return null;
         }
         try {

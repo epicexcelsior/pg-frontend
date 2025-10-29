@@ -1,4 +1,5 @@
 {
+  "apiBaseUrl": "https://server.plsgive.com",
   "colyseusEndpoint": "https://server.plsgive.com",
   "privyHostOrigin": "https://privy.plsgive.com",
   "donationFeeRecipientAddress": "r1eKs83sknjVn8cSx5u7afNx8ykjoi1GWULwZvcaAio",

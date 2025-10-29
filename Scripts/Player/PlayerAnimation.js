@@ -1,13 +1,15 @@
 var PlayerAnimation = pc.createScript("playerAnimation");
 
 // Stable network IDs → local anim trigger names
-const EMOTE_MAP = {
-  JUMP:    { trigger: 'jump' },
-  WAVE:    { trigger: 'wave' },
-  DANCE_A: { trigger: 'danceA' },
-  DANCE_B: { trigger: 'danceB' },
-  CHEER:   { trigger: 'cheer' }
-};
+if (typeof EMOTE_MAP === 'undefined') {
+  EMOTE_MAP = {
+    JUMP:    { trigger: 'jump' },
+    WAVE:    { trigger: 'wave' },
+    DANCE_A: { trigger: 'danceA' },
+    DANCE_B: { trigger: 'danceB' },
+    CHEER:   { trigger: 'cheer' }
+  };
+}
 
 PlayerAnimation.attributes.add("stateGraphAsset", {
   type: "asset",
