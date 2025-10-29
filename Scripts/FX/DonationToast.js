@@ -2,8 +2,8 @@
 var DonationToast = pc.createScript('donationToast');
 
 DonationToast.prototype.initialize = function () {
-    // Donation toast is currently disabled
-    // this.app.on('effects:donation', this.onDonation, this);
+    // Donation toast is disabled - do NOT listen to effects:donation event
+    if (false) this.app.on('effects:donation', this.onDonation, this);
     this.app.on('player:data:changed', this.onPlayerDataChanged, this);
 
     this.toastElement = null;
@@ -96,6 +96,7 @@ DonationToast.prototype._ensureToastElement = function () {
     style.id = 'fx-donation-toast-style';
     style.innerHTML = [
         '#fx-donation-toast {',
+        '  display: none !important;',
         '  position: fixed;',
         '  bottom: 24px;',
         '  left: 50%;',
