@@ -1,9 +1,7 @@
 # Hello Cypherpunk judges!
 Thank you for checking out Pls Give. 😄🙏
 
-# **PLS GIVE** — Solana-Powered Social Giving Game
-> _Browser-based 3D multiplayer giving game built that makes generosity fun._
-
+# **PLS GIVE** • Making Generosity 1000x More Fun.
 ![Pls Give](https://plsgive.com/icon.png)
 
 ---
