@@ -191,7 +191,7 @@ TwitterSharePrompt.prototype.onAuthStateChanged = function (state) {
 };
 
 TwitterSharePrompt.prototype.onDonationTweetReady = function (data) {
-  if (!data || !data.tweetUrl || !data.signature) {
+  if (!data || !data.signature) {
     return;
   }
 
@@ -224,21 +224,38 @@ TwitterSharePrompt.prototype.updatePromptContent = function (data, role) {
     ? "@" + counterpartHandle
     : this.truncateAddress(counterpartAddress);
 
+  var isQuoteTweetEligible = data.isQuoteTweetEligible || false;
+
   if (role === "sender") {
-    titleEl.textContent = "Nice! Your donation tweet just posted.";
-    bodyEl.textContent =
-      "Let everyone know you gave to " +
-      counterpartLabel +
-      " with " +
-      amountLabel +
-      " SOL.";
+    if (isQuoteTweetEligible && data.tweetUrl) {
+      titleEl.textContent = "Your donation tweet just posted!";
+      bodyEl.textContent =
+        "Share it with your followers or quote this tweet to amplify the message.";
+    } else {
+      titleEl.textContent = "Share your donation!";
+      bodyEl.textContent =
+        "Let everyone know you gave " +
+        amountLabel +
+        " SOL to " +
+        counterpartLabel +
+        " on @playplsgive!";
+    }
   } else {
-    titleEl.textContent = "Someone just donated to you!";
-    bodyEl.textContent =
-      counterpartLabel +
-      " sent you " +
-      amountLabel +
-      " SOL. Thank them publicly?";
+    if (isQuoteTweetEligible && data.tweetUrl) {
+      titleEl.textContent = "Someone donated to you!";
+      bodyEl.textContent =
+        counterpartLabel +
+        " sent you " +
+        amountLabel +
+        " SOL. Share the love and quote the tweet!";
+    } else {
+      titleEl.textContent = "Someone donated to you!";
+      bodyEl.textContent =
+        counterpartLabel +
+        " sent you " +
+        amountLabel +
+        " SOL. Thank them publicly on X!";
+    }
   }
 
   if (data.tweetUrl) {
@@ -352,7 +369,7 @@ TwitterSharePrompt.prototype.hidePrompt = function () {
 };
 
 TwitterSharePrompt.prototype.handleShareClick = function () {
-  if (!this.activeData || !this.activeData.tweetUrl) {
+  if (!this.activeData) {
     this.hidePrompt();
     return;
   }
@@ -367,27 +384,60 @@ TwitterSharePrompt.prototype.handleShareClick = function () {
     ? "@" + this.activeData.senderTwitter
     : this.truncateAddress(this.activeData.sender);
 
-  var shareText;
-  if (this.role === "sender") {
-    shareText =
-      "I just donated " +
-      amountLabel +
-      " $SOL to " +
-      recipientLabel +
-      " on @playplsgive!";
-  } else {
-    shareText =
-      senderLabel +
-      " just donated " +
-      amountLabel +
-      " $SOL to my booth on @playplsgive!";
-  }
+  var isQuoteTweetEligible = this.activeData.isQuoteTweetEligible || false;
+  var hasOfficialTweet = this.activeData.tweetUrl && isQuoteTweetEligible;
 
-  var intentUrl =
-    "https://twitter.com/intent/tweet?text=" +
-    encodeURIComponent(shareText) +
-    "&url=" +
-    encodeURIComponent(this.activeData.tweetUrl);
+  var intentUrl;
+  var solscanLink = "https://solscan.io/tx/" + (this.activeData.signature || "");
+  
+  if (hasOfficialTweet) {
+    // Share with link to the official donation tweet
+    var quotingText;
+    if (this.role === "sender") {
+      quotingText =
+        "I just donated " +
+        amountLabel +
+        " $SOL to " +
+        recipientLabel +
+        " on @playplsgive!";
+    } else {
+      quotingText =
+        senderLabel +
+        " just donated " +
+        amountLabel +
+        " $SOL to my booth on @playplsgive!";
+    }
+    
+    intentUrl =
+      "https://twitter.com/intent/tweet?text=" +
+      encodeURIComponent(quotingText) +
+      "&url=" +
+      encodeURIComponent(this.activeData.tweetUrl);
+  } else {
+    // Regular share tweet with transaction link
+    var shareText;
+    
+    if (this.role === "sender") {
+      shareText =
+        "I just donated " +
+        amountLabel +
+        " $SOL to " +
+        recipientLabel +
+        " on @playplsgive!\n\nSee the transaction:\n" +
+        solscanLink;
+    } else {
+      shareText =
+        senderLabel +
+        " just donated " +
+        amountLabel +
+        " $SOL to my booth on @playplsgive!\n\nSee the transaction:\n" +
+        solscanLink;
+    }
+
+    intentUrl =
+      "https://twitter.com/intent/tweet?text=" +
+      encodeURIComponent(shareText);
+  }
 
   try {
     window.open(intentUrl, "_blank", "noopener");

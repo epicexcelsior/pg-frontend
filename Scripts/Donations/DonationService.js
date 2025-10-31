@@ -459,7 +459,21 @@ DonationService.prototype.onDonationTweetPublished = function (data) {
 
     this.tweetRecords.set(data.signature, data);
     this.clearPendingAnnouncement(data.signature);
-    this.app.fire('donation:tweetReady', data);
+    
+    const tweetReadyData = {
+        signature: data.signature,
+        sender: data.sender,
+        recipient: data.recipient,
+        senderTwitter: data.senderTwitter,
+        recipientTwitter: data.recipientTwitter,
+        amount: data.amount,
+        tweetUrl: data.tweetUrl,
+        tweetId: data.tweetId,
+        isQuoteTweetEligible: data.isQuoteTweetEligible || false,
+        tweetThresholdReached: data.tweetThresholdReached || false
+    };
+    
+    this.app.fire('donation:tweetReady', tweetReadyData);
 };
 
 DonationService.prototype.ensureSolanaConnection = function (ConnectionCtor) {

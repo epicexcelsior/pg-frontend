@@ -69,7 +69,9 @@ MessageBroker.prototype.setupRoomMessageListeners = function (room) {
             recipientTwitterId: data.recipientTwitterId || null,
             tweetId: data.tweetId || null,
             tweetUrl: data.tweetUrl || null,
-            tweetText: data.tweetText || null
+            tweetText: data.tweetText || null,
+            isQuoteTweetEligible: data.isQuoteTweetEligible || false,
+            tweetThresholdReached: data.tweetThresholdReached || false
         };
         this.app.fire('effects:donation', donationEvent);
         const senderLabel = donationEvent.senderTwitter ? `@${donationEvent.senderTwitter}` : this.formatIdentity(data.senderUsername, data.sender);
@@ -82,9 +84,7 @@ MessageBroker.prototype.setupRoomMessageListeners = function (room) {
         if (data.recipient) {
             this.app.fire('wallet:refreshBalance', { address: data.recipient, source: 'donation:announce:recipient' });
         }
-        if (donationEvent.tweetUrl) {
-            this.app.fire('donation:tweetPublished', donationEvent);
-        }
+        this.app.fire('donation:tweetPublished', donationEvent);
     });
     room.onMessage("announceDonationError", (data) => this.app.fire('donation:announcementFailed', data));
     room.onMessage("boothUnclaimed", (data) => {
