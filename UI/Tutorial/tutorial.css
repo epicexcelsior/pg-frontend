@@ -60,6 +60,7 @@ body > #tutorial-container > #tutorial-content-wrapper {
     border-radius: var(--tutorial-border-radius) !important;
     width: 90% !important;
     max-width: 600px !important;
+    max-height: 80vh !important;
     border: 3px solid rgba(255, 255, 255, 0.7) !important;
     box-shadow: var(--tutorial-box-shadow) !important;
     margin: 0 auto !important;
@@ -68,7 +69,11 @@ body > #tutorial-container > #tutorial-content-wrapper {
     transition: transform 0.5s cubic-bezier(0.25, 0.8, 0.25, 1),
                 opacity 0.4s ease-out !important;
     pointer-events: auto !important;
-    z-index: 100000 !important; /* Above container */
+    z-index: 1100 !important;
+    overflow-y: auto !important;
+    overflow-x: hidden !important;
+    display: flex !important;
+    flex-direction: column !important;
 }
 
 /* Visible state with forced display */
@@ -274,70 +279,13 @@ body > #tutorial-container > #tutorial-content-wrapper.tutorial-visible {
     body > #tutorial-container > #tutorial-content-wrapper {
         width: 95% !important;
         max-width: none !important;
-        padding: 20px !important;
-        margin: 10px auto !important;
+        padding: 18px !important;
+        margin: 0 auto !important;
+        max-height: 90vh !important;
     }
     
     #tutorial-content-wrapper h2 {
-        font-size: 1.5em !important;
-        margin-bottom: 15px !important;
-    }
-    
-    .warning-section .warning {
-        padding: 12px !important;
-        font-size: 14px !important;
-        margin: 15px 0 !important;
-    }
-    
-    .controls-section p {
-        font-size: 14px !important;
-        margin: 15px 0 !important;
-    }
-    
-    .instructions-container {
-        flex-direction: column !important;
-        gap: 15px !important;
-        margin: 20px 0 !important;
-    }
-    
-    .instruction-card {
-        min-width: auto !important;
-        max-width: none !important;
-        padding: 20px !important;
-    }
-    
-    .instruction-card h3 {
-        font-size: 1.3em !important;
-        margin-bottom: 10px !important;
-    }
-    
-    .instruction-card p {
-        font-size: 14px !important;
-    }
-    
-    .twitter-integration p {
-        font-size: 14px !important;
-    }
-    
-    .social-links p {
-        font-size: 12px !important;
-    }
-    
-    #tutorial-content-wrapper .tutorial-button {
-        padding: 12px 25px !important;
-        font-size: 16px !important;
-    }
-}
-
-@media (max-width: 480px) {
-    body > #tutorial-container > #tutorial-content-wrapper {
-        width: 98% !important;
-        padding: 15px !important;
-        margin: 5px auto !important;
-    }
-    
-    #tutorial-content-wrapper h2 {
-        font-size: 1.3em !important;
+        font-size: 1.4em !important;
         margin-bottom: 12px !important;
     }
     
@@ -353,11 +301,14 @@ body > #tutorial-container > #tutorial-content-wrapper.tutorial-visible {
     }
     
     .instructions-container {
+        flex-direction: column !important;
         gap: 12px !important;
         margin: 15px 0 !important;
     }
     
     .instruction-card {
+        min-width: auto !important;
+        max-width: none !important;
         padding: 15px !important;
     }
     
@@ -375,16 +326,107 @@ body > #tutorial-container > #tutorial-content-wrapper.tutorial-visible {
     }
     
     .social-links p {
+        font-size: 12px !important;
+    }
+    
+    #tutorial-content-wrapper .tutorial-button {
+        min-height: 48px !important;
+        padding: 14px 25px !important;
+        font-size: 16px !important;
+    }
+}
+
+@media (max-width: 480px) {
+    body > #tutorial-container > #tutorial-content-wrapper {
+        width: 98% !important;
+        padding: 14px !important;
+        margin: 0 auto !important;
+        max-height: 92vh !important;
+    }
+    
+    #tutorial-content-wrapper h2 {
+        font-size: 1.2em !important;
+        margin-bottom: 10px !important;
+    }
+    
+    .warning-section .warning {
+        padding: 8px !important;
+        font-size: 12px !important;
+        margin: 10px 0 !important;
+    }
+    
+    .controls-section p {
+        font-size: 12px !important;
+        margin: 10px 0 !important;
+    }
+    
+    .instructions-container {
+        gap: 10px !important;
+        margin: 12px 0 !important;
+    }
+    
+    .instruction-card {
+        padding: 12px !important;
+    }
+    
+    .instruction-card h3 {
+        font-size: 1.1em !important;
+        margin-bottom: 6px !important;
+    }
+    
+    .instruction-card p {
+        font-size: 12px !important;
+    }
+    
+    .twitter-integration p {
+        font-size: 12px !important;
+    }
+    
+    .social-links p {
         font-size: 11px !important;
         line-height: 1.3 !important;
     }
     
     #tutorial-content-wrapper .tutorial-button {
-        padding: 10px 20px !important;
-        font-size: 15px !important;
+        min-height: 44px !important;
+        padding: 12px 20px !important;
+        font-size: 14px !important;
     }
     
     #tutorial-content-wrapper a {
-        font-size: 12px !important;
+        font-size: 11px !important;
+    }
+}
+
+/* Very small screens */
+@media (max-width: 360px) {
+    body > #tutorial-container > #tutorial-content-wrapper {
+        width: 98% !important;
+        padding: 12px !important;
+        max-height: 93vh !important;
+    }
+    
+    #tutorial-content-wrapper h2 {
+        font-size: 1.1em !important;
+        margin-bottom: 8px !important;
+    }
+    
+    .warning-section .warning {
+        padding: 8px !important;
+        font-size: 11px !important;
+        margin: 8px 0 !important;
+    }
+    
+    .instruction-card {
+        padding: 10px !important;
+    }
+    
+    .instruction-card h3 {
+        font-size: 1em !important;
+        margin-bottom: 5px !important;
+    }
+    
+    .instruction-card p {
+        font-size: 11px !important;
     }
 }

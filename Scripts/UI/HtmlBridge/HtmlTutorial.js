@@ -126,6 +126,21 @@ HtmlTutorial.prototype._createHtml = function(htmlContent) {
             this.app.fire('ui:playSound', 'ui_hover_default');
         });
 
+        // Allow clicking outside the modal to close (standard mobile UX)
+        this.tutorialContainer.addEventListener('click', (e) => {
+            if (e.target === this.tutorialContainer) {
+                this.hide();
+            }
+        });
+
+        // Allow ESC key to close
+        this._onEscapeKey = (e) => {
+            if (e.key === 'Escape' && this.isVisible) {
+                this.hide();
+            }
+        };
+        document.addEventListener('keydown', this._onEscapeKey);
+
         // Apply theme if available
         this._applyTheme();
         
@@ -227,6 +242,11 @@ HtmlTutorial.prototype.cleanupAll = function() {
     }
     if (this._onGameStateChange) {
         this.app.off('gameState:change', this._onGameStateChange);
+    }
+    
+    // Remove ESC key listener
+    if (this._onEscapeKey) {
+        document.removeEventListener('keydown', this._onEscapeKey);
     }
 
     if (this.tutorialContainer && document.body.contains(this.tutorialContainer)) {
