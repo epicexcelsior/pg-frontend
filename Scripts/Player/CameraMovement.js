@@ -136,21 +136,23 @@ CameraMovement.prototype.postUpdate = function(dt){
         }
     }
 
-    // (D) Mobile joystick input for camera control
-    if (this.isMobile && !this.chatFocused && !this._isUiInputLocked()) {
-        const cameraStick = window.touchJoypad && window.touchJoypad.sticks 
-            ? window.touchJoypad.sticks[this.cameraJoystickId] 
-            : null;
-        
-        if (cameraStick) {
-            // Use joystick input for camera rotation
-            const sensitivity = 2.0; // Adjust sensitivity as needed
-            const sx = Number.isFinite(cameraStick.x) ? cameraStick.x : 0;
-            const sy = Number.isFinite(cameraStick.y) ? cameraStick.y : 0;
-            this.yaw -= sx * sensitivity * dt * 60; // Convert to per-second
-            this.pitch -= sy * sensitivity * dt * 60;
-        }
-    }
+    // (D) Mobile joystick input for camera control - DISABLED
+    // Camera is now fully automatic, matching Coastal World style
+    // Players can only move with the movement joystick
+    // if (this.isMobile && !this.chatFocused && !this._isUiInputLocked()) {
+    //     const cameraStick = window.touchJoypad && window.touchJoypad.sticks 
+    //         ? window.touchJoypad.sticks[this.cameraJoystickId] 
+    //         : null;
+    //     
+    //     if (cameraStick) {
+    //         // Use joystick input for camera rotation
+    //         const sensitivity = 2.0; // Adjust sensitivity as needed
+    //         const sx = Number.isFinite(cameraStick.x) ? cameraStick.x : 0;
+    //         const sy = Number.isFinite(cameraStick.y) ? cameraStick.y : 0;
+    //         this.yaw -= sx * sensitivity * dt * 60; // Convert to per-second
+    //         this.pitch -= sy * sensitivity * dt * 60;
+    //     }
+    // }
 
     // (E) Micro mouse bias (desktop only)
     if (!this.isMobile && Math.abs(this._mouseBias) > 0.0001){

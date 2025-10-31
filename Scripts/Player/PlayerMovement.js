@@ -161,13 +161,16 @@ PlayerMovement.prototype.initialize = function () {
       for (var i = 0; i < e.children.length; i++) hideDFS(e.children[i]);
     })(this.app.root);
   } else {
-    // Ensure mobile UI is visible on mobile
+    // Ensure mobile UI is visible on mobile (excluding camera joystick)
     (function showDFS(e) {
       var n = (e.name || "").toLowerCase();
+      // Skip camera joystick (disabled for automatic camera movement)
+      var isCameraJoystick = n.indexOf("camera") !== -1 && n.indexOf("joystick") !== -1;
       if (
-        n.indexOf("joystick") !== -1 ||
+        !isCameraJoystick &&
+        (n.indexOf("joystick") !== -1 ||
         n.indexOf("joypad") !== -1 ||
-        n.indexOf("touch") !== -1
+        n.indexOf("touch") !== -1)
       )
         e.enabled = true;
       for (var i = 0; i < e.children.length; i++) showDFS(e.children[i]);
