@@ -55,7 +55,10 @@ Thank you for checking out Pls Give. 😄🙏
 ### 5. 📦 **PlayCanvas External Bundle**
 **`pg-bundles`** - https://github.com/epicexcelsior/pg-bundles
 - Host JS bundles (Solana Wallet Adapter, Helius client, shared UI, RPC helpers)  
-- Loaded by PlayCanvas via external scripts to avoid re-publishing the scene  
+- Loaded by PlayCanvas via external scripts to avoid re-publishing the scene
+
+---
+
 ### 6. 🚁 **Landing Page**
 **`pg-landing`** - https://github.com/epicexcelsior/pg-landing
 - Public URL: https://plsgive.com  
