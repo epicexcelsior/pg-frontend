@@ -1,24 +1,62 @@
-Hi Breakout judges!
+# Hello Cypherpunk judges!
+Thank you for checking out Pls Give. 😄🙏
 
-**Game link:** https://play.plsgive.com
-(landing page: https://plsgive.com)
+# **PLS GIVE** — Solana-Powered Social Giving Game
+> _Browser-based 3D multiplayer giving game built that makes generosity fun._
 
-This repo stores frontend (client-side) scripts for PlayCanvas.
-Other important repos you can access:
-- **Colyseus**: Backend game server, handles real-time features, booth claims, chat, and other shared states.
-  -   https://github.com/epicexcelsior/pg-colyseus
-- **Cloudflare Workers**: Backend for player AuthC, SIWS, and Solana transactions.
-  -   https://github.com/epicexcelsior/pg-cf-workers
+![Pls Give](https://plsgive.com/icon.png)
 
-## Avatar Customization v2
+---
 
-This branch introduces the modular Quaternius-based avatar system used by the in-game customizer. Runtime scripts live under `Scripts/PlayerCustomization/` and drive slot-based swaps (head/body/legs/feet), lazy loading, caching, local persistence, and Colyseus recipe sync. The HTML front-end for the customizer sits in `UI/AvatarCustomizer/` with its bridge logic at `Scripts/UI/HtmlBridge/HtmlAvatarCustomizer.js`.
+## 🔗 Links
 
-**Wire-up snapshot**
-- Attach `avatarCustomization.js` to your gameplay bootstrap entity and assign `AvatarCatalog.json` to the `catalogAsset` attribute.
-- Drop `HtmlAvatarCustomizer.js` on a UI helper entity, pointing it at the customizer HTML/CSS assets.
-- Ensure the player prefab exposes `Armature` with `SlotHead`, `SlotBody`, `SlotLegs`, `SlotFeet`; `PlayerSync.playerPrefab` should reference `PlayerAvatarV2`.
-- MessageBroker now relays `avatar:recipe`; server must echo `{ playerId, recipe }` to keep remote avatars in sync.
+- 🎮 **Play the game:** [play.plsgive.com](https://play.plsgive.com)
+- 🌐 **Site:** [plsgive.com](https://plsgive.com)
+- 🐦 **X / Twitter:** [@playplsgive](https://x.com/playplsgive)
+- 💬 **Discord:** [dsc.gg/plsgive](https://dsc.gg/plsgive)
+- 📽️ **Pitch:** [https://www.youtube.com/watch?v=ZS4BxUBT_ls](https://www.youtube.com/watch?v=ZS4BxUBT_ls)
+- 📽️ **Demo:** [https://www.youtube.com/watch?v=ZS4BxUBT_ls](https://www.youtube.com/watch?v=TLdWDhbMP9E)
 
-**Rollback**
-If you need to fall back to the legacy Wolf3D character, reassign `PlayerSync.playerPrefab` to the previous template and disable the `avatarCustomization` and `htmlAvatarCustomizer` scripts. The remaining code is passive until those scripts run.
+---
+
+## 🧭 Repo Map
+
+### 1. 🎮 Frontend (You Are Here)
+**`pg-frontend`**  
+- All scripts that run on the PlayCanvas client
+- Visual changes were made with the PlayCanvas editor
+
+---
+
+### 2. 🕸️ Realtime Game Server & Backend (Colyseus)
+**`pg-colyseus`** - https://github.com/epicexcelsior/pg-colyseus
+- Handles rooms, player presence, booth claiming, chat, world sync, *everything* client-side in the game
+- Facilitates security & database interactions
+- Hosted on a DigitalOcean VPS
+
+---
+
+### 3. 🔐 **Privy Host App** (Auth, transactions)
+**`privy-host-app`** - https://github.com/epicexcelsior/privy-host-app
+- React host for Privy to open in a pop-up separately from PlayCanvas frontend
+- Handles auth with external wallets or X OAuth (creates embedded wallet)
+- Handles SOL token transfers
+- Key export functionality is included
+
+---
+
+### 4. 📨 **Helius RPC Proxy**
+**`helius-rpc-proxy`** - https://github.com/epicexcelsior/helius-rpc-proxy
+- Proxy for Helius RPC requests (transfer transactions, fetching user lamport balances, etc.) to avoid exposing API keys. Handles rate limiting & headers
+- Hosted on a Cloudflare Worker
+
+---
+
+### 5. 📦 **PlayCanvas External Bundle**
+**`pg-bundles`** - https://github.com/epicexcelsior/pg-bundles
+- Host JS bundles (Solana Wallet Adapter, Helius client, shared UI, RPC helpers)  
+- Loaded by PlayCanvas via external scripts to avoid re-publishing the scene  
+### 6. 🚁 **Landing Page**
+**`pg-landing`** - https://github.com/epicexcelsior/pg-landing
+- Public URL: https://plsgive.com  
+- Hosted on Cloudflare Pages  
