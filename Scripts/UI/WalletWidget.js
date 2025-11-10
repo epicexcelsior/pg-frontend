@@ -114,19 +114,41 @@ WalletWidget.prototype.setupEventListeners = function () {
 
 WalletWidget.prototype.onLogout = function () {
     if (this.privyManager) {
-        this.privyManager.logout();
+        const result = this.privyManager.logout();
+        if (result && typeof result.then === 'function') {
+            result.catch((error) => {
+                console.warn('WalletWidget: Logout request failed.', error);
+                this.feedbackService?.showError('Logout failed', error?.message || 'Please try again.', false);
+            });
+        }
     }
 };
 
 WalletWidget.prototype.onPrivyUserPill = function () {
     if (this.privyManager) {
-        this.privyManager.openUserPill();
+        const result = this.privyManager.openUserPill();
+        if (result && typeof result.then === 'function') {
+            result.catch((error) => {
+                console.warn('WalletWidget: Failed to open Privy settings.', error);
+                this.feedbackService?.showWarning('Unable to open settings right now.', error?.message || 'Please try again.');
+            });
+        }
     }
 };
 
 WalletWidget.prototype.onLinkTwitter = function () {
     if (this.privyManager) {
-        this.privyManager.linkTwitter();
+        const result = this.privyManager.linkTwitter();
+        if (result && typeof result.then === 'function') {
+            result.then((outcome) => {
+                if (outcome?.alreadyLinked) {
+                    this.feedbackService?.showInfo('Twitter account is already linked.', 4000);
+                }
+            }).catch((error) => {
+                console.warn('WalletWidget: Twitter linking failed.', error);
+                this.feedbackService?.showError('Twitter linking failed', error?.message || 'Please try again later.', false);
+            });
+        }
     }
 };
 
@@ -245,37 +267,22 @@ WalletWidget.prototype.fetchBalance = async function (address, attempt = 0) {
     let balanceLamports = null;
     let lastError = null;
 
-    const sdkRpc = window.SolanaSDK && window.SolanaSDK.rpc;
-    if (sdkRpc && typeof sdkRpc.getBalance === 'function') {
+    const solanaWeb3 = window.solanaWeb3 || (window.SolanaSDK && window.SolanaSDK.web3);
+    if (solanaWeb3 && solanaWeb3.Connection && solanaWeb3.PublicKey && this.heliusRpcUrl) {
         try {
-            console.log('WalletWidget: Attempting SolanaSDK RPC balance fetch for address:', address);
-            const request = sdkRpc.getBalance(address, { commitment: 'confirmed' });
-            balanceLamports = typeof request.send === 'function' ? await request.send() : await request;
-            console.log('WalletWidget: SolanaSDK RPC balance result:', balanceLamports);
-        } catch (error) {
-            lastError = error;
-            console.warn('WalletWidget: SolanaSDK RPC balance fetch failed, attempting fallback.', error);
-        }
-    }
-
-    if (balanceLamports === null) {
-        const solanaWeb3 = window.solanaWeb3 || (window.SolanaSDK && window.SolanaSDK.web3);
-        if (solanaWeb3 && solanaWeb3.Connection && solanaWeb3.PublicKey && this.heliusRpcUrl) {
-            try {
-                console.log('WalletWidget: Attempting fallback RPC balance fetch via heliusRpcUrl:', this.heliusRpcUrl);
-                if (!this.heliusConnection) {
-                    this.heliusConnection = new solanaWeb3.Connection(this.heliusRpcUrl, 'confirmed');
-                }
-                const publicKey = new solanaWeb3.PublicKey(address);
-                balanceLamports = await this.heliusConnection.getBalance(publicKey, 'confirmed');
-                console.log('WalletWidget: Fallback RPC balance result:', balanceLamports);
-            } catch (fallbackError) {
-                lastError = fallbackError;
-                console.error('WalletWidget: Fallback RPC balance fetch failed:', fallbackError);
+            if (!this.heliusConnection) {
+                console.log('WalletWidget: Creating cached Solana connection for balance polling.');
+                this.heliusConnection = new solanaWeb3.Connection(this.heliusRpcUrl, 'confirmed');
             }
-        } else {
-            console.warn('WalletWidget: Fallback RPC not available. solanaWeb3:', !!solanaWeb3, 'heliusRpcUrl:', this.heliusRpcUrl);
+            const publicKey = new solanaWeb3.PublicKey(address);
+            balanceLamports = await this.heliusConnection.getBalance(publicKey, 'confirmed');
+        } catch (fallbackError) {
+            lastError = fallbackError;
+            console.error('WalletWidget: RPC balance fetch failed:', fallbackError);
+            this.heliusConnection = null;
         }
+    } else {
+        console.warn('WalletWidget: Solana web3 connection unavailable. solanaWeb3:', !!solanaWeb3, 'heliusRpcUrl:', this.heliusRpcUrl);
     }
 
     if (balanceLamports === null) {

@@ -16,6 +16,8 @@ BoothController.prototype.initialize = function () {
     this.claimRetryDelayMs = 450;
     this._lastClaimAttempt = 0;
     this._lastClaimBoothId = null;
+    this.manualLogoutCooldownMs = 4000;
+    this.manualLogoutUntil = 0;
 
     this.app.on('colyseus:connected', this.onNetworkConnected, this);
     this.app.on('colyseus:disconnected', this.onNetworkDisconnected, this);
@@ -34,6 +36,7 @@ BoothController.prototype.initialize = function () {
     this.app.on("effects:donation", this.onDonationEffect, this);
     this.app.on("booth:description:ok", this.onBoothDescriptionSaved, this);
     this.app.on("booth:description:error", this.onBoothDescriptionError, this);
+    this.app.on('auth:manualLogout', this.onManualLogout, this);
 };
 
 BoothController.prototype.getPrivyManager = function () {
@@ -182,6 +185,15 @@ BoothController.prototype.handleClaimRequest = function(boothId) {
 
     this.pendingClaimBoothId = targetBoothId;
 
+    if (this.manualLogoutUntil && Date.now() < this.manualLogoutUntil) {
+        console.log('BoothController: Login suppressed because user recently logged out.');
+        this.app.fire('ui:showClaimAuthPrompt', {
+            boothId: targetBoothId,
+            reason: 'You just logged out. Tap login when you are ready to sign back in before claiming.',
+        });
+        return;
+    }
+
     const isAuthed = typeof privyManager.isAuthenticated === 'function'
         ? privyManager.isAuthenticated()
         : Boolean(privyManager.isAuthenticated);
@@ -198,6 +210,7 @@ BoothController.prototype.handleClaimRequest = function(boothId) {
     
     if (!isLoginInProgress) {
         console.log('BoothController: User not authenticated. Initiating Privy login.');
+        this.manualLogoutUntil = 0;
         privyManager.login();
     } else {
         console.log('BoothController: Login already in progress. Will retry after completion.');
@@ -207,6 +220,17 @@ BoothController.prototype.handleClaimRequest = function(boothId) {
         boothId: targetBoothId,
         reason: 'Please complete authentication to claim this booth.',
     });
+};
+
+BoothController.prototype.onManualLogout = function () {
+    const cooldown = typeof this.manualLogoutCooldownMs === 'number' && this.manualLogoutCooldownMs >= 0
+        ? this.manualLogoutCooldownMs
+        : 4000;
+    this.manualLogoutUntil = Date.now() + cooldown;
+    this.pendingClaimBoothId = null;
+    this._cancelClaimRetry('manual-logout');
+    this._setClaimInFlight(false, null, 'manual-logout');
+    this.app.fire('ui:hideClaimPrompt');
 };
 
 BoothController.prototype.onBoothAdded = function (boothData) {
@@ -617,6 +641,7 @@ BoothController.prototype.destroy = function () {
     this.app.off("effects:donation", this.onDonationEffect, this);
     this.app.off("booth:description:ok", this.onBoothDescriptionSaved, this);
     this.app.off("booth:description:error", this.onBoothDescriptionError, this);
+    this.app.off('auth:manualLogout', this.onManualLogout, this);
     this.boothEntitiesById.clear();
     this.boothDescriptions.clear();
     this.boothsByOwner.clear();

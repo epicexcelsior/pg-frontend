@@ -2,6 +2,20 @@
   "apiBaseUrl": "http://localhost:2567",
   "colyseusEndpoint": "ws://localhost:2567",
   "privyHostOrigin": "https://localhost:5173",
+  "privyIntegrationMode": "inline",
+  "privyAppId": "cmewdxiu400t7ju0bdisvosvu",
+  "privySolanaRpcProxyUrl": "https://helius.plsgive.com",
+  "privySolanaMainnetWsUrl": "wss://helius.plsgive.com",
+  "privySolanaDevnetRpcUrl": "https://api.devnet.solana.com",
+  "privySolanaDevnetWsUrl": "wss://api.devnet.solana.com",
+  "privyLoginMethods": [
+    "wallet"
+  ],
+  "privyOauthProviders": [
+    "twitter",
+    "google"
+  ],
+  "privyOauthBridgePath": "/oauth-bridge",
   "donationFeeRecipientAddress": "r1eKs83sknjVn8cSx5u7afNx8ykjoi1GWULwZvcaAio",
   "heliusRpcUrl": "https://helius.plsgive.com",
   "donationFeePercentage": 10

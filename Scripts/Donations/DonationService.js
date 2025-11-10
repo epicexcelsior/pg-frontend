@@ -69,7 +69,7 @@ DonationService.prototype.setState = function (newState, data = {}) {
             }
             break;
         case DonationState.AWAITING_SIGNATURE:
-            this.feedbackService?.showInfo("Please approve the transaction in the Privy popup.", 10000);
+            this.feedbackService?.showInfo("Please approve the transaction with Privy.", 10000);
             break;
         case DonationState.SUCCESS: {
             this.feedbackService?.showSuccess(`Donation successful! Tx: ${signature.substring(0, 8)}...`);
