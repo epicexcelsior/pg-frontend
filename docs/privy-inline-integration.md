@@ -28,7 +28,7 @@ This document captures the inline Privy integration work completed for the PlayC
   - `privySolanaMainnetWsUrl`
   - `privySolanaDevnetRpcUrl`
   - `privySolanaDevnetWsUrl`
-- `privyLoginMethods`: Defaults to `["twitter", "wallet"]`.
+- `privyLoginMethods`: Defaults to `["wallet", "twitter", "google"]`.
 
 Leaving the file in `"popup"` mode preserves current behaviour until we are ready to switch.
 
@@ -41,7 +41,7 @@ Leaving the file in `"popup"` mode preserves current behaviour until we are read
   - Inline bridge initialization, event handling, and method overrides.
   - Maintains popup messaging listener for backwards compatibility.
   - Ensures pending actions are flushed once either mode becomes ready.
-  - Twitter OAuth now prefers a dedicated tab/popup and only falls back to inline when every windowing strategy is blocked.
+  - Twitter OAuth now runs through the inline React bridge by default and only touches the legacy popup host when the entire integration is configured for popups.
 
 No other UI components required behavioural changes because the events (`auth:stateChanged`, `privy:userPillAction`, donation state notifications) remain the same.
 

@@ -1538,11 +1538,11 @@ PrivyManager.prototype.openUserPill = function () {
 };
 
 PrivyManager.prototype.linkTwitter = function () {
-    const preferInline = this.integrationMode === 'inline';
-    const canUsePopup = this._canUsePopupHost();
-    if (preferInline && !canUsePopup) {
+    if (this.integrationMode === 'inline') {
         return this.linkTwitterInline();
     }
+
+    const canUsePopup = this._canUsePopupHost();
     if (!canUsePopup) {
         console.warn('PrivyManager: privyHostOrigin missing; cannot open Twitter linking popup.');
         return null;
@@ -1563,33 +1563,16 @@ PrivyManager.prototype.linkTwitter = function () {
         );
     };
 
-    const handleLinkFallback = () => {
-        if (!preferInline) {
-            console.error('PrivyManager: Failed to open Twitter linking popup.');
-            return null;
-        }
-        console.warn('PrivyManager: Twitter popup blocked. Falling back to inline Privy flow.');
-        return this.linkTwitterInline();
-    };
-
     if (!this.ready) {
         this.queueWhenReady(() => {
             const popup = performLink(preOpenedPopup && !preOpenedPopup.closed ? preOpenedPopup : null);
-            if (!popup && !this._lastOAuthOpenedWithoutHandle) {
-                const fallbackResult = handleLinkFallback();
-                if (fallbackResult && typeof fallbackResult.catch === 'function') {
-                    fallbackResult.catch((error) => {
-                        console.error('PrivyManager: Deferred inline Twitter link failed.', error);
-                    });
-                }
-            }
         }, 'linkTwitter');
         return preOpenedPopup || null;
     }
 
     const popup = performLink(preOpenedPopup && !preOpenedPopup.closed ? preOpenedPopup : null);
     if (!popup && !this._lastOAuthOpenedWithoutHandle) {
-        return handleLinkFallback();
+        console.error('PrivyManager: Failed to open Twitter linking popup.');
     }
     return popup;
 };
@@ -1722,57 +1705,18 @@ PrivyManager.prototype.openUserPillInline = function () {
 };
 
 PrivyManager.prototype.linkTwitterInline = function () {
-    const invokeInlineLink = () => this.ensureInlineReady()
-        .then(() => window.PG_PRIVY.linkTwitter())
+    return this.ensureInlineReady()
+        .then(() => {
+            if (!window.PG_PRIVY || typeof window.PG_PRIVY.linkTwitter !== 'function') {
+                throw new Error('Privy inline bridge is unavailable.');
+            }
+            return window.PG_PRIVY.linkTwitter();
+        })
         .then((result) => result)
         .catch((error) => {
             this.app.fire('auth:linkFailed', { error: error instanceof Error ? error.message : String(error) });
             throw this.normalizeError(error, 'Failed to link Twitter account.');
         });
-
-    const fallbackOrigin = this.privyHostOrigin;
-    const preOpenedPopup = !this.ready
-        ? this._preOpenWindow('privy-link-twitter', { placeholderText: 'Connecting to X...' })
-        : null;
-    const openPopupFlow = (preOpenedHandle) => {
-        this._pendingNonce = generateNonce();
-        const params = { action: 'linkTwitter', nonce: this._pendingNonce };
-        let linkUrl = null;
-        try {
-            linkUrl = this.buildPrivyUrl(params);
-        } catch (error) {
-            console.warn('PrivyManager: Failed to build Privy link URL for popup flow. Falling back to inline flow.', error);
-            return null;
-        }
-        const popup = this.openPrivyOAuthWindowWithOptions(
-            linkUrl,
-            'privy-link-twitter',
-            preOpenedHandle && !preOpenedHandle.closed ? preOpenedHandle : null
-        );
-        return popup;
-    };
-
-    if (fallbackOrigin) {
-        if (!this.ready) {
-            this.queueWhenReady(() => {
-                const popup = openPopupFlow(preOpenedPopup && !preOpenedPopup.closed ? preOpenedPopup : null);
-                if (!popup && !this._lastOAuthOpenedWithoutHandle) {
-                    invokeInlineLink().catch((error) => {
-                        console.error('PrivyManager: Deferred inline Twitter link failed.', error);
-                    });
-                }
-            }, 'linkTwitter');
-            return preOpenedPopup || null;
-        }
-        const popup = openPopupFlow(null);
-        if (popup || this._lastOAuthOpenedWithoutHandle) {
-            return popup;
-        }
-        console.warn('PrivyManager: Twitter linking popup blocked. Falling back to inline Privy flow.');
-        return invokeInlineLink();
-    }
-
-    return invokeInlineLink();
 };
 
 PrivyManager.prototype.sendTransactionInline = function (serializedBase64Tx, options) {

@@ -9,7 +9,9 @@
   "privySolanaDevnetRpcUrl": "https://api.devnet.solana.com",
   "privySolanaDevnetWsUrl": "wss://api.devnet.solana.com",
   "privyLoginMethods": [
-    "wallet"
+    "wallet",
+    "twitter",
+    "google"
   ],
   "privyOauthProviders": [
     "twitter",
