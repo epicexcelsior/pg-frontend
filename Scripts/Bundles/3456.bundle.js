@@ -1,0 +1,1 @@
+"use strict";(self.webpackChunkpg_bundles=self.webpackChunkpg_bundles||[]).push([[3456],{3456:(e,i,s)=>{s.d(i,{createPublicClient:()=>n.l,defineChain:()=>r.x,http:()=>t.L});var n=s(2305),t=s(2427),r=s(4676)},4676:(e,i,s)=>{function n(e){return{formatters:void 0,fees:void 0,serializers:void 0,...e}}s.d(i,{x:()=>n})}}]);

@@ -2,7 +2,7 @@
   "apiBaseUrl": "http://localhost:2567",
   "colyseusEndpoint": "ws://localhost:2567",
   "privyHostOrigin": "https://localhost:5173",
-  "privyIntegrationMode": "inline",
+  "privyIntegrationMode": "iframe",
   "privyAppId": "cmewdxiu400t7ju0bdisvosvu",
   "privySolanaRpcProxyUrl": "https://helius.plsgive.com",
   "privySolanaMainnetWsUrl": "wss://helius.plsgive.com",
@@ -20,5 +20,7 @@
   "privyOauthBridgePath": "/oauth-bridge",
   "donationFeeRecipientAddress": "r1eKs83sknjVn8cSx5u7afNx8ykjoi1GWULwZvcaAio",
   "heliusRpcUrl": "https://helius.plsgive.com",
-  "donationFeePercentage": 10
+  "donationFeePercentage": 10,
+  "devEnabled": true,
+  "solanaCluster": "mainnet-beta"
 }

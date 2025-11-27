@@ -618,19 +618,6 @@ BoothController.prototype.attemptPendingClaim = function () {
     console.log("BoothController: Attempting pending booth claim after auth.", { boothId });
     this._lastClaimAttempt = now;
     this._lastClaimBoothId = boothId;
-    this._setClaimInFlight(true, boothId, 'attempt-pending');
-    this.pendingClaimBoothId = null;
-    this.app.fire('booth:claimRequest', boothId);
-};
-
-BoothController.prototype.destroy = function () {
-    this.app.off('colyseus:connected', this.onNetworkConnected, this);
-    this.app.off('colyseus:disconnected', this.onNetworkDisconnected, this);
-    this.app.off("booth:entered", this.onEnterZone, this);
-    this.app.off("booth:left", this.onLeaveZone, this);
-    this.app.off("booth:added", this.onBoothAdded, this);
-    this.app.off("booth:updated", this.onBoothUpdated, this);
-    this.app.off("booth:removed", this.onBoothRemoved, this);
     this.app.off("booth:unclaimed", this.onBoothUnclaimed, this);
     this.app.off("auth:stateChanged", this.onAuthStateChanged, this);
     this.app.off("player:data:changed", this.onLocalPlayerDataChanged, this);
@@ -649,4 +636,62 @@ BoothController.prototype.destroy = function () {
     this.pendingClaimBoothId = null;
     this._cancelClaimRetry('destroy');
     this._clearClaimInFlight('destroy');
+};
+
+BoothController.prototype.swap = function(old) {
+    console.log("BoothController: Swapping script instance for hot reload.");
+    
+    // Transfer state
+    this.boothEntitiesById = old.boothEntitiesById;
+    this.boothDescriptions = old.boothDescriptions;
+    this.boothsByOwner = old.boothsByOwner;
+    this.currentZoneScript = old.currentZoneScript;
+    this.isNetworkConnected = old.isNetworkConnected;
+    this.pendingClaimBoothId = old.pendingClaimBoothId;
+    this._lastClaimAttempt = old._lastClaimAttempt;
+    this._lastClaimBoothId = old._lastClaimBoothId;
+    this._claimInFlight = old._claimInFlight;
+    this._claimInFlightBoothId = old._claimInFlightBoothId;
+    this._claimInFlightReason = old._claimInFlightReason;
+    this._claimRetryTimeout = old._claimRetryTimeout;
+    this._claimRetryBoothId = old._claimRetryBoothId;
+    this.claimRetryDelayMs = old.claimRetryDelayMs;
+
+    // Re-bind methods
+    this.onEnterZone = this.onEnterZone.bind(this);
+    this.onLeaveZone = this.onLeaveZone.bind(this);
+    this.onBoothAdded = this.onBoothAdded.bind(this);
+    this.onBoothUpdated = this.onBoothUpdated.bind(this);
+    this.onBoothRemoved = this.onBoothRemoved.bind(this);
+    this.onBoothUnclaimed = this.onBoothUnclaimed.bind(this);
+    this.onAuthStateChanged = this.onAuthStateChanged.bind(this);
+    this.onLocalPlayerDataChanged = this.onLocalPlayerDataChanged.bind(this);
+    this.handleClaimRequest = this.handleClaimRequest.bind(this);
+    this.onClaimSuccess = this.onClaimSuccess.bind(this);
+    this.onBoothAuthRequired = this.onBoothAuthRequired.bind(this);
+    this.onClaimError = this.onClaimError.bind(this);
+    this.onDonationEffect = this.onDonationEffect.bind(this);
+    this.onBoothDescriptionSaved = this.onBoothDescriptionSaved.bind(this);
+    this.onBoothDescriptionError = this.onBoothDescriptionError.bind(this);
+    this.onNetworkConnected = this.onNetworkConnected.bind(this);
+    this.onNetworkDisconnected = this.onNetworkDisconnected.bind(this);
+
+    // Re-attach listeners
+    this.app.on('colyseus:connected', this.onNetworkConnected, this);
+    this.app.on('colyseus:disconnected', this.onNetworkDisconnected, this);
+    this.app.on("booth:entered", this.onEnterZone, this);
+    this.app.on("booth:left", this.onLeaveZone, this);
+    this.app.on("booth:added", this.onBoothAdded, this);
+    this.app.on("booth:updated", this.onBoothUpdated, this);
+    this.app.on("booth:removed", this.onBoothRemoved, this);
+    this.app.on("booth:unclaimed", this.onBoothUnclaimed, this);
+    this.app.on("auth:stateChanged", this.onAuthStateChanged, this);
+    this.app.on("player:data:changed", this.onLocalPlayerDataChanged, this);
+    this.app.on("booth:claim:request", this.handleClaimRequest, this);
+    this.app.on("booth:claimSuccess", this.onClaimSuccess, this);
+    this.app.on("booth:authRequired", this.onBoothAuthRequired, this);
+    this.app.on("booth:claimError", this.onClaimError, this);
+    this.app.on("effects:donation", this.onDonationEffect, this);
+    this.app.on("booth:description:ok", this.onBoothDescriptionSaved, this);
+    this.app.on("booth:description:error", this.onBoothDescriptionError, this);
 };

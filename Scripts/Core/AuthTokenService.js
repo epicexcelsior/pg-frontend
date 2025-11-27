@@ -13,7 +13,6 @@ AuthTokenService.prototype.initialize = function () {
         services.register('authToken', this);
     }
 
-    this.handleGameTokenEvent = this.handleGameTokenEvent.bind(this);
     this.handleAuthStateChanged = this.handleAuthStateChanged.bind(this);
 
     this.app.on('auth:gameToken', this.handleGameTokenEvent, this);
@@ -23,6 +22,29 @@ AuthTokenService.prototype.initialize = function () {
 AuthTokenService.prototype.destroy = function () {
     this.app.off('auth:gameToken', this.handleGameTokenEvent, this);
     this.app.off('auth:stateChanged', this.handleAuthStateChanged, this);
+};
+
+AuthTokenService.prototype.swap = function(old) {
+    console.log("AuthTokenService: Swapping script instance for hot reload.");
+    
+    // Transfer state
+    this.token = old.token;
+    this.expiresAt = old.expiresAt;
+    this.metadata = old.metadata;
+    this.storageKey = old.storageKey;
+
+    // Re-bind methods
+    this.handleGameTokenEvent = this.handleGameTokenEvent.bind(this);
+    this.handleAuthStateChanged = this.handleAuthStateChanged.bind(this);
+    
+    // Re-attach listeners
+    this.app.on('auth:gameToken', this.handleGameTokenEvent, this);
+    this.app.on('auth:stateChanged', this.handleAuthStateChanged, this);
+    
+    // Ensure service registration
+    if (this.app.services && typeof this.app.services.register === 'function') {
+        this.app.services.register('authToken', this);
+    }
 };
 
 AuthTokenService.prototype.handleGameTokenEvent = function (payload) {

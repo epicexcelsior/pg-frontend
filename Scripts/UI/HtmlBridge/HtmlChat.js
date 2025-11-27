@@ -7,122 +7,115 @@ HtmlChat.attributes.add('htmlAsset', { type: 'asset', assetType: 'html', title: 
 HtmlChat.prototype.initialize = function() {
     console.log("HtmlChat initializing...");
     this.messages = [];
-    this.maxMessages = 50; // Example limit
+    this.maxMessages = 50;
 
-    // Inject CSS
-    if (this.cssAsset?.resource) {
+    // Inject CSS from Asset
+    if (this.cssAsset) {
         const style = document.createElement('style');
         document.head.appendChild(style);
-        style.innerHTML = this.cssAsset.resource;
+        style.innerHTML = this.cssAsset.resource || '';
+        
+        // If resource is not loaded yet (unlikely in init, but possible)
+        if (!this.cssAsset.resource) {
+             this.cssAsset.ready((asset) => {
+                 style.innerHTML = asset.resource;
+             });
+        }
     } else {
-        console.warn("HtmlChat: CSS Asset not found or loaded.");
-        this.cssAsset?.ready(asset => {
-             const style = document.createElement('style');
-             document.head.appendChild(style);
-             style.innerHTML = asset.resource;
-        });
+        console.warn("HtmlChat: CSS Asset not assigned.");
     }
 
-    // Inject HTML
-    if (this.htmlAsset?.resource) {
-        this.injectHtml(this.htmlAsset.resource);
+    // Inject HTML from Asset
+    if (this.htmlAsset) {
+        if (this.htmlAsset.resource) {
+            this.injectHtml(this.htmlAsset.resource);
+        } else {
+            this.htmlAsset.ready((asset) => {
+                this.injectHtml(asset.resource);
+            });
+        }
     } else {
-        console.warn("HtmlChat: HTML Asset not found or loaded.");
-        this.htmlAsset?.ready(asset => this.injectHtml(asset.resource));
+        console.warn("HtmlChat: HTML Asset not assigned.");
     }
 
-    // Listen for events from ChatController to display messages
+    // Listen for events
     this.app.on('chat:displayMessage', this.addMessage, this);
     this.app.on('chat:clear', this.clearMessages, this);
-
-    console.log("HtmlChat initialized.");
 
     // Add listener for '/' key to focus input
     document.addEventListener('keydown', this.onDocumentKeyDown.bind(this));
 
     // Listen for scene changes to toggle visibility
     this.app.systems.script.on('postInitialize', this._onScenePostInitialize, this);
-
-    // Initial visibility check
     this._checkSceneVisibility();
+    
+    console.log("HtmlChat initialized.");
 };
 
-// --- Scene Visibility Logic ---
 HtmlChat.prototype._onScenePostInitialize = function() {
     this._checkSceneVisibility();
 };
 
 HtmlChat.prototype._checkSceneVisibility = function() {
-    if (!this.div) return; // Ensure HTML is injected
-
+    if (!this.div) return;
     const currentSceneName = this.app.scene.name;
-    console.log(`HtmlChat: Checking visibility for scene: ${currentSceneName}`);
-
-    // Hide chat in the Login scene, show otherwise
-    if (currentSceneName === 'Login') { // <<<--- ADJUST 'Login' if your scene name is different
-        console.log("HtmlChat: Hiding chat UI in Login scene.");
+    if (currentSceneName === 'Login') {
         this.div.style.display = 'none';
     } else {
-        console.log("HtmlChat: Showing chat UI.");
-        this.div.style.display = 'block'; // Or 'flex', 'grid', etc., depending on your CSS
+        this.div.style.display = 'block'; // CSS handles layout, block is safe for container
     }
 };
-// --- End Scene Visibility Logic ---
 
 HtmlChat.prototype.injectHtml = function(htmlResource) {
-    if (this.div) return; // Already injected
+    if (this.div) return;
 
     this.div = document.createElement('div');
     this.div.innerHTML = htmlResource;
     document.body.appendChild(this.div);
 
-    // Find DOM elements
-    this.chatContainer = this.div.querySelector('#chatOverlay'); // Adjust ID
-    this.messageList = this.div.querySelector('#chatMessages');     // Adjust ID
-    this.messageInput = this.div.querySelector('#chatInput');   // Adjust ID
-    this.sendButton = this.div.querySelector('#send-button');       // Adjust ID
+    // Find DOM elements based on IDs in chat_overlay.html
+    this.chatContainer = this.div.querySelector('#chatOverlay');
+    this.messageList = this.div.querySelector('#chatMessages');
+    this.messageInput = this.div.querySelector('#chatInput');
+    this.sendButton = this.div.querySelector('#send-button');
 
     if (!this.chatContainer || !this.messageList || !this.messageInput || !this.sendButton) {
-        console.error("HtmlChat: Could not find all required chat elements in HTML.");
+        console.error("HtmlChat: Could not find all required chat elements in HTML asset.");
         return;
     }
 
-    // Add event listeners for user input
     this.sendButton.addEventListener('click', this.onSendClick.bind(this));
     this.messageInput.addEventListener('keydown', this.onInputKeyDown.bind(this));
-
     this.messageInput.addEventListener('focus', this.onInputFocus.bind(this));
     this.messageInput.addEventListener('blur', this.onInputBlur.bind(this));
     
-    // Set maximum character limit
-    this.messageInput.setAttribute('maxlength', '128');
-
-    console.log("HtmlChat: HTML injected and elements found.");
+    console.log("HtmlChat: HTML injected.");
 };
 
 HtmlChat.prototype.onDocumentKeyDown = function(event) {
-    if (event.key === '/') {
-        event.preventDefault(); // Prevent default browser behavior
+    if (event.key === '/' && document.activeElement !== this.messageInput) {
+        event.preventDefault();
         this.messageInput.focus();
     }
 };
 
 HtmlChat.prototype.onInputFocus = function() {
+    // InputManager handles the global blocking via 'focus' event listener
+    // But we can still fire specific events if needed
     this.app.fire('ui:chat:focus');
-    this.app.fire('ui:input:focus', { source: 'chat' });
 };
 
 HtmlChat.prototype.onInputBlur = function() {
     this.app.fire('ui:chat:blur');
-    this.app.fire('ui:input:blur', { source: 'chat' });
 };
+
 HtmlChat.prototype.onSendClick = function() {
     this.sendMessage();
 };
 
 HtmlChat.prototype.onInputKeyDown = function(event) {
     if (event.key === 'Enter' && !event.shiftKey) {
-        event.preventDefault(); // Prevent newline in input
+        event.preventDefault();
         this.sendMessage();
     }
 };
@@ -130,38 +123,33 @@ HtmlChat.prototype.onInputKeyDown = function(event) {
 HtmlChat.prototype.sendMessage = function() {
     const messageText = this.messageInput.value.trim();
     if (messageText) {
-        console.log("HtmlChat: Firing ui:chat:send event:", messageText);
-        // Fire event for ChatController to handle sending
         this.app.fire('ui:chat:send', messageText);
-        this.messageInput.value = ''; // Clear input field
-        this.messageInput.blur(); // Remove focus to return control to game
+        this.messageInput.value = '';
+        this.messageInput.blur();
     }
 };
 
-// --- Helper function for basic HTML escaping ---
 HtmlChat.prototype._htmlEscape = function(str) {
     if (!str) return '';
-    return str.replace(/&/g, '&amp;')
-              .replace(/</g, '&lt;')
-              .replace(/>/g, '&gt;')
-              .replace(/"/g, '&quot;')
-              .replace(/'/g, '&#039;');
+    return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#039;');
 };
-// --- End Helper ---
 
 HtmlChat.prototype.addMessage = function(messageData) {
-    // messageData expected: { type: 'user'/'system', sender?: string, content: string }
     if (!this.messageList) return;
 
     const messageElement = document.createElement('div');
-    messageElement.classList.add('message', `message-${messageData.type}`); // Add classes for styling
+    messageElement.classList.add('message');
+    
+    if (messageData.type === 'user') {
+        messageElement.classList.add('message-user');
+    } else {
+        messageElement.classList.add('message-system');
+    }
 
     let formattedMessage = '';
     if (messageData.type === 'user' && messageData.sender) {
-        // Use the local _htmlEscape function
         formattedMessage = `<strong>${this._htmlEscape(messageData.sender)}:</strong> ${this._htmlEscape(messageData.content)}`;
-    } else { // System message
-        // Use the local _htmlEscape function
+    } else {
         formattedMessage = `<em>${this._htmlEscape(messageData.content)}</em>`;
     }
     messageElement.innerHTML = formattedMessage;
@@ -169,45 +157,26 @@ HtmlChat.prototype.addMessage = function(messageData) {
     this.messageList.appendChild(messageElement);
     this.messages.push(messageElement);
 
-    // Keep message list trimmed
     while (this.messages.length > this.maxMessages) {
         const oldMessage = this.messages.shift();
-        if (oldMessage) {
-            this.messageList.removeChild(oldMessage);
-        }
+        if (oldMessage) this.messageList.removeChild(oldMessage);
     }
 
-    // Auto-scroll to bottom
     this.messageList.scrollTop = this.messageList.scrollHeight;
 };
 
 HtmlChat.prototype.clearMessages = function() {
-    if (this.messageList) {
-        this.messageList.innerHTML = '';
-    }
+    if (this.messageList) this.messageList.innerHTML = '';
     this.messages = [];
 };
 
-// swap method called for script hot-reloading
-// HtmlChat.prototype.swap = function(old) { };
-
 HtmlChat.prototype.destroy = function() {
-    // Clean up event listeners
     this.app.off('chat:displayMessage', this.addMessage, this);
     this.app.off('chat:clear', this.clearMessages, this);
     this.app.systems.script.off('postInitialize', this._onScenePostInitialize, this);
-    document.removeEventListener('keydown', this.onDocumentKeyDown.bind(this)); // Ensure correct binding removal if needed
+    document.removeEventListener('keydown', this.onDocumentKeyDown.bind(this));
 
-    // Remove DOM elements
     if (this.div && this.div.parentNode) {
         this.div.parentNode.removeChild(this.div);
     }
-    this.div = null;
-    this.chatContainer = null;
-    this.messageList = null;
-    this.messageInput = null;
-    this.sendButton = null; // Add cleanup for button listener if attached directly without bind
-
-    // Remove CSS (optional, might be shared)
-    // Find the style tag and remove it if necessary
 };

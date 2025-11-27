@@ -41,6 +41,18 @@ PrivyManager.prototype.initialize = function () {
     this._lastOAuthOpenedWithoutHandle = false;
     this._lastPopupOpenedWithoutHandle = false;
     this._lastManualLogoutAt = 0;
+    this.hostOverlayEl = null;
+    this.hostIframeEl = null;
+    this.hostFrameWrapperEl = null;
+    this.hostFrameLoadingEl = null;
+    this.hostCloseButtonEl = null;
+    this.hostOverlayVisible = false;
+    this.hostActiveAction = null;
+    this.hostActiveRequestId = null;
+    this.hostStyleTag = null;
+    this.hostOverlayInitScheduled = false;
+    this.hostReadyTimeoutHandle = null;
+    this.hostReadyPending = false;
 
     this.transactionTimeoutMs = 120000;
     this.transactionPromises = new Map();
@@ -49,8 +61,13 @@ PrivyManager.prototype.initialize = function () {
     this.latestPrivyAccessToken = null;
 
     this.popupFeatures = 'width=400,height=650,scrollbars=yes,resizable=yes';
+    this.embeddedHostTimeoutMs = 7000;
 
     this.messageListenerAttached = false;
+
+    this._devModeEnabled = false;
+    this._devUser = null;
+    this._devUserData = null;
 
     this.handleAuthMessage = this.handleAuthMessage.bind(this);
     this.onConfigLoaded = this.onConfigLoaded.bind(this);
@@ -58,6 +75,7 @@ PrivyManager.prototype.initialize = function () {
     this.onServicesInitialized = this.onServicesInitialized.bind(this);
     this.onDestroyHandler = this.onDestroyHandler.bind(this);
 
+    this._initDevMode();
     this.ensureServiceRegistration();
 
     var loader = this.tryGetConfigLoader();
@@ -69,6 +87,65 @@ PrivyManager.prototype.initialize = function () {
     }
 
     this.on('destroy', this.onDestroyHandler);
+};
+
+PrivyManager.prototype._initDevMode = function () {
+    if (typeof window === 'undefined' || !window.location) {
+        return;
+    }
+    const isDev = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+    if (!isDev) {
+        return;
+    }
+    const params = new URLSearchParams(window.location.search);
+    const devUser = params.get('devUser');
+    if (devUser && typeof devUser === 'string' && devUser.trim().length > 0) {
+        this._devModeEnabled = true;
+        this._devUser = devUser.trim();
+        this._generateDevUserData();
+        if (typeof console !== 'undefined' && console.warn) {
+            console.warn(`[DEV MODE] Initialized with devUser: ${this._devUser}`);
+        }
+    }
+};
+
+PrivyManager.prototype._generateDevUserData = function () {
+    if (!this._devUser) {
+        return;
+    }
+    const hashCode = function(str) {
+        let hash = 0;
+        for (let i = 0; i < str.length; i++) {
+            const char = str.charCodeAt(i);
+            hash = ((hash << 5) - hash) + char;
+            hash = hash & hash;
+        }
+        return Math.abs(hash);
+    };
+    const hash = hashCode(this._devUser);
+    const walletIndex = hash % 10000;
+    const twitterSuffix = hash % 100;
+    this._devUserData = {
+        id: `dev_${this._devUser}_${hash}`,
+        username: `dev_${this._devUser}`,
+        displayName: this._devUser.charAt(0).toUpperCase() + this._devUser.slice(1),
+        wallet: {
+            address: `DevWallet${walletIndex.toString().padStart(44, '0')}`,
+            chainType: 'solana'
+        },
+        linkedAccounts: [
+            {
+                type: 'twitter',
+                subject: `dev_${this._devUser}`,
+                username: `dev_twitter_${this._devUser}${twitterSuffix}`
+            }
+        ]
+    };
+    try {
+        localStorage.setItem('privyDevUser', JSON.stringify(this._devUserData));
+    } catch (error) {
+        console.warn('PrivyManager: Failed to persist dev user data.', error);
+    }
 };
 
 PrivyManager.prototype.ensureServiceRegistration = function () {
@@ -151,6 +228,13 @@ PrivyManager.prototype.bootstrapConfig = function (configLoader) {
         return;
     }
 
+    if (integrationMode === 'iframe') {
+        this.integrationMode = 'iframe';
+        this.initializePopupPrivy(configLoader);
+        this.ensureEmbeddedHostElements();
+        return;
+    }
+
     this.integrationMode = 'popup';
     this.initializePopupPrivy(configLoader);
 };
@@ -181,6 +265,9 @@ PrivyManager.prototype.resolveIntegrationMode = function (configLoader) {
         const normalized = explicitMode.trim().toLowerCase();
         if (normalized === 'inline' || normalized === 'embedded') {
             return 'inline';
+        }
+        if (normalized === 'iframe' || normalized === 'hosted' || normalized === 'hosted-inline') {
+            return 'iframe';
         }
         if (normalized === 'popup' || normalized === 'host') {
             return 'popup';
@@ -552,9 +639,16 @@ PrivyManager.prototype.onDestroyHandler = function () {
     this.app.off('service:configLoader:registered', this.onConfigLoaderRegistered, this);
     this.app.off('services:initialized', this.onServicesInitialized, this);
 
-    this.rejectAllPendingTransactions('Privy manager destroyed before the transaction completed.');
+    // Only reject transactions if we are NOT swapping (i.e. actually being destroyed)
+    // We can check a flag or just assume if swap is called, this instance is destroyed but we don't want to kill the state.
+    // However, standard destroy is called after swap.
+    // To prevent destroying state during swap, we can check if we have been swapped.
+    if (!this._swapped) {
+        this.rejectAllPendingTransactions('Privy manager destroyed before the transaction completed.');
+        this._setLoginState('idle');
+    }
+    
     this.pendingReadyCallbacks.length = 0;
-    this._setLoginState('idle');
     this._stopPopupMonitor();
 
     if (typeof this.inlinePrivyUnsubscribe === 'function') {
@@ -565,6 +659,109 @@ PrivyManager.prototype.onDestroyHandler = function () {
         }
         this.inlinePrivyUnsubscribe = null;
     }
+};
+
+PrivyManager.prototype.swap = function(old) {
+    console.log("PrivyManager: Swapping script instance for hot reload.");
+    
+    // Mark old instance as swapped so destroy handler doesn't kill state
+    old._swapped = true;
+
+    // Transfer state
+    this.user = old.user;
+    this.authenticated = old.authenticated;
+    this.ready = old.ready;
+    this._pendingNonce = old._pendingNonce;
+    this.loginTimeoutMs = old.loginTimeoutMs;
+    this._loginState = old._loginState;
+    this._loginTimeoutHandle = old._loginTimeoutHandle; // Note: might need to clear and restart if logic changed, but keeping for now
+    this._popupWindowRef = old._popupWindowRef;
+    this._popupCheckInterval = old._popupCheckInterval;
+    this._popupCheckIntervalMs = old._popupCheckIntervalMs;
+
+    this.twitterHandle = old.twitterHandle;
+    this.twitterUserId = old.twitterUserId;
+    this.privyDid = old.privyDid;
+
+    this.privyHostOrigin = old.privyHostOrigin;
+    this.configLoader = old.configLoader;
+    this.defaultTransactionChain = old.defaultTransactionChain;
+    this.integrationMode = old.integrationMode;
+    this.inlinePrivyReady = old.inlinePrivyReady;
+    this.inlinePrivyInitPromise = old.inlinePrivyInitPromise;
+    // inlinePrivyUnsubscribe will be re-created
+    this.inlinePrivyConfig = old.inlinePrivyConfig;
+    this.latestAuthSnapshotSignature = old.latestAuthSnapshotSignature;
+    this._lastOAuthOpenedWithoutHandle = old._lastOAuthOpenedWithoutHandle;
+    this._lastPopupOpenedWithoutHandle = old._lastPopupOpenedWithoutHandle;
+    this._lastManualLogoutAt = old._lastManualLogoutAt;
+    
+    // Host UI elements
+    this.hostOverlayEl = old.hostOverlayEl;
+    this.hostIframeEl = old.hostIframeEl;
+    this.hostFrameWrapperEl = old.hostFrameWrapperEl;
+    this.hostFrameLoadingEl = old.hostFrameLoadingEl;
+    this.hostCloseButtonEl = old.hostCloseButtonEl;
+    this.hostOverlayVisible = old.hostOverlayVisible;
+    this.hostActiveAction = old.hostActiveAction;
+    this.hostActiveRequestId = old.hostActiveRequestId;
+    this.hostStyleTag = old.hostStyleTag;
+    this.hostOverlayInitScheduled = old.hostOverlayInitScheduled;
+    this.hostReadyTimeoutHandle = old.hostReadyTimeoutHandle;
+    this.hostReadyPending = old.hostReadyPending;
+
+    this.transactionTimeoutMs = old.transactionTimeoutMs;
+    this.transactionPromises = old.transactionPromises;
+    this.pendingReadyCallbacks = old.pendingReadyCallbacks;
+    this._gameTokenExchangePromise = old._gameTokenExchangePromise;
+    this.latestPrivyAccessToken = old.latestPrivyAccessToken;
+
+    this.popupFeatures = old.popupFeatures;
+    this.embeddedHostTimeoutMs = old.embeddedHostTimeoutMs;
+
+    this._devModeEnabled = old._devModeEnabled;
+    this._devUser = old._devUser;
+    this._devUserData = old._devUserData;
+
+    // Re-bind methods
+    this.handleAuthMessage = this.handleAuthMessage.bind(this);
+    this.onConfigLoaded = this.onConfigLoaded.bind(this);
+    this.onConfigLoaderRegistered = this.onConfigLoaderRegistered.bind(this);
+    this.onServicesInitialized = this.onServicesInitialized.bind(this);
+    this.onDestroyHandler = this.onDestroyHandler.bind(this);
+
+    // Re-attach listeners
+    // Note: old.destroy() will be called by engine, removing old listeners.
+    // We need to add ours.
+    
+    // Window message listener
+    if (old.messageListenerAttached) {
+        window.addEventListener('message', this.handleAuthMessage);
+        this.messageListenerAttached = true;
+    }
+
+    // App listeners
+    this.app.on('config:loaded', this.onConfigLoaded, this);
+    this.app.on('service:configLoader:registered', this.onConfigLoaderRegistered, this);
+    this.app.on('services:initialized', this.onServicesInitialized, this);
+    this.on('destroy', this.onDestroyHandler, this);
+
+    // Re-subscribe to inline privy if it was active
+    if (this.integrationMode === 'inline' && window.PG_PRIVY) {
+        try {
+            // The old one will be unsubscribed in old.destroy()
+            // We subscribe new one here
+            this.inlinePrivyUnsubscribe = window.PG_PRIVY.listen((state) => {
+                this.handleInlineSnapshot(state);
+            });
+            console.log('PrivyManager: Re-subscribed to inline Privy events after swap.');
+        } catch (e) {
+            console.warn('PrivyManager: Failed to re-subscribe to inline Privy during swap.', e);
+        }
+    }
+
+    // Ensure service registration
+    this.ensureServiceRegistration();
 };
 
 PrivyManager.prototype.rejectAllPendingTransactions = function (message) {
@@ -712,6 +909,9 @@ PrivyManager.prototype.handleAuthMessage = function (event) {
     console.log(`PrivyManager: Received message type '${type}'`, { requestId });
 
     switch (type) {
+        case 'PRIVY_EMBED_READY':
+            this._clearEmbeddedHostReadyTimeout();
+            return;
         case 'PRIVY_AUTH_SUCCESS':
             this._setLoginState('idle');
             if (payload && typeof payload.user === 'object') {
@@ -761,6 +961,9 @@ PrivyManager.prototype.handleAuthMessage = function (event) {
             console.warn('PrivyManager: Unhandled message type from privy host:', type);
             break;
     }
+    if (this.integrationMode === 'iframe') {
+        this._handleEmbeddedHostMessage(type);
+    }
 };
 
 PrivyManager.prototype.resolveTransactionPromise = function (requestId, executor) {
@@ -779,6 +982,23 @@ PrivyManager.prototype.resolveTransactionPromise = function (requestId, executor
     } catch (error) {
         console.error('PrivyManager: Error resolving transaction promise:', error);
         handlers.reject(error);
+    }
+};
+
+PrivyManager.prototype.rejectTransactionPromise = function (requestId, reason) {
+    if (!requestId) {
+        return;
+    }
+    var handlers = this.transactionPromises.get(requestId);
+    if (!handlers) {
+        return;
+    }
+    this.transactionPromises.delete(requestId);
+    var message = typeof reason === 'string' && reason.length ? reason : 'Transaction cancelled.';
+    try {
+        handlers.reject(new Error(message));
+    } catch (error) {
+        console.error('PrivyManager: Failed to reject transaction promise.', error);
     }
 };
 
@@ -1157,20 +1377,29 @@ PrivyManager.prototype.exchangeForGameToken = function (payload) {
 
     this._gameTokenExchangePromise = resolveAccessToken()
         .then(function (accessToken) {
-            if (!accessToken) {
+            if (!accessToken && !(self._devModeEnabled && self._devUser)) {
                 console.warn('PrivyManager: No Privy access token available. Skipping game token exchange.');
                 return null;
+            }
+            if (self._devModeEnabled && self._devUser && !accessToken) {
+                accessToken = `dev_${self._devUser}`;
             }
 
             self.latestPrivyAccessToken = accessToken;
             const url = self.resolveApiUrl('/auth/exchange-privy');
 
+            const headers = {
+                'Content-Type': 'application/json',
+                'Privy-Authorization': `Bearer ${accessToken}`,
+            };
+
+            if (self._devModeEnabled && self._devUser) {
+                headers['X-Dev-User'] = self._devUser;
+            }
+
             return fetch(url, {
                 method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Privy-Authorization': `Bearer ${accessToken}`,
-                },
+                headers: headers,
                 credentials: 'include',
             })
                 .then(function (response) {
@@ -1407,13 +1636,249 @@ PrivyManager.prototype.openPrivyOAuthWindowWithOptions = function (url, name, ex
     return popup;
 };
 
+PrivyManager.prototype.injectEmbeddedHostStyles = function () {
+    if (this.hostStyleTag || typeof document === 'undefined') {
+        return;
+    }
+    var style = document.createElement('style');
+    style.setAttribute('data-privy-host-styles', 'true');
+    style.textContent = `
+.pg-privy-host-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 9999;
+    background-color: rgba(15, 23, 42, 0.65);
+    display: none;
+    align-items: center;
+    justify-content: center;
+    padding: 16px;
+}
+.pg-privy-host-overlay.pg-privy-open {
+    display: flex;
+}
+.pg-privy-host-frame {
+    width: min(420px, 100%);
+    min-height: 480px;
+    max-height: 95vh;
+    background: #0f172a;
+    border-radius: 18px;
+    box-shadow: 0 32px 64px rgba(15, 23, 42, 0.45);
+    position: relative;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+}
+.pg-privy-host-iframe {
+    border: none;
+    width: 100%;
+    height: 100%;
+    flex: 1;
+    background: transparent;
+}
+.pg-privy-host-loading {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: "Inter", "Helvetica Neue", Arial, sans-serif;
+    font-size: 15px;
+    color: rgba(255, 255, 255, 0.85);
+    backdrop-filter: blur(4px);
+    background: rgba(15, 23, 42, 0.4);
+}
+.pg-privy-host-frame.pg-privy-loaded .pg-privy-host-loading {
+    display: none;
+}
+.pg-privy-host-close {
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    width: 32px;
+    height: 32px;
+    border-radius: 999px;
+    border: none;
+    background: rgba(15, 23, 42, 0.55);
+    color: #fff;
+    cursor: pointer;
+    font-size: 18px;
+    line-height: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background 0.15s ease;
+}
+.pg-privy-host-close:hover {
+    background: rgba(15, 23, 42, 0.75);
+}
+`;
+    document.head.appendChild(style);
+    this.hostStyleTag = style;
+};
+
+PrivyManager.prototype.ensureEmbeddedHostElements = function () {
+    if (this.hostOverlayEl) {
+        return;
+    }
+    if (typeof document === 'undefined' || !document.body) {
+        var self = this;
+        if (!this.hostOverlayInitScheduled && typeof window !== 'undefined' && window.addEventListener) {
+            this.hostOverlayInitScheduled = true;
+            var retry = function () {
+                window.removeEventListener('load', retry);
+                self.hostOverlayInitScheduled = false;
+                self.ensureEmbeddedHostElements();
+            };
+            window.addEventListener('load', retry);
+        } else if (!this.hostOverlayInitScheduled) {
+            console.warn('PrivyManager: Document not ready for embedded host frame.');
+        }
+        return;
+    }
+    this.injectEmbeddedHostStyles();
+    var overlay = document.createElement('div');
+    overlay.className = 'pg-privy-host-overlay';
+    overlay.setAttribute('aria-modal', 'true');
+    overlay.setAttribute('role', 'dialog');
+
+    var frameWrapper = document.createElement('div');
+    frameWrapper.className = 'pg-privy-host-frame';
+
+    var iframe = document.createElement('iframe');
+    iframe.className = 'pg-privy-host-iframe';
+    iframe.setAttribute('title', 'Privy account');
+    iframe.setAttribute('tabindex', '0');
+    iframe.setAttribute('allow', 'clipboard-read; clipboard-write; fullscreen');
+
+    var loading = document.createElement('div');
+    loading.className = 'pg-privy-host-loading';
+    loading.textContent = 'Connecting...';
+
+    var closeButton = document.createElement('button');
+    closeButton.className = 'pg-privy-host-close';
+    closeButton.type = 'button';
+    closeButton.title = 'Close';
+    closeButton.setAttribute('aria-label', 'Close');
+    closeButton.textContent = '×';
+
+    frameWrapper.appendChild(iframe);
+    frameWrapper.appendChild(loading);
+    frameWrapper.appendChild(closeButton);
+    overlay.appendChild(frameWrapper);
+    document.body.appendChild(overlay);
+
+    var self = this;
+    iframe.addEventListener('load', function () {
+        frameWrapper.classList.add('pg-privy-loaded');
+    });
+    closeButton.addEventListener('click', function () {
+        self._handleEmbeddedHostCancellation('manual');
+    });
+
+    this.hostOverlayEl = overlay;
+    this.hostIframeEl = iframe;
+    this.hostFrameWrapperEl = frameWrapper;
+    this.hostFrameLoadingEl = loading;
+    this.hostCloseButtonEl = closeButton;
+};
+
+PrivyManager.prototype._showEmbeddedHostFrame = function (url, action) {
+    if (!this.hostOverlayEl || !this.hostIframeEl || !this.hostFrameWrapperEl) {
+        return false;
+    }
+    try {
+        this.hostFrameWrapperEl.classList.remove('pg-privy-loaded');
+        this.hostOverlayEl.classList.add('pg-privy-open');
+        this.hostOverlayEl.setAttribute('data-privy-action', action || '');
+        this.hostIframeEl.src = url;
+        this.hostOverlayVisible = true;
+        this.hostActiveAction = action || null;
+        return true;
+    } catch (error) {
+        console.error('PrivyManager: Failed to open embedded host frame.', error);
+        return false;
+    }
+};
+
+PrivyManager.prototype._closeEmbeddedHostFrame = function (reason) {
+    if (!this.hostOverlayEl || !this.hostIframeEl) {
+        return;
+    }
+    this._clearEmbeddedHostReadyTimeout();
+    this.hostOverlayEl.classList.remove('pg-privy-open');
+    this.hostOverlayEl.removeAttribute('data-privy-action');
+    try {
+        this.hostIframeEl.src = 'about:blank';
+    } catch (error) {
+        console.debug('PrivyManager: Unable to reset embedded host frame source.', error);
+    }
+    this.hostOverlayVisible = false;
+    this.hostActiveAction = null;
+    this.hostActiveRequestId = null;
+};
+
+PrivyManager.prototype._handleEmbeddedHostCancellation = function (reason) {
+    if (!this.hostOverlayVisible) {
+        return;
+    }
+    var action = this.hostActiveAction;
+    var requestId = this.hostActiveRequestId;
+    this._closeEmbeddedHostFrame(reason);
+    if (!action) {
+        return;
+    }
+    if (action === 'sendTransaction' && requestId) {
+        this.rejectTransactionPromise(requestId, reason || 'cancelled');
+    }
+};
+
+PrivyManager.prototype._launchEmbeddedHostFlow = function (action, params) {
+    if (!this._canUsePopupHost()) {
+        console.warn('PrivyManager: privyHostOrigin missing; cannot open embedded flow.');
+        return false;
+    }
+    this.ensureEmbeddedHostElements();
+    if (!this.hostOverlayEl || !this.hostIframeEl) {
+        console.error('PrivyManager: Embedded host elements unavailable.');
+        return false;
+    }
+    var query = Object.assign({}, params || {});
+    query.action = action;
+    query.embedded = 'true';
+    var url = this.buildPrivyUrl(query);
+    this.hostActiveRequestId = params && params.requestId ? params.requestId : null;
+    var opened = this._showEmbeddedHostFrame(url, action);
+    if (opened && action === 'sendTransaction') {
+        this._scheduleEmbeddedHostReadyTimeout(action, params);
+    }
+    return opened;
+};
+
+PrivyManager.prototype._handleEmbeddedHostMessage = function (type) {
+    if (!this.hostOverlayVisible) {
+        return;
+    }
+    var closingTypes = {
+        PRIVY_AUTH_SUCCESS: true,
+        PRIVY_AUTH_LOGOUT: true,
+        PRIVY_TX_SUCCESS: true,
+        PRIVY_TX_ERROR: true,
+        PRIVY_LINK_SUCCESS: true,
+        PRIVY_LINK_ERROR: true,
+        PRIVY_USERPILL_ACTION: true
+    };
+    if (closingTypes[type]) {
+        this._closeEmbeddedHostFrame(type);
+    }
+};
+
 PrivyManager.prototype.login = function (options) {
     if (this.integrationMode === 'inline') {
         return this.loginInline(options);
     }
     const canUsePopup = this._canUsePopupHost();
     if (!canUsePopup) {
-        console.warn('PrivyManager: privyHostOrigin is missing; cannot open login popup.');
+        console.warn('PrivyManager: privyHostOrigin is missing; cannot open login flow.');
         return null;
     }
 
@@ -1430,17 +1895,17 @@ PrivyManager.prototype.login = function (options) {
     }
 
     this._setLoginState('pending');
+    this._pendingNonce = generateNonce();
+    const params = { action: 'login', nonce: this._pendingNonce };
+    if (force) {
+        params.force = 'true';
+    }
+
     const preOpenedPopup = !this.ready
         ? this._preOpenWindow('privy-auth', { placeholderText: 'Opening Privy login...' })
         : null;
 
-    const performLogin = (preOpenedHandle) => {
-        console.log('PrivyManager: Starting login process...');
-        this._pendingNonce = generateNonce();
-        const params = { action: 'login', nonce: this._pendingNonce };
-        if (force) {
-            params.force = 'true';
-        }
+    const openPopup = (preOpenedHandle) => {
         const loginUrl = this.buildPrivyUrl(params);
         const popup = this.openPrivyWindowWithOptions(
             loginUrl,
@@ -1456,10 +1921,12 @@ PrivyManager.prototype.login = function (options) {
         return popup;
     };
 
+    const preOpenedHandle = preOpenedPopup && !preOpenedPopup.closed ? preOpenedPopup : null;
+
     if (!this.ready) {
         this.queueWhenReady(() => {
             try {
-                const popup = performLogin(preOpenedPopup && !preOpenedPopup.closed ? preOpenedPopup : null);
+                openPopup(preOpenedHandle);
             } catch (error) {
                 this._setLoginState('failed');
                 console.error('PrivyManager: Deferred login failed.', error);
@@ -1469,8 +1936,7 @@ PrivyManager.prototype.login = function (options) {
     }
 
     try {
-        const popup = performLogin(preOpenedPopup && !preOpenedPopup.closed ? preOpenedPopup : null);
-        return popup;
+        return openPopup(preOpenedHandle);
     } catch (error) {
         this._setLoginState('failed');
         console.error('PrivyManager: Login popup error.', error);
@@ -1487,7 +1953,7 @@ PrivyManager.prototype.logout = function () {
     }
     const canUsePopup = this._canUsePopupHost();
     if (!canUsePopup) {
-        console.warn('PrivyManager: privyHostOrigin missing; cannot perform popup logout.');
+        console.warn('PrivyManager: privyHostOrigin missing; cannot perform logout.');
         return null;
     }
 
@@ -1541,7 +2007,6 @@ PrivyManager.prototype.linkTwitter = function () {
     if (this.integrationMode === 'inline') {
         return this.linkTwitterInline();
     }
-
     const canUsePopup = this._canUsePopupHost();
     if (!canUsePopup) {
         console.warn('PrivyManager: privyHostOrigin missing; cannot open Twitter linking popup.');
@@ -1589,6 +2054,7 @@ PrivyManager.prototype.sendTransaction = function (serializedBase64Tx, options) 
     if (this.integrationMode === 'inline') {
         return this.sendTransactionInline(serializedBase64Tx, options);
     }
+    const useEmbeddedHost = this.integrationMode === 'iframe';
     if (!this.ready) {
         return Promise.reject(new Error('PrivyManager: Cannot send transaction before Privy is ready.'));
     }
@@ -1641,6 +2107,17 @@ PrivyManager.prototype.sendTransaction = function (serializedBase64Tx, options) 
         }
 
         const transactionUrl = this.buildPrivyUrl(params);
+        if (useEmbeddedHost) {
+            const opened = this._launchEmbeddedHostFlow('sendTransaction', params);
+            if (!opened) {
+                this.transactionPromises.delete(requestId);
+                window.clearTimeout(timeoutId);
+                reject(this.normalizeError(new Error('PrivyManager: Unable to open transaction window.'), 'Popup blocked.'));
+            } else {
+                this.hostActiveRequestId = requestId;
+            }
+            return;
+        }
         const popup = this.openPrivyWindow(transactionUrl, 'privy-tx');
 
         if (!popup) {
@@ -1652,6 +2129,15 @@ PrivyManager.prototype.sendTransaction = function (serializedBase64Tx, options) 
 };
 
 PrivyManager.prototype.loginInline = function (options) {
+    if (this._devModeEnabled && this._devUserData) {
+        if (typeof console !== 'undefined' && console.warn) {
+            console.warn(`[DEV MODE] Instant login as: ${this._devUser}`);
+        }
+        if (!this.authenticated) {
+            this.handleAuthSuccess({ user: this._devUserData, accessToken: null });
+        }
+        return Promise.resolve({ authenticated: true, user: this._devUserData });
+    }
     const force = Boolean(options && options.force);
     return this.ensureInlineReady()
         .then(() => {
@@ -1828,4 +2314,33 @@ PrivyManager.prototype.refreshTwitterIdentity = function (user) {
     }
     return identity;
 };
+PrivyManager.prototype._scheduleEmbeddedHostReadyTimeout = function (action, params) {
+    this._clearEmbeddedHostReadyTimeout();
+    const timeoutMs = typeof this.embeddedHostTimeoutMs === 'number' && this.embeddedHostTimeoutMs > 0
+        ? this.embeddedHostTimeoutMs
+        : 7000;
+    this.hostReadyPending = true;
+    this.hostReadyTimeoutHandle = window.setTimeout(() => {
+        if (!this.hostReadyPending) {
+            return;
+        }
+        console.warn('PrivyManager: Embedded host did not signal readiness. Falling back.');
+        this.hostReadyPending = false;
+        this._closeEmbeddedHostFrame('host-timeout');
+        this._handleEmbeddedHostTimeout(action, params);
+    }, timeoutMs);
+};
 
+PrivyManager.prototype._clearEmbeddedHostReadyTimeout = function () {
+    if (this.hostReadyTimeoutHandle) {
+        window.clearTimeout(this.hostReadyTimeoutHandle);
+        this.hostReadyTimeoutHandle = null;
+    }
+    this.hostReadyPending = false;
+};
+
+PrivyManager.prototype._handleEmbeddedHostTimeout = function (action, params) {
+    if (action === 'sendTransaction' && params && params.requestId) {
+        this.rejectTransactionPromise(params.requestId, 'Transaction cancelled.');
+    }
+};

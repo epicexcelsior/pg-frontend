@@ -152,7 +152,41 @@ PlayerData.prototype.destroy = function() {
     this.app.off('user:setname', this.handleLegacySetName, this);
 };
 
-// --- GETTERS ---
+PlayerData.prototype.swap = function(old) {
+    console.log("PlayerData: Swapping script instance for hot reload.");
+    
+    // Transfer state
+    this.walletAddress = old.walletAddress;
+    this.username = old.username;
+    this.claimedBoothId = old.claimedBoothId;
+    this.twitterHandle = old.twitterHandle;
+    this.twitterUserId = old.twitterUserId;
+    this.privyDid = old.privyDid;
+    
+    // Re-bind methods
+    this.onAuthStateChanged = this.onAuthStateChanged.bind(this);
+    this.handleBoothClaimSuccess = this.handleBoothClaimSuccess.bind(this);
+    this.handleBoothStateChange = this.handleBoothStateChange.bind(this);
+    this.handleBoothUnclaimed = this.handleBoothUnclaimed.bind(this);
+    this.handleLocalUsernameUpdate = this.handleLocalUsernameUpdate.bind(this);
+    this.handleServerDataUpdate = this.handleServerDataUpdate.bind(this);
+    this.handleLegacySetName = this.handleLegacySetName.bind(this);
+
+    // Re-attach listeners
+    this.app.on('auth:stateChanged', this.onAuthStateChanged, this);
+    this.app.on('booth:claimSuccess', this.handleBoothClaimSuccess, this);
+    this.app.on('booth:updated', this.handleBoothStateChange, this);
+    this.app.on('booth:added', this.handleBoothStateChange, this);
+    this.app.on('booth:unclaimed', this.handleBoothUnclaimed, this);
+    this.app.on('player:username:localUpdate', this.handleLocalUsernameUpdate, this);
+    this.app.on('player:data:update', this.handleServerDataUpdate, this);
+    this.app.on('user:setname', this.handleLegacySetName, this);
+    
+    // Ensure service registration
+    if (this.app.services) {
+        this.app.services.register('playerData', this);
+    }
+};
 PlayerData.prototype.getWalletAddress = function() { return this.walletAddress; };
 PlayerData.prototype.getUsername = function() { return this.username; };
 PlayerData.prototype.getClaimedBoothId = function() { return this.claimedBoothId; };

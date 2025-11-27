@@ -21,7 +21,7 @@ This document captures the inline Privy integration work completed for the PlayC
 ## Configuration
 `Scripts/config.json` gained additional keys that are only required when inline mode is enabled:
 
-- `privyIntegrationMode`: `"popup"` (default) or `"inline"`.
+- `privyIntegrationMode`: `"popup"`, `"inline"` (legacy React bridge), or `"iframe"` (transactions run through the hosted iframe overlay while authentication still uses popups).
 - `privyAppId`: Privy application id (must be set for inline mode).
 - Optional Solana RPC overrides:
   - `privySolanaRpcProxyUrl`
@@ -42,6 +42,11 @@ Leaving the file in `"popup"` mode preserves current behaviour until we are read
   - Maintains popup messaging listener for backwards compatibility.
   - Ensures pending actions are flushed once either mode becomes ready.
   - Twitter OAuth now runs through the inline React bridge by default and only touches the legacy popup host when the entire integration is configured for popups.
+- **Iframe overlay mode**
+  - When `privyIntegrationMode` is set to `"iframe"`, PlayCanvas mounts the Privy host app inside a fullscreen iframe specifically for embedded-wallet transactions and the UserPill UI. Authentication flows (login/logout/social linking) still launch in popups by design, ensuring cross-browser consistency.
+- **Inline OAuth popups (`pg-bundles/src/privyBridge.jsx`)**
+  - Replaces the custom host-app bridge with Privy’s `useLoginWithOAuth` / `useLinkAccount` hooks so Google/X open in secure pop-ups while the PlayCanvas tab stays alive on desktop and mobile.
+  - Linking flows feed their results back through the inline bridge, keeping `window.PG_PRIVY` as the single source of truth for auth state.
 
 No other UI components required behavioural changes because the events (`auth:stateChanged`, `privy:userPillAction`, donation state notifications) remain the same.
 

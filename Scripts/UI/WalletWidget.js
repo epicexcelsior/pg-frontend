@@ -378,26 +378,6 @@ WalletWidget.prototype.showCopyFeedback = function (success) {
     } else {
         this.feedbackService.showError('Copy Failed', 'Unable to copy wallet address.', false);
     }
-};
-
-WalletWidget.prototype.destroy = function () {
-    this.stopPeriodicPolling();
-
-    this.app.off('services:initialized', this.setupEventListeners, this);
-    this.app.off('auth:stateChanged', this.onAuthStateChanged, this);
-    this.app.off('donation:stateChanged', this.onDonationStateChanged, this);
-    this.app.off('wallet:refreshBalance', this.onWalletRefreshRequest, this);
-    this.app.off('effects:donation', this.onIncomingDonation, this);
-    this.app.fire('wallet:destroyed');
-
-    if (this.walletAddressEl) {
-        this.walletAddressEl.removeEventListener('click', this.boundOnAddressClick);
-        this.walletAddressEl.removeEventListener('keydown', this.boundOnAddressKeyDown);
-    }
-
-    if (this.logoutButtonEl && this.boundOnLogoutClick) {
-        this.logoutButtonEl.removeEventListener('click', this.boundOnLogoutClick);
-    }
 
     if (this.privyUserPillBtn && this.boundOnPrivyUserPillClick) {
         this.privyUserPillBtn.removeEventListener('click', this.boundOnPrivyUserPillClick);
@@ -412,8 +392,80 @@ WalletWidget.prototype.destroy = function () {
     }
 };
 
+WalletWidget.prototype.swap = function(old) {
+    console.log("WalletWidget: Swapping script instance for hot reload.");
+    
+    // Transfer state
+    this.currentAddress = old.currentAddress;
+    this.currentTwitterHandle = old.currentTwitterHandle;
+    this.lastBalanceFetchTime = old.lastBalanceFetchTime;
+    this.balancePollingInterval = old.balancePollingInterval;
+    this.balanceRetryTimeout = old.balanceRetryTimeout;
+    this.heliusRpcUrl = old.heliusRpcUrl;
+    this.maxBalanceRetries = old.maxBalanceRetries;
+    this.balancePollingIntervalMs = old.balancePollingIntervalMs;
+    this.container = old.container;
+    this.walletAddressEl = old.walletAddressEl;
+    this.walletBalanceEl = old.walletBalanceEl;
+    this.logoutButtonEl = old.logoutButtonEl;
+    this.privyUserPillBtn = old.privyUserPillBtn;
+    this.twitterLinkEl = old.twitterLinkEl;
+    this.twitterHandleEl = old.twitterHandleEl;
+    this.feedbackService = old.feedbackService;
+
+    // Re-bind methods
+    this.setupEventListeners = this.setupEventListeners.bind(this);
+    this.onAuthStateChanged = this.onAuthStateChanged.bind(this);
+    this.onDonationStateChanged = this.onDonationStateChanged.bind(this);
+    this.onWalletRefreshRequest = this.onWalletRefreshRequest.bind(this);
+    this.onIncomingDonation = this.onIncomingDonation.bind(this);
+    this.boundOnAddressClick = this.onAddressClick.bind(this);
+    this.boundOnAddressKeyDown = this.onAddressKeyDown.bind(this);
+    this.boundOnLogoutClick = this.onLogoutClick.bind(this);
+    this.boundOnPrivyUserPillClick = this.onPrivyUserPillClick.bind(this);
+    this.boundOnLinkTwitterClick = this.onLinkTwitterClick.bind(this);
+
+    // Re-attach listeners
+    this.app.on('services:initialized', this.setupEventListeners, this);
+    this.app.on('auth:stateChanged', this.onAuthStateChanged, this);
+    this.app.on('donation:stateChanged', this.onDonationStateChanged, this);
+    this.app.on('wallet:refreshBalance', this.onWalletRefreshRequest, this);
+    this.app.on('effects:donation', this.onIncomingDonation, this);
+
+    // DOM listeners are attached to elements which are preserved, so we might not need to re-attach them
+    // unless we re-created the DOM. Since we transferred `this.container` and elements, they should still be valid.
+    // However, the old listeners are bound to the OLD instance methods. We need to update them.
+    
+    if (this.walletAddressEl) {
+        this.walletAddressEl.removeEventListener('click', old.boundOnAddressClick);
+        this.walletAddressEl.removeEventListener('keydown', old.boundOnAddressKeyDown);
+        this.walletAddressEl.addEventListener('click', this.boundOnAddressClick);
+        this.walletAddressEl.addEventListener('keydown', this.boundOnAddressKeyDown);
+    }
+
+    if (this.logoutButtonEl) {
+        this.logoutButtonEl.removeEventListener('click', old.boundOnLogoutClick);
+        this.logoutButtonEl.addEventListener('click', this.boundOnLogoutClick);
+    }
+
+    if (this.privyUserPillBtn) {
+        this.privyUserPillBtn.removeEventListener('click', old.boundOnPrivyUserPillClick);
+        this.privyUserPillBtn.addEventListener('click', this.boundOnPrivyUserPillClick);
+    }
+
+    if (this.twitterLinkEl) {
+        this.twitterLinkEl.removeEventListener('click', old.boundOnLinkTwitterClick);
+        this.twitterLinkEl.addEventListener('click', this.boundOnLinkTwitterClick);
+    }
+    
+    // Restart polling if active
+    if (this.balancePollingInterval) {
+        window.clearInterval(this.balancePollingInterval);
+        this.startPeriodicPolling();
+    }
+};
+
 WalletWidget.prototype.updateTwitterDisplay = function (twitterHandle) {
-    if (this.twitterLinkEl && this.twitterHandleEl) {
         if (twitterHandle) {
             this.twitterHandleEl.textContent = `@${twitterHandle}`;
             this.twitterLinkEl.style.display = 'none';
@@ -421,7 +473,6 @@ WalletWidget.prototype.updateTwitterDisplay = function (twitterHandle) {
         } else {
             this.twitterLinkEl.style.display = 'block';
             this.twitterHandleEl.style.display = 'none';
-        }
     }
 };
 
