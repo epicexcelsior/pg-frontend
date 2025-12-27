@@ -1,6 +1,6 @@
 {
-  "apiBaseUrl": "https://server.plsgive.com",
-  "colyseusEndpoint": "https://server.plsgive.com",
+  "apiBaseUrl": "https://pg-colyseus-production.up.railway.app",
+  "colyseusEndpoint": "https://pg-colyseus-production.up.railway.app",
   "privyHostOrigin": "https://privy.plsgive.com",
   "donationFeeRecipientAddress": "r1eKs83sknjVn8cSx5u7afNx8ykjoi1GWULwZvcaAio",
   "heliusRpcUrl": "https://helius.plsgive.com",
