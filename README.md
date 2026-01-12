@@ -1,6 +1,3 @@
-# Hello judges!
-Thank you for checking out Pls Give. 😄🙏
-
 # **PLS GIVE** • Making Generosity 1000x More Fun.
 
 ---
