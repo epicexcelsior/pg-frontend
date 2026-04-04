@@ -3,48 +3,33 @@
               (typeof globalThis !== 'undefined' && globalThis) ||
               {};
 
-  var DESCRIPTOR_PREFIX = 'avatar:descriptor:';
-  var LEGACY_PREFIX = 'avatar:recipe:';
-
-  function isDescriptor(data) {
-    return data && typeof data === 'object' && typeof data.avatarId === 'string';
-  }
+  var STORAGE_PREFIX = 'avatar:recipe:';
 
   var AvatarPersistence = {
-    save: function (id, data) {
-      if (!id || !data) return;
+    save: function (id, recipe) {
+      if (!id || !recipe) return;
       try {
-        localStorage.setItem(DESCRIPTOR_PREFIX + id, JSON.stringify(data));
-        // Clear legacy slot-based entry if it exists to prevent stale data reuse.
-        localStorage.removeItem(LEGACY_PREFIX + id);
+        localStorage.setItem(STORAGE_PREFIX + id, JSON.stringify(recipe));
       } catch (err) {
-        console.warn('AvatarPersistence: Failed to save avatar descriptor.', err);
+        console.warn('AvatarPersistence: Failed to save recipe.', err);
       }
     },
     load: function (id) {
       if (!id) return null;
       try {
-        var raw = localStorage.getItem(DESCRIPTOR_PREFIX + id);
-        if (raw) {
-          var parsed = JSON.parse(raw);
-          if (isDescriptor(parsed)) {
-            return parsed;
-          }
-        }
-        var legacy = localStorage.getItem(LEGACY_PREFIX + id);
-        return legacy ? JSON.parse(legacy) : null;
+        var raw = localStorage.getItem(STORAGE_PREFIX + id);
+        return raw ? JSON.parse(raw) : null;
       } catch (err) {
-        console.warn('AvatarPersistence: Failed to load avatar descriptor.', err);
+        console.warn('AvatarPersistence: Failed to load recipe.', err);
         return null;
       }
     },
     clear: function (id) {
       if (!id) return;
       try {
-        localStorage.removeItem(DESCRIPTOR_PREFIX + id);
-        localStorage.removeItem(LEGACY_PREFIX + id);
+        localStorage.removeItem(STORAGE_PREFIX + id);
       } catch (err) {
-        console.warn('AvatarPersistence: Failed to clear avatar descriptor.', err);
+        console.warn('AvatarPersistence: Failed to clear recipe.', err);
       }
     }
   };
