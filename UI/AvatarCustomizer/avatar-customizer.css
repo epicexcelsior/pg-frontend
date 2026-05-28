@@ -1,4 +1,10 @@
-﻿#avatar-customizer {
+﻿/* Defensive: re-enable pointer-events on the toggle button by id, regardless
+   of whether the JS-added `ui-action-button` class survived runtime. The
+   button sits inside `#ui-button-container` which has `pointer-events: none`
+   from UIManager. */
+#avatar-toggle-button { pointer-events: auto; }
+
+#avatar-customizer {
   position: fixed;
   top: 50%;
   left: calc(18px + var(--action-dock-button-size) + 18px);

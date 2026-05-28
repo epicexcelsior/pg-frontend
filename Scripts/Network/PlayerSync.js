@@ -77,6 +77,17 @@ function applyRemoteYaw(entity, yaw) {
     entity.remoteVisualRoot.setLocalRotation(baseRot);
 }
 
+// Force-use the rigged PlayerPrefab template (220534551) instead of whatever
+// the scene's `playerPrefab` script attribute points at — but ONLY when the
+// Quaternius anim clips PlayerPrefab depends on are actually in the build's
+// asset registry. Today they aren't (preload=false on those clips), so we
+// stay on PlayerAvatarV2 to preserve nameplate/cameraShaker; the moment an
+// admin flips preload=true on the clips, the next build will auto-include
+// them and this swap will activate.
+var PLAYER_PREFAB_FORCE_ID = 220534551;
+// Probe: any one Quaternius clip the rigged anim component requires.
+var QUATERNIUS_CLIP_PROBE_ID = 255648385; // CharacterArmature|Idle.glb
+
 PlayerSync.prototype.initialize = function () {
     this.playerEntities = {};
     this.room = null;
@@ -84,22 +95,50 @@ PlayerSync.prototype.initialize = function () {
     this._loggedMissingNameplate = false;
     this._tempLerpPos = new pc.Vec3();
     this._tempQuat = new pc.Quat();
-    
+    this._playerPrefabReady = null;
+
     // Expose PlayerSync to the app so MessageBroker can access it
     this.app.playerSync = this;
-    
+
     this.app.on('colyseus:connected', this.onConnected, this);
     this.app.on('colyseus:disconnected', this.onDisconnected, this);
+
+    var hasClips = !!this.app.assets.get(QUATERNIUS_CLIP_PROBE_ID);
+    if (!hasClips) {
+        console.warn('PlayerSync: Quaternius clips not in build registry. ' +
+            'Staying on scene-assigned playerPrefab (no anim). ' +
+            'To enable: flip preload=true on assets 255648385/394/395/393/398 + 228285420.');
+        return;
+    }
+
+    var forcedPrefab = this.app.assets.get(PLAYER_PREFAB_FORCE_ID);
+    if (forcedPrefab) {
+        this.playerPrefab = forcedPrefab;
+        var self = this;
+        this._playerPrefabReady = new Promise(function (resolve) {
+            if (forcedPrefab.resource) { resolve(forcedPrefab); return; }
+            forcedPrefab.once('load', function () { resolve(forcedPrefab); });
+            forcedPrefab.once('error', function (err) {
+                console.error('PlayerSync: failed to load forced PlayerPrefab', err);
+                resolve(null);
+            });
+            self.app.assets.load(forcedPrefab);
+        });
+    }
 };
 
 PlayerSync.prototype.getPlayerEntityById = function (sessionId) {
     return this.playerEntities[sessionId] || null;
 };
 
-PlayerSync.prototype.onConnected = function (room) {
+PlayerSync.prototype.onConnected = async function (room) {
     if (!room) {
         console.error('PlayerSync: Room object is null or undefined.');
         return;
+    }
+    if (this._playerPrefabReady) {
+        // Forced PlayerPrefab may still be loading on first connect.
+        await this._playerPrefabReady;
     }
     if (!this.playerPrefab) {
         console.error('PlayerSync: Player Prefab asset is not assigned in the editor.');
@@ -130,6 +169,102 @@ PlayerSync.prototype.onConnected = function (room) {
     });
 };
 
+// Asset ids for the runtime anim swap (state graph + clips).
+// 228285420 (the graph PlayerPrefab references) isn't in the build registry;
+// 255649199 is. State graph 255649199 has 7 states: Idle, Forward, Wave,
+// Jump, DanceA, DanceB, Cheer. Quaternius doesn't ship matching Jump/Dance/
+// Cheer clips so emotes fall back to the closest visible animation.
+var ANIM_FALLBACK_STATEGRAPH = 255649199;
+var ANIM_STATE_CLIPS = {
+    'Idle':    255648385, // CharacterArmature|Idle.glb
+    'Forward': 255648394, // CharacterArmature|Run.glb
+    'Wave':    255648401, // CharacterArmature|Wave.glb (exact match)
+    'Jump':    255648396, // CharacterArmature|Roll.glb (no jump clip; roll is closest)
+    'DanceA':  255648397, // CharacterArmature|Sword_Slash.glb
+    'DanceB':  255648391, // CharacterArmature|Punch_Left.glb
+    'Cheer':   255648392  // CharacterArmature|Kick_Right.glb
+};
+
+PlayerSync.prototype._configureAnim = function (animEntity) {
+    if (!animEntity) return;
+    var app = this.app;
+
+    var sg = app.assets.get(ANIM_FALLBACK_STATEGRAPH);
+    if (!sg) {
+        console.warn('PlayerSync._configureAnim: state graph missing', ANIM_FALLBACK_STATEGRAPH);
+        return;
+    }
+    // Resolve clip assets; tolerate any missing (state stays unassigned).
+    var clipAssets = {};
+    for (var stateName in ANIM_STATE_CLIPS) {
+        clipAssets[stateName] = app.assets.get(ANIM_STATE_CLIPS[stateName]);
+    }
+    if (!clipAssets.Idle || !clipAssets.Forward) {
+        console.warn('PlayerSync._configureAnim: required Idle/Forward clips missing');
+        return;
+    }
+
+    // The static anim component on the PlayerPrefab template is bound to
+    // stateGraphAsset 228285420 which isn't in the build's asset registry —
+    // remove + re-add fresh, mirroring the (unused) PlayerAnimation script's
+    // pattern. Also forces bone re-resolution against the current rootBone.
+    var rootBone = animEntity.anim && animEntity.anim.rootBone;
+    if (typeof rootBone === 'string') {
+        rootBone = animEntity.findByGuid && animEntity.findByGuid(rootBone);
+    }
+    if (!rootBone) {
+        rootBone = animEntity.findByName && animEntity.findByName('Armature');
+    }
+    if (!rootBone) rootBone = animEntity;
+
+    if (animEntity.anim) {
+        animEntity.removeComponent('anim');
+    }
+
+    function ensureLoaded(asset) {
+        return new Promise(function (resolve) {
+            if (!asset) { resolve(null); return; }
+            if (asset.resource) { resolve(asset); return; }
+            asset.once('load', function () { resolve(asset); });
+            asset.once('error', function () { resolve(asset); });
+            app.assets.load(asset);
+        });
+    }
+
+    var loads = [ensureLoaded(sg)];
+    var stateNames = Object.keys(clipAssets);
+    stateNames.forEach(function (n) { loads.push(ensureLoaded(clipAssets[n])); });
+
+    Promise.all(loads).then(function () {
+        try {
+            animEntity.addComponent('anim', {
+                activate: true,
+                playing: true,
+                speed: 1,
+                rootBone: rootBone
+            });
+            var anim = animEntity.anim;
+            if (!anim) {
+                console.error('PlayerSync._configureAnim: addComponent returned no component');
+                return;
+            }
+            anim.loadStateGraph(sg.resource);
+            // Assign each state's clip. Unassigned states (asset missing) just
+            // no-op when their trigger fires — graceful degradation.
+            stateNames.forEach(function (n) {
+                var a = clipAssets[n];
+                if (a && a.resource) {
+                    anim.assignAnimation(n, a.resource, 'Base');
+                }
+            });
+            if (typeof anim.setFloat === 'function') anim.setFloat('speed', 0);
+            anim.playing = true;
+        } catch (err) {
+            console.error('PlayerSync._configureAnim: anim setup failed', err);
+        }
+    });
+};
+
 PlayerSync.prototype.onDisconnected = function () {
     for (const sessionId in this.playerEntities) {
         this.removePlayer(sessionId);
@@ -151,8 +286,12 @@ PlayerSync.prototype.spawnPlayer = function (playerState, sessionId) {
 
     const animTarget = findAnimEntity(playerEntity);
     playerEntity.animTarget = animTarget || null;
-    if (animTarget && animTarget.anim) {
-        animTarget.anim.playing = true;
+    if (animTarget) {
+        // PlayerPrefab's static anim references state graph 228285420 which
+        // isn't in the build registry. _configureAnim removes that broken
+        // anim and adds a fresh one with state graph 255649199 + Quaternius
+        // Idle/Run clips (all preloaded/registered).
+        this._configureAnim(animTarget);
     }
 
     const visualRoot = findVisualRoot(playerEntity);
@@ -280,6 +419,22 @@ PlayerSync.prototype._syncAvatarRecipe = function (entity, playerState, sessionI
 };
 
 PlayerSync.prototype.update = function (dt) {
+    // Pump local-player anim `speed` directly from PlayerMovement.currentSpeed.
+    // The PlayerAnimation script normally does this, but it isn't attached to
+    // PlayerPrefab — so without this, the local avatar's `speed` parameter
+    // stays at 0 and the Idle→Forward transition (`speed > 0.1`) never fires.
+    if (this.localSessionId) {
+        const localEntity = this.playerEntities[this.localSessionId];
+        if (localEntity) {
+            const movement = localEntity.script && localEntity.script.playerMovement;
+            const anim = localEntity.animTarget && localEntity.animTarget.anim;
+            if (movement && anim && typeof anim.setFloat === 'function') {
+                const v = Number(movement.currentSpeed);
+                anim.setFloat('speed', Number.isFinite(v) ? v : 0);
+            }
+        }
+    }
+
     for (const sessionId in this.playerEntities) {
         if (sessionId === this.localSessionId) continue;
 

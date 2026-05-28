@@ -207,7 +207,11 @@ HtmlAvatarCustomizer.prototype._createButtonsContainerAndToggle = function () {
   // Create the avatar toggle button (will sit to the RIGHT of wave)
   var btn = document.createElement("button");
   btn.id = "avatar-toggle-button";
-  btn.className = "avatar-toggle-button";
+  // Use classList.add (not className=) so neither class can be silently
+  // overwritten by a later assignment. `ui-action-button` is what re-enables
+  // pointer-events through UIManager's `#ui-button-container .ui-action-button`
+  // rule — without it the container's `pointer-events: none` swallows clicks.
+  btn.classList.add("ui-action-button", "avatar-toggle-button");
   btn.type = "button";
   btn.setAttribute("aria-label", "Open avatar customization");
 

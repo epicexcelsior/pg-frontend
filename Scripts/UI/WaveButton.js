@@ -75,11 +75,16 @@ WaveButton.prototype._buildActions = function () {
     if (resolved && resolved.length) {
         return resolved;
     }
+    // Matches pre-RPM behavior: only Wave is enabled. Quaternius's clip pack
+    // doesn't ship dance/cheer animations, and the M_Dances_* clips that the
+    // RPM era added target Mixamo bones (Hips/Spine/LeftUpLeg) which the
+    // Quaternius rig doesn't have — so they'd no-op visually. Mark these as
+    // placeholders until real Quaternius-rigged dance/cheer clips are added.
     return [
-        { id: 'wave', label: 'Wave', icon: '🙋', payload: { name: 'wave' } },
-        { id: 'dance_a', label: 'Dance A', icon: '💃', payload: { name: 'dance_a' } },
-        { id: 'dance_b', label: 'Dance B', icon: '🕺', payload: { name: 'dance_b' } },
-        { id: 'cheer', label: 'Cheer', icon: '🎉', payload: { name: 'cheer' } }
+        { id: 'wave',    label: 'Wave',    icon: '🙋', payload: { name: 'wave' } },
+        { id: 'dance_a', label: 'Dance A', icon: '💃', payload: { name: 'dance_a' }, disabled: true },
+        { id: 'dance_b', label: 'Dance B', icon: '🕺', payload: { name: 'dance_b' }, disabled: true },
+        { id: 'cheer',   label: 'Cheer',   icon: '🎉', payload: { name: 'cheer'   }, disabled: true }
     ];
 };
 
@@ -368,9 +373,41 @@ WaveButton.prototype._handleActionClick = function (action, event) {
     }
     if (action.payload && action.payload.name) {
         var playerEntity = this.app.localPlayer;
-        if (playerEntity && playerEntity.script && playerEntity.script.playerAnimation) {
-            var emoteId = this._mapPayloadToEmoteId(action.payload.name);
-            playerEntity.script.playerAnimation.requestEmote(emoteId);
+        if (playerEntity) {
+            if (playerEntity.script && playerEntity.script.playerAnimation) {
+                // Preferred path: playerAnimation script handles trigger + network broadcast.
+                var emoteId = this._mapPayloadToEmoteId(action.payload.name);
+                playerEntity.script.playerAnimation.requestEmote(emoteId);
+            } else {
+                // Fallback: fire trigger directly on local anim AND broadcast
+                // over the network so remote clients see it. Used when the
+                // playerAnimation script isn't attached to the prefab (current
+                // state: it's registered but unattached on PlayerPrefab;
+                // PlayerSync wires anim via its own _configureAnim).
+                var triggerMap = {
+                    'wave':    'wave',
+                    'dance_a': 'danceA',
+                    'dance_b': 'danceB',
+                    'cheer':   'cheer',
+                    'jump':    'jump'
+                };
+                var trigger = triggerMap[action.payload.name];
+                var anim = playerEntity.animTarget && playerEntity.animTarget.anim;
+                if (trigger && anim && typeof anim.setTrigger === 'function') {
+                    anim.setTrigger(trigger);
+                }
+                // Broadcast to server → all other clients. Server validates
+                // against ALLOWED_EMOTES and rate-limits per-player, then
+                // re-broadcasts. MessageBroker's animation:play handler routes
+                // the result back through the same fallback on remote clients.
+                var emoteId = this._mapPayloadToEmoteId(action.payload.name);
+                if (emoteId) {
+                    this.app.fire('network:send', 'animation:play', {
+                        id: emoteId,
+                        triggerId: Date.now()
+                    });
+                }
+            }
         }
     }
     this._closeMenu();

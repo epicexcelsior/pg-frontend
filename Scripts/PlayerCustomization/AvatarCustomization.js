@@ -81,14 +81,20 @@ AvatarCustomization.attributes.add('autoOpenOnSpawn', {
 
     AvatarCustomization.prototype._prepareCatalog = function () {
         var self = this;
+        var ns = this.ns || getNamespace();
+        // Embedded fallback from constants.CATALOG — used when catalogAsset
+        // attribute is null on the scene (AvatarCatalog.json was never wired
+        // up as a JSON asset in PlayCanvas). Without this fallback, slots
+        // are empty and the UI cycles nothing.
+        var embedded = ns.CATALOG || null;
         return new Promise(function (resolve) {
             if (!self.catalogAsset) {
-                self.catalog = { defaults: self.defaults, slots: {} };
+                self.catalog = embedded || { defaults: self.defaults, slots: {} };
                 resolve(self.catalog);
                 return;
             }
             function ready() {
-                self.catalog = self.catalogAsset.resource || self.catalog || { defaults: self.defaults, slots: {} };
+                self.catalog = self.catalogAsset.resource || embedded || self.catalog || { defaults: self.defaults, slots: {} };
                 resolve(self.catalog);
             }
             if (self.catalogAsset.resource) {
@@ -96,8 +102,8 @@ AvatarCustomization.attributes.add('autoOpenOnSpawn', {
             } else {
                 self.catalogAsset.once('load', ready);
                 self.catalogAsset.once('error', function (err) {
-                    console.error('AvatarCustomization: Failed to load catalog asset.', err);
-                    resolve({ defaults: self.defaults, slots: {} });
+                    console.error('AvatarCustomization: Failed to load catalog asset, falling back to embedded.', err);
+                    resolve(embedded || { defaults: self.defaults, slots: {} });
                 });
                 self.app.assets.load(self.catalogAsset);
             }

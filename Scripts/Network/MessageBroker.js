@@ -111,14 +111,38 @@ MessageBroker.prototype.setupRoomMessageListeners = function (room) {
     room.onMessage("avatar:recipe", (data) => this.app.fire('avatar:recipe', data));
     room.onMessage("animation:play", (data) => {
         // data: { playerId, id, triggerId }
-        // Route animation directly to the correct player entity
+        // Route animation directly to the correct player entity.
         const playerSync = this.app.playerSync;
         if (!playerSync) return;
 
         const targetEntity = playerSync.getPlayerEntityById(data.playerId);
-        if (!targetEntity || !targetEntity.script || !targetEntity.script.playerAnimation) return;
+        if (!targetEntity) return;
 
-        targetEntity.script.playerAnimation.applyNetworkEmote(data);
+        // Preferred path: playerAnimation script handles trigger + dedup via triggerId.
+        if (targetEntity.script && targetEntity.script.playerAnimation) {
+            targetEntity.script.playerAnimation.applyNetworkEmote(data);
+            return;
+        }
+
+        // Fallback: fire trigger directly on remote player's anim component.
+        // Used when playerAnimation script isn't attached to the prefab — same
+        // mapping WaveButton uses for local-player emote dispatch.
+        // Skip our own session id: WaveButton already fired the trigger
+        // locally; otherwise the server broadcast would re-trigger it.
+        if (data.playerId && data.playerId === playerSync.localSessionId) return;
+
+        const emoteIdToTrigger = {
+            'WAVE':    'wave',
+            'JUMP':    'jump',
+            'DANCE_A': 'danceA',
+            'DANCE_B': 'danceB',
+            'CHEER':   'cheer'
+        };
+        const trigger = emoteIdToTrigger[data.id];
+        const anim = targetEntity.animTarget && targetEntity.animTarget.anim;
+        if (trigger && anim && typeof anim.setTrigger === 'function') {
+            anim.setTrigger(trigger);
+        }
     });
     room.onMessage("booth:updateDescription:ok", (data) => this.app.fire('booth:description:ok', data));
     room.onMessage("booth:updateDescription:error", (data) => this.app.fire('booth:description:error', data));

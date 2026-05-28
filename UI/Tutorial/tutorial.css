@@ -39,6 +39,15 @@ body > #tutorial-container {
     align-items: center !important;
     z-index: 99999 !important;
     overflow: hidden !important;
+    /* Let clicks pass through the dimmed backdrop to action-dock buttons
+       behind it (avatar, wave, etc.). The content-wrapper below explicitly
+       re-enables pointer-events for its own interactive elements. There's
+       no click-backdrop-to-dismiss handler, so this doesn't break the
+       modal's intentional dismissal flow (only the close button closes it). */
+    pointer-events: none !important;
+}
+
+body > #tutorial-container > #tutorial-content-wrapper {
     pointer-events: auto !important;
 }
 
@@ -174,6 +183,9 @@ body > #tutorial-container > #tutorial-content-wrapper.tutorial-visible {
     padding: 25px !important;
     text-align: center !important;
     box-shadow: var(--tutorial-box-shadow) !important;
+    /* Don't intercept clicks meant for action-dock buttons (e.g. avatar
+       toggle at bottom-left) that may overlap during onboarding. */
+    pointer-events: none !important;
 }
 
 .instruction-card h3 {
